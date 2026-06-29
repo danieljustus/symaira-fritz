@@ -44,10 +44,36 @@ type Device struct {
 
 // Home performs an AHA-HTTP switchcmd and returns the raw response text.
 // params are extra query parameters such as "ain" or "param".
+//
+// A 403 usually means the cached session id expired. Home transparently drops
+// the SID, re-logs in once, and retries before surfacing the error — so a
+// long-running process doesn't appear to "randomly" break.
 func (c *Client) Home(ctx context.Context, switchcmd string, params url.Values) (string, error) {
-	sid, err := c.SID(ctx)
+	body, status, err := c.doHome(ctx, switchcmd, params)
 	if err != nil {
 		return "", err
+	}
+	if status == http.StatusForbidden {
+		c.invalidateSID()
+		body, status, err = c.doHome(ctx, switchcmd, params)
+		if err != nil {
+			return "", err
+		}
+	}
+	if status == http.StatusForbidden {
+		return "", fmt.Errorf("aha: forbidden after re-login — user lacks smart-home permission?")
+	}
+	if status != http.StatusOK {
+		return "", fmt.Errorf("aha: %s returned HTTP %d", switchcmd, status)
+	}
+	return strings.TrimSpace(body), nil
+}
+
+// doHome performs one AHA request and returns the body and status code.
+func (c *Client) doHome(ctx context.Context, switchcmd string, params url.Values) (string, int, error) {
+	sid, err := c.SID(ctx)
+	if err != nil {
+		return "", 0, err
 	}
 	q := url.Values{"sid": {sid}, "switchcmd": {switchcmd}}
 	for k, vs := range params {
@@ -59,24 +85,18 @@ func (c *Client) Home(ctx context.Context, switchcmd string, params url.Values) 
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("aha: contacting %s: %w", c.Host, err)
+		return "", 0, fmt.Errorf("aha: contacting %s: %w", c.Host, err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return "", err
+		return "", resp.StatusCode, err
 	}
-	if resp.StatusCode == http.StatusForbidden {
-		return "", fmt.Errorf("aha: forbidden — session expired or user lacks smart-home permission")
-	}
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("aha: %s returned HTTP %d", switchcmd, resp.StatusCode)
-	}
-	return strings.TrimSpace(string(body)), nil
+	return string(body), resp.StatusCode, nil
 }
 
 // Devices returns the parsed list of DECT smart-home actors.

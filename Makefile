@@ -1,6 +1,8 @@
 GO ?= go
 BINARY_NAME = symfritz
-VERSION_PKG = github.com/danieljustus/symaira-fritz/cmd/symfritz
+# version is a package-level var in `main`, so inject into main.version
+# (matches .goreleaser.yml). Injecting into the full import path silently no-ops.
+VERSION_PKG = main
 
 .PHONY: all
 all: build test

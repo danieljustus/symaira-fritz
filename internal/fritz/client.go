@@ -40,6 +40,11 @@ type Client struct {
 
 	http *http.Client
 
+	// Base URL overrides for testing against a local fake box. When empty the
+	// real host:port endpoints are used.
+	tr064BaseURL string
+	httpBaseURL  string
+
 	mu  sync.Mutex
 	sid string // cached session id from session.go; "" means not logged in
 }
@@ -92,9 +97,20 @@ func New(host string, opts ...Option) *Client {
 	return c
 }
 
+// invalidateSID clears the cached session id so the next SID call re-logs in.
+// Used to recover from a 403 caused by an expired session.
+func (c *Client) invalidateSID() {
+	c.mu.Lock()
+	c.sid = ""
+	c.mu.Unlock()
+}
+
 // baseHTTP returns the plain-HTTP base URL used for session login and AHA,
 // which always run on the standard web port (80/443), not the TR-064 port.
 func (c *Client) baseHTTP() string {
+	if c.httpBaseURL != "" {
+		return c.httpBaseURL
+	}
 	if c.UseTLS {
 		return "https://" + c.Host
 	}
@@ -103,6 +119,9 @@ func (c *Client) baseHTTP() string {
 
 // tr064Base returns the TR-064 control base URL (port 49000/49443).
 func (c *Client) tr064Base() string {
+	if c.tr064BaseURL != "" {
+		return c.tr064BaseURL
+	}
 	if c.UseTLS {
 		return "https://" + c.Host + ":49443"
 	}

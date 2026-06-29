@@ -80,9 +80,13 @@ func digestAuthHeader(dc digestChallenge, user, password, method, uri string) st
 	ha1 := md5hex(user + ":" + dc.realm + ":" + password)
 	ha2 := md5hex(method + ":" + uri)
 
+	// qop may be a comma-separated list (e.g. "auth,auth-int"). We only support
+	// and select "auth"; anything else falls back to the legacy (no-qop) form.
+	useAuth := qopOffersAuth(dc.qop)
+
 	var response string
-	if dc.qop == "auth" {
-		response = md5hex(strings.Join([]string{ha1, dc.nonce, nc, cnonce, dc.qop, ha2}, ":"))
+	if useAuth {
+		response = md5hex(strings.Join([]string{ha1, dc.nonce, nc, cnonce, "auth", ha2}, ":"))
 	} else {
 		response = md5hex(ha1 + ":" + dc.nonce + ":" + ha2)
 	}
@@ -94,7 +98,7 @@ func digestAuthHeader(dc digestChallenge, user, password, method, uri string) st
 		fmt.Sprintf(`uri="%s"`, uri),
 		fmt.Sprintf(`response="%s"`, response),
 	}
-	if dc.qop == "auth" {
+	if useAuth {
 		parts = append(parts,
 			`qop=auth`,
 			fmt.Sprintf("nc=%s", nc),
@@ -105,6 +109,16 @@ func digestAuthHeader(dc digestChallenge, user, password, method, uri string) st
 		parts = append(parts, fmt.Sprintf(`opaque="%s"`, dc.opaque))
 	}
 	return "Digest " + strings.Join(parts, ", ")
+}
+
+// qopOffersAuth reports whether the qop directive includes the "auth" option.
+func qopOffersAuth(qop string) bool {
+	for _, opt := range strings.Split(qop, ",") {
+		if strings.TrimSpace(opt) == "auth" {
+			return true
+		}
+	}
+	return false
 }
 
 func md5hex(s string) string {

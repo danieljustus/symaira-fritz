@@ -38,6 +38,30 @@ func TestDigestAuthHeader_Auth(t *testing.T) {
 	}
 }
 
+func TestDigestAuthHeader_QopList(t *testing.T) {
+	// Servers may advertise "auth,auth-int" — we must still select auth.
+	dc := digestChallenge{realm: "F!Box", nonce: "n", qop: "auth,auth-int"}
+	got := digestAuthHeader(dc, "u", "p", "POST", "/ctrl")
+	if !contains(got, "qop=auth") || !contains(got, "nc=00000001") {
+		t.Errorf("qop list not handled: %s", got)
+	}
+}
+
+func TestQopOffersAuth(t *testing.T) {
+	cases := map[string]bool{
+		"auth":            true,
+		"auth,auth-int":   true,
+		" auth-int, auth": true,
+		"auth-int":        false,
+		"":                false,
+	}
+	for in, want := range cases {
+		if got := qopOffersAuth(in); got != want {
+			t.Errorf("qopOffersAuth(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
 func TestSplitDigestFields_QuotedComma(t *testing.T) {
 	fields := splitDigestFields(`realm="a,b", nonce="c"`)
 	if len(fields) != 2 {
