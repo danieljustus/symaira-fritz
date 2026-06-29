@@ -21,10 +21,22 @@ type Box struct {
 	User string `json:"user" toml:"user"`
 	// Password is the box password.
 	//
-	// SECURITY: prefer NOT storing this here. Set SYMFRITZ_PASSWORD in the
-	// environment, or source it from symvault (op://). A plaintext password in
-	// a dotfile is the weakest option and is only supported for convenience.
+	// SECURITY: prefer NOT storing this here. Use password_ref (symvault) or
+	// keychain instead. A plaintext password in a dotfile is the weakest option
+	// and is only supported for convenience.
 	Password string `json:"password" toml:"password"`
+
+	// PasswordRef is a symvault entry path (e.g. "fritz.password"). When set,
+	// symfritz resolves the password at runtime via `symvault get`, so no
+	// secret is stored on disk. Takes priority over Keychain and Password.
+	PasswordRef string `json:"password_ref" toml:"password_ref"`
+
+	// Keychain enables reading the password from the macOS Keychain (service
+	// "symfritz"). Used when PasswordRef is empty.
+	Keychain bool `json:"keychain" toml:"keychain"`
+
+	// KeychainAccount is the Keychain account name; defaults to Host.
+	KeychainAccount string `json:"keychain_account" toml:"keychain_account"`
 	// UseTLS selects the https TR-064 endpoint (port 49443).
 	UseTLS bool `json:"use_tls" toml:"use_tls"`
 	// InsecureTLS skips certificate verification (needed for the box's
@@ -77,9 +89,25 @@ host = "fritz.box"
 # FRITZ!Box username. Leave empty for legacy password-only boxes.
 user = ""
 
-# Password. RECOMMENDED: leave empty here and set SYMFRITZ_PASSWORD in your
-# environment, or source it from symvault. A plaintext password in this file is
-# the least secure option.
+# Credential resolution order (highest first):
+#   1. SYMFRITZ_PASSWORD environment variable
+#   2. password_ref  — a symvault entry, resolved at runtime via 'symvault get'
+#   3. keychain      — the macOS Keychain (service "symfritz")
+#   4. password      — plaintext below (least secure)
+#
+# Recommended: store the password once with 'symfritz auth login', which writes
+# it to the Keychain (macOS) or symvault, and leave 'password' empty here.
+
+# symvault entry path, e.g. "fritz.password". Empty = disabled.
+password_ref = ""
+
+# Read the password from the macOS Keychain (service "symfritz").
+keychain = false
+
+# Keychain account name; defaults to the box host when empty.
+keychain_account = ""
+
+# Plaintext password (least secure — prefer the options above).
 password = ""
 
 # Use the TLS TR-064 endpoint (https, port 49443).

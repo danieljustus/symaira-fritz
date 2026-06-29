@@ -27,6 +27,7 @@ What works today:
 - **WLAN** — radios, associated clients, guest-network status/toggle.
 - **Wake-on-LAN** — by host name/IP or explicit MAC.
 - **AHA-HTTP** — DECT device listing and switch on/off (`symfritz home`).
+- **Credentials** — `auth login/test/store`, resolved from env → symvault → macOS Keychain → config.
 - **`status`**, **`reboot`**, an **MCP server** (stdio) exposing the above, config + env loading.
 - `--json` on the query/diagnose commands for scripting.
 
@@ -46,13 +47,35 @@ go install github.com/danieljustus/symaira-fritz/cmd/symfritz@latest
 
 ```bash
 symfritz config init                       # writes ~/.config/symfritz/config.toml
-export SYMFRITZ_PASSWORD='your-box-password'
-# optionally: export SYMFRITZ_HOST=192.168.178.1  SYMFRITZ_USER=admin
+# edit host/user in the file, then store the password securely:
+symfritz auth login                        # prompts, verifies against the box, stores it
+symfritz auth test                         # confirm it resolves and works
 ```
 
-> **Security:** prefer the `SYMFRITZ_PASSWORD` env var (or symvault) over putting
-> the password in `config.toml`. A FRITZ!Box user with only the needed permissions
-> is recommended over the admin account.
+### Where the password comes from
+
+symfritz resolves the password at runtime, in this order (first hit wins):
+
+1. **`SYMFRITZ_PASSWORD`** environment variable — ad-hoc / CI.
+2. **symvault** — set `password_ref = "fritz.password"` in the config; symfritz
+   shells out to `symvault get` so nothing is stored on disk.
+3. **macOS Keychain** — set `keychain = true`; service `symfritz`, account = host.
+4. **`password`** plaintext in the config — least secure, convenience only.
+
+`auth login` captures the password once, verifies it, and stores it in the
+Keychain (default on macOS) or symvault (`--symvault fritz.password`). symvault
+and the Keychain are reached through their CLIs, so symfritz has **no build
+dependency** on either and works fine when they are absent.
+
+```bash
+symfritz auth login --symvault fritz.password   # store in symvault instead of Keychain
+symfritz auth store --keychain                  # store without verifying (reads SYMFRITZ_PASSWORD or prompts)
+symfritz auth test                              # show source + verify web login and TR-064 access
+```
+
+> **Tip:** use a dedicated FRITZ!Box user with only the permissions you need
+> rather than the admin account. TR-064 must be enabled on the box
+> (Home Network → Network → Network Settings → "Allow access for applications").
 
 ## Usage
 
@@ -132,6 +155,8 @@ internal/fritz/      Core library:
   mesh.go              mesh topology
   aha.go               AHA-HTTP smart-home
   status.go            high-level overview
+internal/secret/     credential resolution (env → symvault → keychain → config),
+                     symvault & macOS Keychain via their CLIs (no build coupling)
 internal/mcp/        MCP stdio server: status, host_list, host_get, diagnose,
                      mesh, wlan_clients, wake_on_lan, home_list, home_switch
 ```
