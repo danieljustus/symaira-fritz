@@ -176,11 +176,15 @@ func KeychainSet(ctx context.Context, service, account, value string) error {
 	if _, err := lookPathFn("security"); err != nil {
 		return fmt.Errorf("%w: security", ErrNotInstalled)
 	}
-	args := []string{"add-generic-password", "-U", "-s", service, "-w", value}
+	// Pipe password via stdin instead of -w flag to avoid exposing it
+	// in process listings (ps aux). The security command reads from
+	// stdin when -w is omitted.
+	args := []string{"add-generic-password", "-U", "-s", service}
 	if account != "" {
 		args = append(args, "-a", account)
 	}
 	cmd := exec.CommandContext(ctx, "security", args...)
+	cmd.Stdin = strings.NewReader(value)
 	var errb bytes.Buffer
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
