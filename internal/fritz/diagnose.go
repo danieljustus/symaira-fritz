@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strings"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 // CheckStatus is the outcome of one diagnosis step.
@@ -38,14 +41,15 @@ type Diagnosis struct {
 type PortProbe struct {
 	Port  int
 	Label string
+	Type  string // "tcp" or "ssh"
 }
 
 // DefaultProbes are the ports commonly relevant for a Mac host (SSH, screen
 // sharing/VNC, Paperless). Override via DiagnoseOptions.Ports.
 var DefaultProbes = []PortProbe{
-	{22, "SSH"},
-	{5900, "VNC/Screen Sharing"},
-	{8001, "Paperless"},
+	{22, "SSH", "ssh"},
+	{5900, "VNC/Screen Sharing", "tcp"},
+	{8001, "Paperless", "tcp"},
 }
 
 // DiagnoseOptions tunes a diagnosis run.
@@ -117,11 +121,24 @@ func (c *Client) Diagnose(ctx context.Context, ref string, opts DiagnoseOptions)
 	}
 
 	for _, p := range opts.Ports {
-		name := fmt.Sprintf("TCP %d (%s)", p.Port, p.Label)
-		if dialTCP(ctx, d.Target, p.Port, opts.DialTimeout) {
-			d.add(name, StatusOK, "open")
+		typ := p.Type
+		if typ == "" {
+			typ = "tcp"
+		}
+		name := fmt.Sprintf("%s %d (%s)", strings.ToUpper(typ), p.Port, p.Label)
+
+		if typ == "ssh" {
+			if dialSSH(ctx, d.Target, p.Port, opts.DialTimeout) {
+				d.add(name, StatusOK, "ssh handshake ok")
+			} else {
+				d.add(name, StatusFail, "closed or no ssh banner")
+			}
 		} else {
-			d.add(name, StatusFail, "closed or filtered")
+			if dialTCP(ctx, d.Target, p.Port, opts.DialTimeout) {
+				d.add(name, StatusOK, "open")
+			} else {
+				d.add(name, StatusFail, "closed or filtered")
+			}
 		}
 	}
 
@@ -153,6 +170,45 @@ func dialTCP(ctx context.Context, ip string, port int, timeout time.Duration) bo
 	}
 	_ = conn.Close()
 	return true
+}
+
+// dialSSH reports whether an SSH handshake succeeds at ip:port.
+func dialSSH(ctx context.Context, ip string, port int, timeout time.Duration) bool {
+	dctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(dctx, "tcp", net.JoinHostPort(ip, fmt.Sprintf("%d", port)))
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+
+	config := &ssh.ClientConfig{
+		User:            "dummy",
+		Auth:            []ssh.AuthMethod{ssh.Password("dummy")},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         timeout,
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, _, err := ssh.NewClientConn(conn, net.JoinHostPort(ip, fmt.Sprintf("%d", port)), config)
+		done <- err
+	}()
+
+	select {
+	case <-dctx.Done():
+		return false
+	case err := <-done:
+		if err == nil {
+			return true // Logged in? Ok then.
+		}
+		if strings.Contains(err.Error(), "unable to authenticate") {
+			return true
+		}
+		return false
+	}
 }
 
 func joinShort(ips []string) string {

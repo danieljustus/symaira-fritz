@@ -123,3 +123,19 @@ func (c *Client) SwitchOff(ctx context.Context, ain string) error {
 	_, err := c.Home(ctx, "setswitchoff", url.Values{"ain": {ain}})
 	return err
 }
+
+// SetHkrTemp sets the target temperature of a thermostat (HKR).
+// tempCelsius should be the target temperature (e.g. 20.5), or special values:
+// 254 for "ON" (max) and 253 for "OFF" (min).
+func (c *Client) SetHkrTemp(ctx context.Context, ain string, tempCelsius float64) error {
+	// AVM expects temperature in half degrees, e.g. 20.0 °C -> 40.
+	// Special values: 254 (ON), 253 (OFF) are passed as is.
+	var param string
+	if tempCelsius == 254 || tempCelsius == 253 {
+		param = fmt.Sprintf("%.0f", tempCelsius)
+	} else {
+		param = fmt.Sprintf("%.0f", tempCelsius*2)
+	}
+	_, err := c.Home(ctx, "sethkrtsoll", url.Values{"ain": {ain}, "param": {param}})
+	return err
+}
