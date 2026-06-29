@@ -3,6 +3,7 @@ package fritz
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 )
@@ -155,17 +156,7 @@ func hostFromEntry(e map[string]string) Host {
 }
 
 func looksLikeIP(s string) bool {
-	parts := strings.Split(s, ".")
-	if len(parts) != 4 {
-		return false
-	}
-	for _, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil || n < 0 || n > 255 {
-			return false
-		}
-	}
-	return true
+	return net.ParseIP(s) != nil
 }
 
 func looksLikeMAC(s string) bool {
