@@ -115,6 +115,9 @@ func newClient() (*fritz.Client, *config.Config, error) {
 		// still work, and auth commands give a clearer error downstream.
 		fmt.Fprintf(os.Stderr, "warning: could not resolve password: %v\n", err)
 	}
+	if res.Source == secret.SourceConfig {
+		fmt.Fprintln(os.Stderr, "warning: password loaded from plaintext config. Consider 'symfritz auth login' for Keychain/symvault storage.")
+	}
 	return newClientFor(box, res.Password), cfg, nil
 }
 
