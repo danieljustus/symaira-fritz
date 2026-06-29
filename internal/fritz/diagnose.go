@@ -184,6 +184,11 @@ func dialSSH(ctx context.Context, ip string, port int, timeout time.Duration) bo
 	}
 	defer conn.Close()
 
+	// Diagnostic-only SSH config: we are checking reachability, not
+	// authenticating. Dummy credentials are used and the host key callback
+	// is intentionally insecure because we never exchange real data — the
+	// only goal is to verify the SSH handshake succeeds or fails with an
+	// auth error (which indicates the port is open and running SSH).
 	config := &ssh.ClientConfig{
 		User:            "dummy",
 		Auth:            []ssh.AuthMethod{ssh.Password("dummy")},
