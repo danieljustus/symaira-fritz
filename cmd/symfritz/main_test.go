@@ -255,6 +255,38 @@ func TestModelSuffix(t *testing.T) {
 	}
 }
 
+func TestBoxFromEnv(t *testing.T) {
+	t.Run("defaults when no env vars", func(t *testing.T) {
+		t.Setenv("SYMFRITZ_HOST", "")
+		t.Setenv("SYMFRITZ_USER", "")
+		box, _ := boxFromEnv()
+		if box.Host != "fritz.box" {
+			t.Errorf("Host = %q, want %q (default)", box.Host, "fritz.box")
+		}
+	})
+
+	t.Run("env overrides host and user", func(t *testing.T) {
+		t.Setenv("SYMFRITZ_HOST", "192.168.1.1")
+		t.Setenv("SYMFRITZ_USER", "admin")
+		box, _ := boxFromEnv()
+		if box.Host != "192.168.1.1" {
+			t.Errorf("Host = %q, want %q", box.Host, "192.168.1.1")
+		}
+		if box.User != "admin" {
+			t.Errorf("User = %q, want %q", box.User, "admin")
+		}
+	})
+
+	t.Run("partial override host only", func(t *testing.T) {
+		t.Setenv("SYMFRITZ_HOST", "myhost")
+		t.Setenv("SYMFRITZ_USER", "")
+		box, _ := boxFromEnv()
+		if box.Host != "myhost" {
+			t.Errorf("Host = %q, want %q", box.Host, "myhost")
+		}
+	})
+}
+
 func TestDataRate(t *testing.T) {
 	tests := []struct {
 		name string
