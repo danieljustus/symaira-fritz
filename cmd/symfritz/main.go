@@ -111,9 +111,7 @@ func newClient() (*fritz.Client, *config.Config, error) {
 	box, cfg := boxFromEnv()
 	res, err := secret.Resolve(context.Background(), secretOptions(box))
 	if err != nil {
-		// Surface the reason but keep going — non-auth commands (e.g. services)
-		// still work, and auth commands give a clearer error downstream.
-		fmt.Fprintf(os.Stderr, "warning: could not resolve password: %v\n", err)
+		return nil, cfg, fmt.Errorf("could not resolve password: %w", err)
 	}
 	if res.Source == secret.SourceConfig {
 		fmt.Fprintln(os.Stderr, "warning: password loaded from plaintext config. Consider 'symfritz auth login' for Keychain/symvault storage.")
@@ -540,7 +538,7 @@ Override with --port (repeatable).`,
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
-	cmd.Flags().IntSliceVar(&ports, "port", nil, "TCP port to probe (repeatable; replaces defaults)")
+	cmd.Flags().IntSliceVar(&ports, "port", nil, "TCP port to probe (repeatable; replaces default ports 22, 5900, 8001)")
 	return cmd
 }
 
@@ -739,10 +737,8 @@ func newServicesCmd() *cobra.Command {
 		Use:   "services",
 		Short: "Discover TR-064 services advertised by the box (tr64desc.xml)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			c, _, err := newClient()
-			if err != nil {
-				return err
-			}
+			box, _ := boxFromEnv()
+			c := newClientFor(box, "")
 			services, err := c.Discover(context.Background())
 			if err != nil {
 				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "discovery failed")
