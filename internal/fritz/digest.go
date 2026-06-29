@@ -73,6 +73,11 @@ func splitDigestFields(s string) []string {
 // digestAuthHeader builds an Authorization header value for HTTP Digest auth.
 // FRITZ!Box TR-064 uses qop="auth" with MD5; a fixed client nonce is acceptable
 // because each request fetches a fresh server nonce (nc is always 00000001).
+//
+// MD5 here is NOT password storage hashing — it is the digest algorithm
+// mandated by HTTP Digest Access Authentication (RFC 2617 / RFC 7616) and is
+// the only algorithm the FRITZ!Box TR-064 endpoint accepts. It cannot be
+// substituted with a stronger hash without breaking interoperability.
 func digestAuthHeader(dc digestChallenge, user, password, method, uri string) string {
 	const cnonce = "0a4f113b"
 	const nc = "00000001"
