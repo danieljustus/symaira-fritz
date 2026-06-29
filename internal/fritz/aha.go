@@ -21,6 +21,7 @@ import (
 type DeviceList struct {
 	XMLName xml.Name `xml:"devicelist"`
 	Devices []Device `xml:"device"`
+	Groups  []Group  `xml:"group"`
 }
 
 // Device is one DECT actor. Only the commonly used fields are mapped; extend as
@@ -37,9 +38,51 @@ type Device struct {
 		Celsius string `xml:"celsius"` // tenths of a degree as integer string
 	} `xml:"temperature"`
 	Hkr struct {
-		Tist  string `xml:"tist"`  // current temp (half-degrees)
-		Tsoll string `xml:"tsoll"` // target temp (half-degrees)
+		Tist          string     `xml:"tist"`  // current temp (half-degrees)
+		Tsoll         string     `xml:"tsoll"` // target temp (half-degrees)
+		BatteryLow    string     `xml:"batterylow"`
+		BatteryCharge string     `xml:"battery"`
+		WindowOpen    string     `xml:"windowopenactiv"`
+		ErrorCode     string     `xml:"errorcode"`
+		NextChange    NextChange `xml:"nextchange"`
 	} `xml:"hkr"`
+	PowerMeter struct {
+		Power  string `xml:"power"`  // current power in mW
+		Energy string `xml:"energy"` // accumulated energy in Wh
+	} `xml:"powermeter"`
+}
+
+type NextChange struct {
+	End     string `xml:"end"`
+	Start   string `xml:"start"`
+	TChange int    `xml:"tchange"`
+}
+
+type Group struct {
+	Identifier string   `xml:"identifier,attr"`
+	ID         string   `xml:"id,attr"`
+	Name       string   `xml:"name"`
+	Members    []string `xml:"-"`
+	GroupInfo  struct {
+		MasterDeviceID string `xml:"masterdeviceid"`
+		MembersStr     string `xml:"members"`
+	} `xml:"groupinfo"`
+}
+
+// DeviceGroup links a Group with its physical Devices.
+type DeviceGroup struct {
+	Group   Group
+	Devices []Device
+}
+
+var HkrErrorDescriptions = map[string]string{
+	"0": "kein Fehler",
+	"1": "Keine Verbindung zum Stellantrieb möglich",
+	"2": "Ventilhub zu groß",
+	"3": "Ventilhub zu klein",
+	"4": "Installation nicht betriebsbereit / Montage prüfen",
+	"5": "Ventilweg zu kurz (schwergängig?) / Entkalken",
+	"6": "Batterieladung extrem niedrig",
 }
 
 // Home performs an AHA-HTTP switchcmd and returns the raw response text.
@@ -138,4 +181,43 @@ func (c *Client) SetHkrTemp(ctx context.Context, ain string, tempCelsius float64
 	}
 	_, err := c.Home(ctx, "sethkrtsoll", url.Values{"ain": {ain}, "param": {param}})
 	return err
+}
+
+// UnmarshalXML customizes XML unmarshaling for Group.
+func (g *Group) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	type Alias Group
+	var aux Alias
+	if err := d.DecodeElement(&aux, &start); err != nil {
+		return err
+	}
+	*g = Group(aux)
+	if g.GroupInfo.MembersStr != "" {
+		g.Members = strings.Split(g.GroupInfo.MembersStr, ",")
+	}
+	return nil
+}
+
+// Groups returns the parsed list of DECT smart-home groups.
+func (c *Client) Groups(ctx context.Context) ([]Group, error) {
+	raw, err := c.Home(ctx, "getdevicelistinfos", nil)
+	if err != nil {
+		return nil, err
+	}
+	var list DeviceList
+	if err := xml.Unmarshal([]byte(raw), &list); err != nil {
+		return nil, fmt.Errorf("aha: parsing device list: %w", err)
+	}
+	return list.Groups, nil
+}
+
+// NamesAndAins returns a map of name to identifier (AIN) including both devices and groups.
+func (l *DeviceList) NamesAndAins() map[string]string {
+	m := make(map[string]string)
+	for _, d := range l.Devices {
+		m[d.Name] = d.Identifier
+	}
+	for _, g := range l.Groups {
+		m[g.Name] = g.Identifier
+	}
+	return m
 }

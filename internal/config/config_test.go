@@ -104,3 +104,14 @@ func TestDefaultConfigTOML(t *testing.T) {
 		t.Error("DefaultConfigTOML() missing default host 'fritz.box'")
 	}
 }
+
+func TestLoad(t *testing.T) {
+	t.Setenv("SYMFRITZ_BOX_HOST", "my-custom-box")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Box.Host != "my-custom-box" {
+		t.Errorf("Host = %q, want %q", cfg.Box.Host, "my-custom-box")
+	}
+}

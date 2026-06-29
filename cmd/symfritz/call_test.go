@@ -8,10 +8,10 @@ import (
 
 func TestServiceByShortcut(t *testing.T) {
 	tests := []struct {
-		name    string
-		input   string
-		want    fritz.Service
-		wantOK  bool
+		name   string
+		input  string
+		want   fritz.Service
+		wantOK bool
 	}{
 		{"deviceinfo", "deviceinfo", fritz.ServiceDeviceInfo, true},
 		{"wanip", "wanip", fritz.ServiceWANIPConnection, true},

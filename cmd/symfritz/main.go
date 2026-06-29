@@ -63,6 +63,12 @@ the SYMFRITZ_PASSWORD environment variable.`,
 		newMCPCmd(),
 		newConfigCmd(),
 		newVersionCmd(),
+		newTrafficCmd(),
+		newDSLCmd(),
+		newCallsCmd(),
+		newDialCmd(),
+		newHangupCmd(),
+		newLogCmd(),
 	)
 	return root
 }
