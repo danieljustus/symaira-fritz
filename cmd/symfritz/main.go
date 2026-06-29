@@ -538,7 +538,7 @@ Override with --port (repeatable).`,
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
-	cmd.Flags().IntSliceVar(&ports, "port", nil, "TCP port to probe (repeatable; replaces defaults)")
+	cmd.Flags().IntSliceVar(&ports, "port", nil, "TCP port to probe (repeatable; replaces default ports 22, 5900, 8001)")
 	return cmd
 }
 
