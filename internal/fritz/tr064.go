@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -32,11 +33,16 @@ type Service struct {
 
 // Common services. Extend this set as commands are added.
 var (
-	ServiceDeviceInfo      = Service{"urn:dslforum-org:service:DeviceInfo:1", "/upnp/control/deviceinfo"}
-	ServiceWANIPConnection = Service{"urn:dslforum-org:service:WANIPConnection:1", "/upnp/control/wanipconnection1"}
-	ServiceWANCommonIFC    = Service{"urn:dslforum-org:service:WANCommonInterfaceConfig:1", "/upnp/control/wancommonifconfig1"}
-	ServiceHosts           = Service{"urn:dslforum-org:service:Hosts:1", "/upnp/control/hosts"}
-	ServiceWLANConfig1     = Service{"urn:dslforum-org:service:WLANConfiguration:1", "/upnp/control/wlanconfig1"}
+	ServiceDeviceInfo            = Service{"urn:dslforum-org:service:DeviceInfo:1", "/upnp/control/deviceinfo"}
+	ServiceWANIPConnection       = Service{"urn:dslforum-org:service:WANIPConnection:1", "/upnp/control/wanipconnection1"}
+	ServiceWANCommonIFC          = Service{"urn:dslforum-org:service:WANCommonInterfaceConfig:1", "/upnp/control/wancommonifconfig1"}
+	ServiceHosts                 = Service{"urn:dslforum-org:service:Hosts:1", "/upnp/control/hosts"}
+	ServiceWLANConfig1           = Service{"urn:dslforum-org:service:WLANConfiguration:1", "/upnp/control/wlanconfig1"}
+	ServiceWANDSLInterfaceConfig = Service{"urn:dslforum-org:service:WANDSLInterfaceConfig:1", "/upnp/control/wandslifconfig1"}
+	ServiceVoIP                  = Service{"urn:dslforum-org:service:X_VoIP:1", "/upnp/control/x_voip"}
+	ServiceOnTel                 = Service{"urn:dslforum-org:service:X_AVM-DE_OnTel:1", "/upnp/control/x_contact"}
+	ServiceUserInterface         = Service{"urn:dslforum-org:service:UserInterface:1", "/upnp/control/userif"}
+	ServiceHomeauto              = Service{"urn:dslforum-org:service:X_AVM-DE_Homeauto:1", "/upnp/control/x_homeauto"}
 )
 
 // Call invokes a TR-064 action and returns the output arguments as a map.
@@ -171,4 +177,49 @@ func xmlEscape(s string) string {
 	var b strings.Builder
 	_ = xml.EscapeText(&b, []byte(s))
 	return b.String()
+}
+
+// fetchAuthenticatedURL downloads a resource URL from the box, executing
+// HTTP digest authentication if the box returns 401.
+func (c *Client) fetchAuthenticatedURL(ctx context.Context, rawURL string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		parsedURL, err := url.Parse(rawURL)
+		if err != nil {
+			return nil, err
+		}
+		dc, ok := parseDigestChallenge(resp.Header.Get("WWW-Authenticate"))
+		if !ok {
+			return nil, fmt.Errorf("fetch: 401 without digest challenge")
+		}
+		auth := digestAuthHeader(dc, c.User, c.Password, http.MethodGet, parsedURL.RequestURI())
+		req2, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req2.Header.Set("Authorization", auth)
+		resp2, err := c.http.Do(req2)
+		if err != nil {
+			return nil, err
+		}
+		defer resp2.Body.Close()
+		if resp2.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("fetch: HTTP %d", resp2.StatusCode)
+		}
+		return io.ReadAll(resp2.Body)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetch: HTTP %d", resp.StatusCode)
+	}
+	return io.ReadAll(resp.Body)
 }

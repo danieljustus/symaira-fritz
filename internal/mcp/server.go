@@ -19,6 +19,14 @@ const emptyObjectSchema = `{"type":"object","properties":{}}`
 
 // StartServer runs the MCP stdio server backed by the given client.
 func StartServer(ctx context.Context, c *fritz.Client) error {
+	s := buildServer(c)
+	if err := s.ServeStdio(ctx); err != nil {
+		return fmt.Errorf("mcp server: %w", err)
+	}
+	return nil
+}
+
+func buildServer(c *fritz.Client) *mcpserver.Server {
 	s := mcpserver.New("symfritz", ServerVersion)
 	s.SetInstructions("Query and control an AVM FRITZ!Box: connection status, " +
 		"the LAN/WLAN host table, mesh topology, WLAN clients, and DECT smart-home " +
@@ -177,8 +185,5 @@ func StartServer(ctx context.Context, c *fritz.Client) error {
 		},
 	})
 
-	if err := s.ServeStdio(ctx); err != nil {
-		return fmt.Errorf("mcp server: %w", err)
-	}
-	return nil
+	return s
 }

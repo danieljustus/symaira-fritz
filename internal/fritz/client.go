@@ -127,3 +127,9 @@ func (c *Client) tr064Base() string {
 	}
 	return "http://" + c.Host + ":49000"
 }
+
+// SetMockURLs overrides the base URLs for testing.
+func (c *Client) SetMockURLs(url string) {
+	c.tr064BaseURL = url
+	c.httpBaseURL = url
+}
