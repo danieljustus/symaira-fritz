@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -60,6 +62,7 @@ the SYMFRITZ_PASSWORD environment variable.`,
 		newWoLCmd(),
 		newHomeCmd(),
 		newCallCmd(),
+		newScrapeCmd(),
 		newServicesCmd(),
 		newRebootCmd(),
 		newAuthCmd(),
@@ -209,6 +212,48 @@ Examples:
 	return cmd
 }
 
+func newScrapeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "scrape <page> [Key=Value ...]",
+		Short: "Fetch a data.lua page (best-effort, fragile)",
+		Long: `Fetch raw JSON from the FRITZ!Box internal data.lua endpoint.
+
+WARNING: This is a best-effort, version-fragile API.
+AVM frequently changes the data.lua structure, endpoints, and variables
+across FRITZ!OS updates. Use TR-064 or AHA whenever possible instead.
+
+Arguments are passed as Key=Value POST parameters.
+
+Examples:
+  symfritz scrape netDev
+  symfritz scrape dslStats`,
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			page := args[0]
+			params := url.Values{}
+			for _, kv := range args[1:] {
+				k, v, found := strings.Cut(kv, "=")
+				if !found {
+					return exitcodes.Wrap(fmt.Errorf("argument %q is not Key=Value", kv),
+						exitcodes.ExitConfig, exitcodes.KindValidation, "bad argument")
+				}
+				params.Add(k, v)
+			}
+			c, _, err := newClient()
+			if err != nil {
+				return err
+			}
+			out, err := c.ScrapeDataLUA(context.Background(), page, params)
+			if err != nil {
+				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "scrape failed")
+			}
+			fmt.Println(out)
+			return nil
+		},
+	}
+	return cmd
+}
+
 func serviceByShortcut(name string) (fritz.Service, bool) {
 	switch strings.ToLower(name) {
 	case "deviceinfo":
@@ -296,8 +341,40 @@ func newHomeCmd() *cobra.Command {
 		},
 	}
 
+	tempCmd := &cobra.Command{
+		Use:   "temp <ain> <celsius|on|off>",
+		Short: "Set the target temperature for a thermostat",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, _, err := newClient()
+			if err != nil {
+				return err
+			}
+			ctx := context.Background()
+			var temp float64
+			switch strings.ToLower(args[1]) {
+			case "on":
+				temp = 254
+			case "off":
+				temp = 253
+			default:
+				var parseErr error
+				temp, parseErr = strconv.ParseFloat(args[1], 64)
+				if parseErr != nil {
+					return exitcodes.Wrap(fmt.Errorf("temperature must be 'on', 'off', or a number (e.g. 20.5)"),
+						exitcodes.ExitConfig, exitcodes.KindValidation, "bad temperature")
+				}
+			}
+			if err := c.SetHkrTemp(ctx, args[0], temp); err != nil {
+				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "set temp failed")
+			}
+			fmt.Printf("OK: %s -> %s\n", args[0], args[1])
+			return nil
+		},
+	}
+
 	listCmd.Flags().BoolVar(&listJSON, "json", false, "Output as JSON")
-	cmd.AddCommand(listCmd, switchCmd)
+	cmd.AddCommand(listCmd, switchCmd, tempCmd)
 	return cmd
 }
 
