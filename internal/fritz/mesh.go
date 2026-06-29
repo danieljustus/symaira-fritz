@@ -86,6 +86,8 @@ func (c *Client) MeshTopology(ctx context.Context) (*MeshTopology, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("mesh: mesh list returned HTTP %d", resp.StatusCode)
 	}
+	// Limit to 8MB — large residential meshes with many nodes/links can
+	// produce substantial JSON, but 8MB is a safe upper bound.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
 		return nil, err

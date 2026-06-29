@@ -3,6 +3,7 @@ package fritz
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 )
@@ -33,6 +34,9 @@ func (h Host) Link() string {
 }
 
 // Hosts returns the full FRITZ!Box host table by iterating GetGenericHostEntry.
+// This uses an N+1 call pattern: one call for the count, then one per host.
+// TR-064 does not offer a bulk host endpoint, so this is the only available
+// approach. A box with 50+ devices will make 51+ sequential SOAP calls.
 func (c *Client) Hosts(ctx context.Context) ([]Host, error) {
 	cnt, err := c.Call(ctx, ServiceHosts, "GetHostNumberOfEntries", nil)
 	if err != nil {
@@ -155,17 +159,7 @@ func hostFromEntry(e map[string]string) Host {
 }
 
 func looksLikeIP(s string) bool {
-	parts := strings.Split(s, ".")
-	if len(parts) != 4 {
-		return false
-	}
-	for _, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil || n < 0 || n > 255 {
-			return false
-		}
-	}
-	return true
+	return net.ParseIP(s) != nil
 }
 
 func looksLikeMAC(s string) bool {
