@@ -11,7 +11,7 @@ func TestNewDiagnoseCmd(t *testing.T) {
 	if cmd.Short == "" {
 		t.Error("Short should not be empty")
 	}
-	if cmd.Aliases == nil || len(cmd.Aliases) == 0 || cmd.Aliases[0] != "doctor" {
+	if len(cmd.Aliases) == 0 || cmd.Aliases[0] != "doctor" {
 		t.Errorf("expected alias 'doctor', got %v", cmd.Aliases)
 	}
 
