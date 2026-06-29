@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -1128,14 +1127,3 @@ func dataRate(link fritz.MeshLink) string {
 	return fmt.Sprintf("(%d/%d Mbit/s)", link.CurDataRateRx, link.CurDataRateTx)
 }
 
-// sortedKeys is a small helper kept for future tabular output of Call results.
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-var _ = sortedKeys // referenced once commands format Call output as tables
