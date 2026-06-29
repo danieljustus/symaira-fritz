@@ -1,0 +1,15 @@
+name: Feature Request
+description: Propose a new feature
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What is the goal or use case for this feature?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe how this feature should work.

@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.4'
+
+      - name: Vet
+        run: CGO_ENABLED=0 go vet ./...
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Staticcheck
+        uses: dominikh/staticcheck-action@9716614d4101e79b4340dd97b10e54d68234e431 # v1
+        with:
+          version: "latest"
+          install-go: false
+
+      - name: Govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Build
+        run: |
+          VERSION_PKG="github.com/danieljustus/symaira-fritz/cmd/symfritz"
+          if [ -n "$GITHUB_REF_NAME" ] && git describe --tags --exact-match >/dev/null 2>&1; then
+            VERSION="$(git describe --tags --exact-match)"
+          elif [ -n "$GITHUB_SHA" ]; then
+            SHORT_SHA="${GITHUB_SHA:0:7}"
+            VERSION="0.0.0-dev+${SHORT_SHA}"
+          else
+            VERSION="0.0.0-dev"
+          fi
+          echo "Injecting version: ${VERSION}"
+          CGO_ENABLED=0 go build -ldflags "-s -w -X ${VERSION_PKG}.version=${VERSION}" ./...
+
+      - name: Test
+        run: CGO_ENABLED=0 go test ./...

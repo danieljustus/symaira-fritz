@@ -1,0 +1,25 @@
+# Build outputs
+/symfritz
+dist/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Go
+*.test
+*.out
+vendor/
+
+# Config / secrets
+.env
+*.local
+
+# Agent/developer workspace files
+AGENTS.md
+
+# Local audit reports
+.github/audit/
+
+# Documentation builds / local notes
+docs/

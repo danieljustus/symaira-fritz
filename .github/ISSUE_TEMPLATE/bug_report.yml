@@ -1,0 +1,33 @@
+name: Bug Report
+description: File a bug report to help us improve
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug! Please fill out the form below.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to Reproduce
+      description: Describe how to reproduce the issue.
+      placeholder: |
+        1. Run `symfritz ...`
+        2. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS version, Go version, symfritz version.
+      placeholder: |
+        OS: macOS 15.0
+        Go: 1.26.4
+        symfritz: v0.1.2
