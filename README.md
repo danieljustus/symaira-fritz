@@ -42,6 +42,10 @@ What works today:
 - **Wake-on-LAN** — by host name/IP or explicit MAC.
 - **AHA-HTTP** — DECT device listing and switch on/off (`symfritz home`).
 - **Credentials** — `auth login/test/store`, resolved from env → symvault → macOS Keychain → config.
+- **Traffic** — real-time WAN traffic monitoring (downstream/upstream by category).
+- **DSL** — line statistics: noise margin, attenuation, max bit rate.
+- **Phone** — call list with type filtering, dial, and hangup.
+- **Log** — system event log with category filtering (sys/net/fon/wlan/usb).
 - **`status`**, **`reboot`**, an **MCP server** (stdio) exposing the above, config + env loading.
 - `--json` on the query/diagnose commands for scripting.
 
@@ -113,6 +117,8 @@ symfritz mesh                              # mesh nodes + links
 symfritz wlan radios                       # SSID / band / channel / state
 symfritz wlan clients                      # associated devices + signal/speed
 symfritz wlan guest status|on|off
+symfritz traffic                           # real-time WAN traffic monitoring
+symfritz dsl                               # DSL line statistics (noise, attenuation, rate)
 
 # Wake the Mac Mini
 symfritz wol macmini                       # resolves MAC via host table
@@ -122,10 +128,16 @@ symfritz wol --mac f0:18:98:f3:64:b5
 symfritz home list
 symfritz home switch <AIN> on
 
+# Phone (if FRITZ!Box has telephony)
+symfritz calls                             # call list (--type missed/incoming/outgoing/rejected/all)
+symfritz dial <number>                     # dial a number via the FRITZ!Box
+symfritz hangup                            # hang up active call
+
 # Power-user / introspection
 symfritz services                          # discover all TR-064 services (tr64desc.xml)
 symfritz call deviceinfo GetInfo           # raw TR-064 action
 symfritz call WLANConfiguration:2 GetInfo  # any discovered service by name
+symfritz log                               # system event log (--filter sys/net/fon/wlan/usb)
 
 symfritz reboot --yes
 symfritz mcp                               # MCP stdio server for AI agents
