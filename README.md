@@ -36,6 +36,7 @@ What works today:
 - **Session auth** — modern PBKDF2 (FRITZ!OS 7.24+) *and* legacy MD5 challenge-response, with automatic re-login on session expiry.
 - **TR-064** — generic action calls with HTTP digest auth, plus `tr64desc.xml` service discovery (`symfritz services`).
 - **Hosts** — first-class host table: `list`, `active`, `get` by name/MAC/IP.
+- **Detect** — find FRITZ!Box on local network when `fritz.box` resolves to a public IP.
 - **Diagnose** — end-to-end host reachability (box entry → active → LAN/WLAN → DNS → TCP ports).
 - **Mesh** — topology of nodes, repeaters, and links.
 - **WLAN** — radios, associated clients, guest-network status/toggle.
@@ -99,6 +100,8 @@ symfritz auth test                              # show source + verify web login
 
 ```bash
 symfritz status                            # model, firmware, connection, external IP
+symfritz detect                            # find FRITZ!Box on local network
+symfritz detect --json                     # machine-readable output
 
 # Hosts
 symfritz hosts list                        # all known devices
