@@ -7,8 +7,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"golang.org/x/crypto/ssh"
 )
 
 // CheckStatus is the outcome of one diagnosis step.
@@ -172,7 +170,9 @@ func dialTCP(ctx context.Context, ip string, port int, timeout time.Duration) bo
 	return true
 }
 
-// dialSSH reports whether an SSH handshake succeeds at ip:port.
+// dialSSH checks whether ip:port is running an SSH server by reading the
+// protocol banner. It returns true if TCP connects and the server sends a
+// line starting with "SSH-".
 func dialSSH(ctx context.Context, ip string, port int, timeout time.Duration) bool {
 	dctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -184,36 +184,14 @@ func dialSSH(ctx context.Context, ip string, port int, timeout time.Duration) bo
 	}
 	defer conn.Close()
 
-	// Diagnostic-only SSH config: we are checking reachability, not
-	// authenticating. Dummy credentials are used and the host key callback
-	// is intentionally insecure because we never exchange real data — the
-	// only goal is to verify the SSH handshake succeeds or fails with an
-	// auth error (which indicates the port is open and running SSH).
-	config := &ssh.ClientConfig{
-		User:            "dummy",
-		Auth:            []ssh.AuthMethod{ssh.Password("dummy")},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         timeout,
-	}
+	_ = conn.SetReadDeadline(time.Now().Add(timeout))
 
-	done := make(chan error, 1)
-	go func() {
-		_, _, _, err := ssh.NewClientConn(conn, net.JoinHostPort(ip, fmt.Sprintf("%d", port)), config)
-		done <- err
-	}()
-
-	select {
-	case <-dctx.Done():
-		return false
-	case err := <-done:
-		if err == nil {
-			return true // Logged in? Ok then.
-		}
-		if strings.Contains(err.Error(), "unable to authenticate") {
-			return true
-		}
+	buf := make([]byte, 255)
+	n, err := conn.Read(buf)
+	if err != nil || n == 0 {
 		return false
 	}
+	return strings.HasPrefix(string(buf[:n]), "SSH-")
 }
 
 func joinShort(ips []string) string {
