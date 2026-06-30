@@ -113,7 +113,6 @@ func TestDialSSH_Timeout(t *testing.T) {
 			if err != nil {
 				return
 			}
-			// Accept but do nothing — let it hang.
 			defer conn.Close()
 		}
 	}()
@@ -121,7 +120,51 @@ func TestDialSSH_Timeout(t *testing.T) {
 
 	got := dialSSH(context.Background(), "127.0.0.1", port, 200*time.Millisecond)
 	if got {
-		t.Error("dialSSH should timeout on a non-SSH listener")
+		t.Error("dialSSH should return false on a non-SSH listener")
+	}
+}
+
+func TestDialSSH_BannerDetected(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = conn.Write([]byte("SSH-2.0-OpenSSH_9.8\r\n"))
+	}()
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	got := dialSSH(context.Background(), "127.0.0.1", port, time.Second)
+	if !got {
+		t.Error("dialSSH should return true when SSH banner is detected")
+	}
+}
+
+func TestDialSSH_NoBanner(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = conn.Write([]byte("HTTP/1.1 200 OK\r\n"))
+	}()
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	got := dialSSH(context.Background(), "127.0.0.1", port, time.Second)
+	if got {
+		t.Error("dialSSH should return false when server sends non-SSH banner")
 	}
 }
 
