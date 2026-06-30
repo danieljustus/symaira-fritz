@@ -36,14 +36,29 @@ func newStatusCmd() *cobra.Command {
 			}
 
 			if asJSON {
+				type jsonError struct {
+					Service string `json:"service"`
+					Action  string `json:"action"`
+					Message string `json:"message"`
+				}
 				type JSONStatus struct {
-					ModelName       string `json:"model_name"`
-					FirmwareVersion string `json:"firmware_version"`
-					ExternalIP      string `json:"external_ip"`
-					ConnectionState string `json:"connection_state"`
-					Uptime          string `json:"uptime"`
-					UpdateAvailable string `json:"update_available,omitempty"`
-					CPUTemperatures []int  `json:"cpu_temperatures,omitempty"`
+					ModelName       string       `json:"model_name"`
+					FirmwareVersion string       `json:"firmware_version"`
+					ExternalIP      string       `json:"external_ip"`
+					ConnectionState string       `json:"connection_state"`
+					Uptime          string       `json:"uptime"`
+					UpdateAvailable string       `json:"update_available,omitempty"`
+					CPUTemperatures []int        `json:"cpu_temperatures,omitempty"`
+					Partial         bool         `json:"partial"`
+					Errors          []jsonError  `json:"errors,omitempty"`
+				}
+				var jsonErrs []jsonError
+				for _, e := range st.Errors {
+					jsonErrs = append(jsonErrs, jsonError{
+						Service: e.Service,
+						Action:  e.Action,
+						Message: e.Message,
+					})
 				}
 				return printJSON(JSONStatus{
 					ModelName:       st.ModelName,
@@ -53,6 +68,8 @@ func newStatusCmd() *cobra.Command {
 					Uptime:          st.Uptime,
 					UpdateAvailable: st.UpdateAvailable,
 					CPUTemperatures: cpuTemps,
+					Partial:         st.Partial,
+					Errors:          jsonErrs,
 				})
 			}
 
@@ -77,6 +94,14 @@ func newStatusCmd() *cobra.Command {
 					fmt.Println("CPU Temp:    —")
 				}
 			}
+
+			if st.Partial {
+				fmt.Fprintf(cmd.OutOrStderr(), "\nWarning: %d sub-queries failed:\n", len(st.Errors))
+				for _, e := range st.Errors {
+					fmt.Fprintf(cmd.OutOrStderr(), "  • %s/%s: %s\n", e.Service, e.Action, e.Message)
+				}
+			}
+
 			return nil
 		},
 	}

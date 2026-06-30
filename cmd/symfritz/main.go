@@ -69,6 +69,7 @@ the SYMFRITZ_PASSWORD environment variable.`,
 		newDialCmd(),
 		newHangupCmd(),
 		newLogCmd(),
+		newDetectCmd(),
 	)
 	return root
 }

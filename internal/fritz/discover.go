@@ -42,6 +42,10 @@ func (c *Client) Discover(ctx context.Context) ([]Service, error) {
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
+		// If the host resolves to a public IP, suggest running detect.
+		if hint := publicHostHint(ctx, c.Host); hint != "" {
+			return nil, fmt.Errorf("discover: contacting %s: %w\n\n%s", c.Host, err, hint)
+		}
 		return nil, fmt.Errorf("discover: contacting %s: %w", c.Host, err)
 	}
 	defer resp.Body.Close()

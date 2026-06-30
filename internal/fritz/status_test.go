@@ -34,6 +34,12 @@ func TestStatus_ReturnsAllFields(t *testing.T) {
 				}))
 				return
 			}
+			if strings.Contains(string(body), "UserInterface") || strings.Contains(sa, "UserInterface") {
+				_, _ = io.WriteString(w, soapEnvelope("GetInfo", map[string]string{
+					"NewUpgradeAvailable": "0",
+				}))
+				return
+			}
 		}
 		if strings.Contains(sa, "GetExternalIPAddress") {
 			_, _ = io.WriteString(w, soapEnvelope("GetExternalIPAddress", map[string]string{
@@ -66,6 +72,12 @@ func TestStatus_ReturnsAllFields(t *testing.T) {
 	if s.Uptime != "3600" {
 		t.Errorf("Uptime = %q", s.Uptime)
 	}
+	if s.Partial {
+		t.Error("Partial = true, want false")
+	}
+	if len(s.Errors) != 0 {
+		t.Errorf("Errors has %d entries, want 0", len(s.Errors))
+	}
 }
 
 func TestStatus_PartialFailure(t *testing.T) {
@@ -84,6 +96,12 @@ func TestStatus_PartialFailure(t *testing.T) {
 					"NewModelName":       "FRITZ!Box 7530",
 					"NewSoftwareVersion": "7.39",
 					"NewUpTime":          "100",
+				}))
+				return
+			}
+			if strings.Contains(string(body), "UserInterface") || strings.Contains(sa, "UserInterface") {
+				_, _ = io.WriteString(w, soapEnvelope("GetInfo", map[string]string{
+					"NewUpgradeAvailable": "0",
 				}))
 				return
 			}
@@ -114,5 +132,39 @@ func TestStatus_PartialFailure(t *testing.T) {
 	}
 	if s.ConnectionState != "" {
 		t.Errorf("ConnectionState = %q, want empty", s.ConnectionState)
+	}
+	if !s.Partial {
+		t.Error("Partial = false, want true")
+	}
+	if len(s.Errors) == 0 {
+		t.Error("Errors is empty, want at least one entry")
+	}
+
+	failedActions := map[string]bool{}
+	for _, e := range s.Errors {
+		failedActions[e.Action] = true
+	}
+	if !failedActions["GetInfo"] {
+		t.Errorf("expected GetInfo in errors, got %v", s.Errors)
+	}
+}
+
+func TestStatus_AllFail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	c := New("fritz.box")
+	c.tr064BaseURL = srv.URL
+
+	s, err := c.Status(context.Background())
+	if err == nil {
+		t.Fatal("expected error when all sub-queries fail")
+	}
+	if !s.Partial {
+		t.Error("Partial = false, want true")
+	}
+	if len(s.Errors) != 4 {
+		t.Errorf("Errors has %d entries, want 4", len(s.Errors))
 	}
 }

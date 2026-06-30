@@ -19,28 +19,74 @@ type Status struct {
 	ConnectionState string // e.g. "Connected"
 	Uptime          string // seconds, as reported by the box
 	UpdateAvailable string // firmware version if update available, otherwise empty
+	Partial         bool
+	Errors          []StatusError
+}
+
+// StatusError records a single sub-query failure inside Status.
+type StatusError struct {
+	Service string
+	Action  string
+	Message string
+}
+
+func (e StatusError) Error() string {
+	return fmt.Sprintf("%s/%s: %s", e.Service, e.Action, e.Message)
+}
+
+func serviceName(s Service) string {
+	parts := strings.Split(s.Type, ":")
+	if len(parts) >= 5 {
+		return parts[3]
+	}
+	return s.Type
 }
 
 // Status fetches an overview of the box. Individual sub-queries that fail are
-// left blank rather than failing the whole call, so a partial result is still
-// useful on locked-down boxes.
+// recorded in Errors and Partial is set, so callers can distinguish "all data
+// missing" (auth failure, unreachable box) from "some data missing" (locked
+// down box, unsupported model).
 func (c *Client) Status(ctx context.Context) (*Status, error) {
 	s := &Status{}
+	var errs []StatusError
+
+	addErr := func(service, action string, err error) {
+		errs = append(errs, StatusError{
+			Service: service,
+			Action:  action,
+			Message: err.Error(),
+		})
+	}
 
 	if info, err := c.Call(ctx, ServiceDeviceInfo, "GetInfo", nil); err == nil {
 		s.ModelName = info["NewModelName"]
 		s.FirmwareVersion = info["NewSoftwareVersion"]
 		s.Uptime = info["NewUpTime"]
+	} else {
+		addErr(serviceName(ServiceDeviceInfo), "GetInfo", err)
 	}
 
 	if conn, err := c.Call(ctx, ServiceWANIPConnection, "GetInfo", nil); err == nil {
 		s.ConnectionState = conn["NewConnectionStatus"]
+	} else {
+		addErr(serviceName(ServiceWANIPConnection), "GetInfo", err)
 	}
 	if ip, err := c.Call(ctx, ServiceWANIPConnection, "GetExternalIPAddress", nil); err == nil {
 		s.ExternalIP = ip["NewExternalIPAddress"]
+	} else {
+		addErr(serviceName(ServiceWANIPConnection), "GetExternalIPAddress", err)
 	}
 	if upd, err := c.UpdateAvailable(ctx); err == nil {
 		s.UpdateAvailable = upd
+	} else {
+		addErr(serviceName(ServiceUserInterface), "GetInfo", err)
+	}
+
+	s.Errors = errs
+	s.Partial = len(errs) > 0
+
+	if len(errs) == 4 {
+		return s, fmt.Errorf("all status sub-queries failed; check connection and credentials")
 	}
 
 	return s, nil
