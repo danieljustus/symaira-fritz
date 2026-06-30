@@ -67,9 +67,9 @@ func TestProbeTR064(t *testing.T) {
 	defer notFoundServer.Close()
 
 	tests := []struct {
-		name    string
-		server  *httptest.Server
-		want    bool
+		name   string
+		server *httptest.Server
+		want   bool
 	}{
 		{"valid TR-064", validServer, true},
 		{"invalid response", invalidServer, false},

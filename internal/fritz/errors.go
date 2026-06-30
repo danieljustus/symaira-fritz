@@ -10,11 +10,11 @@ import (
 type ErrorKind string
 
 const (
-	ErrUnauthorized      ErrorKind = "unauthorized"
+	ErrUnauthorized       ErrorKind = "unauthorized"
 	ErrServiceUnavailable ErrorKind = "service_unavailable"
-	ErrUnsupportedAction ErrorKind = "unsupported_action"
-	ErrTimeout           ErrorKind = "timeout"
-	ErrTransport         ErrorKind = "transport_error"
+	ErrUnsupportedAction  ErrorKind = "unsupported_action"
+	ErrTimeout            ErrorKind = "timeout"
+	ErrTransport          ErrorKind = "transport_error"
 )
 
 // FritzError is a structured error from the FRITZ!Box TR-064 or AHA-HTTP layer.

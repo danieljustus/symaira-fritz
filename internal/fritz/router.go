@@ -166,9 +166,9 @@ func DiscoverBox(ctx context.Context, httpClient *http.Client, host string) (str
 
 // ResolveHostInfo contains the result of resolving a hostname.
 type ResolveHostInfo struct {
-	IPs      []string // resolved IP addresses
-	IsPublic bool     // true if all IPs are public (non-private)
-	IsGateway bool    // true if any IP matches the default gateway
+	IPs       []string // resolved IP addresses
+	IsPublic  bool     // true if all IPs are public (non-private)
+	IsGateway bool     // true if any IP matches the default gateway
 }
 
 // ResolveHost resolves a hostname and classifies the result.
