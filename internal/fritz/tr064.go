@@ -56,22 +56,39 @@ func (c *Client) Call(ctx context.Context, svc Service, action string, args map[
 	// First attempt — expect a 401 carrying the digest challenge.
 	resp, raw, err := c.doSOAP(ctx, url, svc.ControlURL, soapAction, body, "")
 	if err != nil {
-		return nil, err
+		return nil, classifyError(err, svc, action)
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
 		dc, ok := parseDigestChallenge(resp.Header.Get("WWW-Authenticate"))
 		if !ok {
-			return nil, fmt.Errorf("tr064: 401 without a parseable digest challenge")
+			return nil, &FritzError{Kind: ErrUnauthorized, Service: shortService(svc.Type), Action: action, Raw: "401 without a parseable digest challenge", HTTPStatus: 401}
 		}
 		auth := digestAuthHeader(dc, c.User, c.Password, http.MethodPost, svc.ControlURL)
 		resp, raw, err = c.doSOAP(ctx, url, svc.ControlURL, soapAction, body, auth)
 		if err != nil {
-			return nil, err
+			return nil, classifyError(err, svc, action)
 		}
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("tr064: %s %s returned HTTP %d: %s", svc.Type, action, resp.StatusCode, soapFaultString(raw))
+		fault := soapFaultString(raw)
+		fe := &FritzError{
+			Service:    shortService(svc.Type),
+			Action:     action,
+			Raw:        fault,
+			HTTPStatus: resp.StatusCode,
+		}
+		switch {
+		case resp.StatusCode == http.StatusUnauthorized:
+			fe.Kind = ErrUnauthorized
+		case resp.StatusCode >= 500 && strings.Contains(fault, "Invalid Action"):
+			fe.Kind = ErrUnsupportedAction
+		case resp.StatusCode >= 500:
+			fe.Kind = ErrServiceUnavailable
+		default:
+			fe.Kind = ErrServiceUnavailable
+		}
+		return nil, fe
 	}
 	return parseSOAPResponse(raw, action)
 }

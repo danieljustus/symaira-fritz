@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -23,9 +24,7 @@ var version = "0.1.0-dev"
 func main() {
 	slog.SetDefault(logkit.NewFromEnv("symfritz"))
 	if err := newRootCmd().Execute(); err != nil {
-		// Root sets SilenceErrors so cobra doesn't print; do it here once, with
-		// the resolved exit code from corekit.
-		fmt.Fprintln(os.Stderr, "Error:", err)
+		fmt.Fprintln(os.Stderr, "Error:", exitcodes.FormatCLIError(err))
 		os.Exit(int(exitcodes.ExitCodeFromError(err)))
 	}
 }
@@ -205,4 +204,29 @@ func dataRate(link fritz.MeshLink) string {
 		return ""
 	}
 	return fmt.Sprintf("(%d/%d Mbit/s)", link.CurDataRateRx, link.CurDataRateTx)
+}
+
+// wrapFritzError converts a fritz.FritzError into an exitcodes.CLIError
+// with the appropriate exit code, kind, and actionable hint.
+func wrapFritzError(err error, msg string) error {
+	var fe *fritz.FritzError
+	if errors.As(err, &fe) {
+		code := exitcodes.ExitGeneric
+		kind := exitcodes.KindUnavailable
+		switch fe.Kind {
+		case fritz.ErrUnauthorized:
+			code = exitcodes.ExitNoAuth
+			kind = exitcodes.KindAuth
+		case fritz.ErrUnsupportedAction:
+			kind = exitcodes.KindNotFound
+		case fritz.ErrTimeout:
+			kind = exitcodes.KindUnavailable
+		case fritz.ErrTransport:
+			kind = exitcodes.KindUnavailable
+		}
+		cliErr := exitcodes.Wrap(err, code, kind, msg)
+		cliErr.Hint = fe.Hint()
+		return cliErr
+	}
+	return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, msg)
 }

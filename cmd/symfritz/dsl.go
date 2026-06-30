@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
-	"github.com/danieljustus/symaira-corekit/exitcodes"
 )
 
 func newDSLCmd() *cobra.Command {
@@ -21,7 +19,7 @@ func newDSLCmd() *cobra.Command {
 			}
 			stats, err := c.DSLLineStats(context.Background())
 			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "dsl stats failed")
+				return wrapFritzError(err, "dsl stats failed")
 			}
 			if asJSON {
 				return printJSON(stats)

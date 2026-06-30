@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
-	"github.com/danieljustus/symaira-corekit/exitcodes"
 )
 
 func newTrafficCmd() *cobra.Command {
@@ -22,7 +20,7 @@ func newTrafficCmd() *cobra.Command {
 			}
 			data, err := c.OnlineMonitor(context.Background())
 			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "traffic failed")
+				return wrapFritzError(err, "traffic failed")
 			}
 			if asJSON {
 				return printJSON(data)
