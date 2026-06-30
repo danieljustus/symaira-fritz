@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
-	"github.com/danieljustus/symaira-corekit/exitcodes"
 )
 
 func newWLANCmd() *cobra.Command {
@@ -26,7 +24,7 @@ func newWLANCmd() *cobra.Command {
 			}
 			radios, err := c.Radios(context.Background(), 3)
 			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "wlan failed")
+				return wrapFritzError(err, "wlan radios failed")
 			}
 			if asJSON {
 				return printJSON(radios)
@@ -49,7 +47,7 @@ func newWLANCmd() *cobra.Command {
 			}
 			clients, err := c.AllWLANClients(context.Background(), 3)
 			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "wlan clients failed")
+				return wrapFritzError(err, "wlan clients failed")
 			}
 			if asJSON {
 				return printJSON(clients)
@@ -73,7 +71,7 @@ func newWLANCmd() *cobra.Command {
 			}
 			r, err := c.GuestWLANStatus(context.Background(), guestIdx)
 			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "guest status failed")
+				return wrapFritzError(err, "guest status failed")
 			}
 			if asJSON {
 				return printJSON(r)
@@ -104,7 +102,7 @@ func setGuest(idx int, enable bool) error {
 		return err
 	}
 	if err := c.SetGuestWLAN(context.Background(), idx, enable); err != nil {
-		return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "guest toggle failed")
+		return wrapFritzError(err, "guest toggle failed")
 	}
 	state := "disabled"
 	if enable {
