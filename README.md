@@ -171,6 +171,7 @@ box advertises.
 
 ```
 cmd/symfritz/        Cobra CLI
+  detect.go            FRITZ!Box network discovery
 internal/config/     TOML + env config (corekit configkit)
 internal/fritz/      Core library:
   client.go            Client, options, endpoints
@@ -180,6 +181,9 @@ internal/fritz/      Core library:
   discover.go          tr64desc.xml service discovery
   hosts.go             host table, lookup, Wake-on-LAN
   diagnose.go          end-to-end reachability checks
+  errors.go            Error classification with actionable messages
+  router.go            Router utilities
+  router_gateway.go    Gateway detection
   wlan.go              radios, clients, guest network
   mesh.go              mesh topology
   aha.go               AHA-HTTP smart-home
