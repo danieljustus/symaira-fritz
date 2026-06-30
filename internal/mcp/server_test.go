@@ -3,6 +3,7 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -232,6 +233,24 @@ func TestMCPServerTools(t *testing.T) {
 			}
 			if strings.Contains(res, `"error"`) {
 				t.Errorf("response contains error: %s", res)
+			}
+
+			// Validate content[0].text is a string (MCP spec compliance)
+			var rpcResp struct {
+				Result struct {
+					Content []struct {
+						Type string `json:"type"`
+						Text any    `json:"text"`
+					} `json:"content"`
+				} `json:"result"`
+			}
+			if err := json.Unmarshal([]byte(res), &rpcResp); err == nil {
+				if len(rpcResp.Result.Content) > 0 {
+					text := rpcResp.Result.Content[0].Text
+					if _, ok := text.(string); !ok {
+						t.Errorf("content[0].text is %T, want string; raw: %v", text, text)
+					}
+				}
 			}
 		})
 	}

@@ -17,6 +17,17 @@ var ServerVersion = "dev"
 
 const emptyObjectSchema = `{"type":"object","properties":{}}`
 
+// toJSON marshals v to an indented JSON string suitable for MCP content.text.
+// The MCP spec requires content[].text to be a string; this ensures structured
+// results are serialized as JSON strings rather than raw objects.
+func toJSON(v any) (string, error) {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
 // StartServer runs the MCP stdio server backed by the given client.
 func StartServer(ctx context.Context, c *fritz.Client) error {
 	s := buildServer(c)
@@ -38,7 +49,11 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 		Description: "FRITZ!Box overview: model, firmware, connection state, external IP.",
 		InputSchema: json.RawMessage(emptyObjectSchema),
 		Handler: func(ctx context.Context, _ json.RawMessage) (any, error) {
-			return c.Status(ctx)
+			st, err := c.Status(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return toJSON(st)
 		},
 	})
 
@@ -52,9 +67,17 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 			}
 			_ = json.Unmarshal(in, &args)
 			if args.ActiveOnly {
-				return c.ActiveHosts(ctx)
+				hosts, err := c.ActiveHosts(ctx)
+				if err != nil {
+					return nil, err
+				}
+				return toJSON(hosts)
 			}
-			return c.Hosts(ctx)
+			hosts, err := c.Hosts(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return toJSON(hosts)
 		},
 	})
 
@@ -67,16 +90,24 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 			if err := json.Unmarshal(in, &args); err != nil {
 				return nil, err
 			}
+			var (
+				host *fritz.Host
+				err  error
+			)
 			switch {
 			case args.MAC != "":
-				return c.HostByMAC(ctx, args.MAC)
+				host, err = c.HostByMAC(ctx, args.MAC)
 			case args.IP != "":
-				return c.HostByIP(ctx, args.IP)
+				host, err = c.HostByIP(ctx, args.IP)
 			case args.Name != "":
-				return c.ResolveHost(ctx, args.Name)
+				host, err = c.ResolveHost(ctx, args.Name)
 			default:
 				return nil, fmt.Errorf("provide one of name, mac, or ip")
 			}
+			if err != nil {
+				return nil, err
+			}
+			return toJSON(host)
 		},
 	})
 
@@ -99,7 +130,7 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 			for _, p := range args.Ports {
 				opts.Ports = append(opts.Ports, fritz.PortProbe{Port: p, Label: "custom"})
 			}
-			return c.Diagnose(ctx, args.Host, opts), nil
+			return toJSON(c.Diagnose(ctx, args.Host, opts))
 		},
 	})
 
@@ -108,7 +139,11 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 		Description: "Mesh topology: nodes (box, repeaters, clients) and the links between them.",
 		InputSchema: json.RawMessage(emptyObjectSchema),
 		Handler: func(ctx context.Context, _ json.RawMessage) (any, error) {
-			return c.MeshTopology(ctx)
+			topo, err := c.MeshTopology(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return toJSON(topo)
 		},
 	})
 
@@ -117,7 +152,11 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 		Description: "List devices associated with the WLAN radios (MAC, IP, signal, speed).",
 		InputSchema: json.RawMessage(emptyObjectSchema),
 		Handler: func(ctx context.Context, _ json.RawMessage) (any, error) {
-			return c.AllWLANClients(ctx, 3)
+			clients, err := c.AllWLANClients(ctx, 3)
+			if err != nil {
+				return nil, err
+			}
+			return toJSON(clients)
 		},
 	})
 
@@ -144,7 +183,7 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 			if err := c.WakeOnLAN(ctx, mac); err != nil {
 				return nil, err
 			}
-			return map[string]string{"woke": mac}, nil
+			return toJSON(map[string]string{"woke": mac})
 		},
 	})
 
@@ -153,7 +192,11 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 		Description: "List DECT smart-home actors (switches, thermostats) with AIN, name, and state.",
 		InputSchema: json.RawMessage(emptyObjectSchema),
 		Handler: func(ctx context.Context, _ json.RawMessage) (any, error) {
-			return c.Devices(ctx)
+			devices, err := c.Devices(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return toJSON(devices)
 		},
 	})
 
@@ -181,7 +224,7 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 			if err != nil {
 				return nil, err
 			}
-			return map[string]any{"ain": args.AIN, "on": args.On}, nil
+			return toJSON(map[string]any{"ain": args.AIN, "on": args.On})
 		},
 	})
 
