@@ -70,6 +70,61 @@ func TestDialTCP_OpenAndClosed(t *testing.T) {
 	}
 }
 
+func TestJoinShort(t *testing.T) {
+	tests := []struct {
+		name string
+		ips  []string
+		want string
+	}{
+		{"empty", nil, ""},
+		{"one", []string{"10.0.0.1"}, "10.0.0.1"},
+		{"two sorted", []string{"10.0.0.2", "10.0.0.1"}, "10.0.0.1, 10.0.0.2"},
+		{"three", []string{"10.0.0.3", "10.0.0.1", "10.0.0.2"}, "10.0.0.1, 10.0.0.2, 10.0.0.3"},
+		{"more than three truncated", []string{"10.0.0.4", "10.0.0.1", "10.0.0.2", "10.0.0.3"}, "10.0.0.1, 10.0.0.2, 10.0.0.3"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := joinShort(tt.ips)
+			if got != tt.want {
+				t.Errorf("joinShort(%v) = %q, want %q", tt.ips, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDialSSH_ConnRefused(t *testing.T) {
+	// Port 1 is not SSH — dialSSH should return false.
+	got := dialSSH(context.Background(), "127.0.0.1", 1, 500*time.Millisecond)
+	if got {
+		t.Error("dialSSH on closed port should return false")
+	}
+}
+
+func TestDialSSH_Timeout(t *testing.T) {
+	// Use a listener that accepts but never responds, forcing timeout.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			// Accept but do nothing — let it hang.
+			defer conn.Close()
+		}
+	}()
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	got := dialSSH(context.Background(), "127.0.0.1", port, 200*time.Millisecond)
+	if got {
+		t.Error("dialSSH should timeout on a non-SSH listener")
+	}
+}
+
 // itoa avoids importing strconv just for the test labels.
 func itoa(n int) string {
 	if n == 0 {
