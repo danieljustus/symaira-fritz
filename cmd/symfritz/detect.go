@@ -84,7 +84,7 @@ func newHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: 3 * time.Second,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // self-signed box cert; discovery-only
 		},
 	}
 }
