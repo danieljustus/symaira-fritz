@@ -1,7 +1,21 @@
 # symaira-fritz
 
+[![CI](https://github.com/danieljustus/symaira-fritz/actions/workflows/ci.yml/badge.svg)](https://github.com/danieljustus/symaira-fritz/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/danieljustus/symaira-fritz)](LICENSE)
+[![Go](https://img.shields.io/github/go-mod/go-version/danieljustus/symaira-fritz)](go.mod)
+[![Release](https://img.shields.io/github/v/release/danieljustus/symaira-fritz)](https://github.com/danieljustus/symaira-fritz/releases/latest)
+[![Demo](https://img.shields.io/badge/demo-terminal_output-2ea44f)](https://github.com/danieljustus/symaira-fritz#typical-mac-mini-check)
+
 A CLI to **administer, analyse, and control an AVM FRITZ!Box** — part of the
 Symaira ecosystem. Binary name: `symfritz`.
+
+## Why symfritz
+
+- **Single binary, no dependencies** — works on macOS, Linux, and Windows
+- **Speaks documented interfaces only** (TR-064, AHA-HTTP) — no reverse-engineering required
+- **End-to-end diagnosis in one command** — `symfritz diagnose <host>` checks box entry, activity, LAN/WLAN, DNS, and TCP ports
+- **Secure credential handling** — resolves from env, symvault, or macOS Keychain; never stores plaintext by default
+- **MCP server for AI agents** — exposes all capabilities as a stdio MCP server
 
 It speaks the FRITZ!Box's documented interfaces, no reverse-engineering required:
 
@@ -170,6 +184,31 @@ tools could embed it later.
   logs, guest-WLAN details) are only available via **web-UI `data.lua` scraping**,
   which is FRITZ!OS-version-dependent and may break on firmware updates. That
   layer is intentionally not built yet and will be clearly marked "best effort".
+
+## Development
+
+Build:
+
+```bash
+make build           # → ./symfritz
+go install github.com/danieljustus/symaira-fritz/cmd/symfritz@latest
+```
+
+Test:
+
+```bash
+make test
+go test ./...        # CGO_ENABLED=0
+```
+
+Lint:
+
+```bash
+make lint            # go fmt + go vet
+go vet ./...
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.
 
 ## License
 
