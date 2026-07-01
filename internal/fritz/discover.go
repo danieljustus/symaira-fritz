@@ -35,6 +35,9 @@ type scpdRoot struct {
 // Discover fetches and parses /tr64desc.xml, returning all advertised services
 // keyed by service type. The description document is unauthenticated.
 func (c *Client) Discover(ctx context.Context) ([]Service, error) {
+	if err := c.checkHostDNS(ctx); err != nil {
+		return nil, err
+	}
 	u := c.tr064Base() + "/tr64desc.xml"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
