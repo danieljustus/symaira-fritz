@@ -168,3 +168,38 @@ func TestStatus_AllFail(t *testing.T) {
 		t.Errorf("Errors has %d entries, want 4", len(s.Errors))
 	}
 }
+
+func TestStatus_PrioritizeAuthError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sa := r.Header.Get("SoapAction")
+		if strings.Contains(sa, "GetExternalIPAddress") {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	c := New("fritz.box")
+	c.tr064BaseURL = srv.URL
+
+	s, err := c.Status(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !IsUnauthorized(err) {
+		t.Errorf("expected unauthorized error as priority, got %v", err)
+	}
+	if len(s.Errors) != 4 {
+		t.Errorf("Errors has %d entries, want 4", len(s.Errors))
+	}
+
+	foundAuth := false
+	for _, e := range s.Errors {
+		if e.Kind == ErrUnauthorized {
+			foundAuth = true
+		}
+	}
+	if !foundAuth {
+		t.Error("expected to find ErrUnauthorized in StatusError Kind fields")
+	}
+}

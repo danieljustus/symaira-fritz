@@ -2,13 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
-
-	"github.com/danieljustus/symaira-corekit/exitcodes"
 )
 
 func newStatusCmd() *cobra.Command {
@@ -26,12 +25,18 @@ func newStatusCmd() *cobra.Command {
 			}
 			ctx := context.Background()
 			st, err := c.Status(ctx)
+
+			isEmpty := st.ModelName == "" && st.FirmwareVersion == "" && st.ExternalIP == "" && st.ConnectionState == "" && st.Uptime == ""
+
+			var finalErr error
 			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "status failed")
+				finalErr = err
+			} else if isEmpty {
+				finalErr = errors.New("all status sub-queries failed; check connection and credentials")
 			}
 
 			var cpuTemps []int
-			if showCPU {
+			if showCPU && finalErr == nil {
 				cpuTemps, _ = c.CPUTemperatures(ctx)
 			}
 
@@ -40,6 +45,8 @@ func newStatusCmd() *cobra.Command {
 					Service string `json:"service"`
 					Action  string `json:"action"`
 					Message string `json:"message"`
+					Kind    string `json:"kind,omitempty"`
+					Error   string `json:"error,omitempty"`
 				}
 				type JSONStatus struct {
 					ModelName       string      `json:"model_name"`
@@ -58,9 +65,11 @@ func newStatusCmd() *cobra.Command {
 						Service: e.Service,
 						Action:  e.Action,
 						Message: e.Message,
+						Kind:    string(e.Kind),
+						Error:   string(e.Kind),
 					})
 				}
-				return printJSON(JSONStatus{
+				printErr := printJSON(JSONStatus{
 					ModelName:       st.ModelName,
 					FirmwareVersion: st.FirmwareVersion,
 					ExternalIP:      st.ExternalIP,
@@ -71,6 +80,17 @@ func newStatusCmd() *cobra.Command {
 					Partial:         st.Partial,
 					Errors:          jsonErrs,
 				})
+				if printErr != nil {
+					return printErr
+				}
+				if finalErr != nil {
+					return wrapFritzError(finalErr, "status failed")
+				}
+				return nil
+			}
+
+			if finalErr != nil {
+				return wrapFritzError(finalErr, "status failed")
 			}
 
 			fmt.Printf("Model:       %s\n", orDash(st.ModelName))

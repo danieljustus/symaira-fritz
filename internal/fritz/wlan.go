@@ -54,6 +54,9 @@ func (c *Client) Radios(ctx context.Context, maxN int) ([]Radio, error) {
 	for n := 1; n <= maxN; n++ {
 		info, err := c.Call(ctx, wlanService(n), "GetInfo", nil)
 		if err != nil {
+			if n == 1 || IsUnauthorized(err) || IsTimeout(err) || IsTransport(err) {
+				return nil, err
+			}
 			break // no such radio on this box
 		}
 		radios = append(radios, Radio{
