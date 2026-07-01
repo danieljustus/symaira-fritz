@@ -42,7 +42,7 @@ func runDetect(cmd *cobra.Command, asJSON bool) error {
 	httpClient := newHTTPClient()
 
 	// Run discovery
-	ip, err := fritz.DiscoverBox(ctx, httpClient, box.Host)
+	ip, err := fritz.DiscoverBox(ctx, httpClient, box.Host, true)
 	if err != nil {
 		return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "detect failed")
 	}

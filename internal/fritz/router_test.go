@@ -96,7 +96,7 @@ func TestProbeTR064(t *testing.T) {
 
 			var portNum int
 			fmt.Sscanf(port, "%d", &portNum)
-			got := ProbeTR064(context.Background(), httpClient, host, portNum)
+			got := ProbeTR064(context.Background(), httpClient, host, portNum, true)
 			if got != tt.want {
 				t.Errorf("ProbeTR064() = %v, want %v", got, tt.want)
 			}
@@ -139,7 +139,7 @@ func TestDiscoverBox(t *testing.T) {
 	// Test with an empty host (should fall through to gateway/common IPs)
 	// This will fail because we can't actually probe the gateway in a test
 	// But we can verify the function doesn't panic
-	_, err = DiscoverBox(context.Background(), httpClient, "")
+	_, err = DiscoverBox(context.Background(), httpClient, "", true)
 	if err == nil {
 		// If it succeeds, it found something (unlikely in test env)
 		t.Log("DiscoverBox found a device (unexpected in test env)")

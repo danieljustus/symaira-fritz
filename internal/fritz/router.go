@@ -39,12 +39,12 @@ func IsPrivateIP(ip net.IP) bool {
 // ProbeTR064 checks whether ip:port hosts a TR-064 device description endpoint.
 // It performs a GET /tr64desc.xml and reports whether the response contains a
 // valid UPnP device description. This is used for FRITZ!Box discovery.
-func ProbeTR064(ctx context.Context, httpClient *http.Client, ip string, port int) bool {
+func ProbeTR064(ctx context.Context, httpClient *http.Client, ip string, port int, insecure bool) bool {
 	if httpClient == nil {
 		httpClient = &http.Client{
 			Timeout: 3 * time.Second,
 			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // self-signed box cert; discovery-only
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: insecure}, //nolint:gosec // caller controls TLS verification for discovery
 			},
 		}
 	}
@@ -75,11 +75,11 @@ func ProbeTR064(ctx context.Context, httpClient *http.Client, ip string, port in
 }
 
 // probeCandidate checks both port 49000 (HTTP) and 49443 (HTTPS) for TR-064.
-func probeCandidate(ctx context.Context, httpClient *http.Client, ip string) bool {
-	if ProbeTR064(ctx, httpClient, ip, 49000) {
+func probeCandidate(ctx context.Context, httpClient *http.Client, ip string, insecure bool) bool {
+	if ProbeTR064(ctx, httpClient, ip, 49000, insecure) {
 		return true
 	}
-	if ProbeTR064(ctx, httpClient, ip, 49443) {
+	if ProbeTR064(ctx, httpClient, ip, 49443, insecure) {
 		return true
 	}
 	return false
@@ -144,7 +144,7 @@ func publicHostHint(ctx context.Context, host string) string {
 // 3. Trying common FRITZ!Box default IPs
 //
 // It returns the first IP that responds to a TR-064 probe, or an error if none found.
-func DiscoverBox(ctx context.Context, httpClient *http.Client, host string) (string, error) {
+func DiscoverBox(ctx context.Context, httpClient *http.Client, host string, insecure bool) (string, error) {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 3 * time.Second}
 	}
@@ -155,7 +155,7 @@ func DiscoverBox(ctx context.Context, httpClient *http.Client, host string) (str
 		if err == nil {
 			for _, ipStr := range ips {
 				ip := net.ParseIP(ipStr)
-				if ip != nil && IsPrivateIP(ip) && probeCandidate(ctx, httpClient, ipStr) {
+				if ip != nil && IsPrivateIP(ip) && probeCandidate(ctx, httpClient, ipStr, insecure) {
 					return ipStr, nil
 				}
 			}
@@ -168,7 +168,7 @@ func DiscoverBox(ctx context.Context, httpClient *http.Client, host string) (str
 	gw, err := DefaultGateway()
 	if err == nil && gw != nil {
 		gwStr := gw.String()
-		if probeCandidate(ctx, httpClient, gwStr) {
+		if probeCandidate(ctx, httpClient, gwStr, insecure) {
 			return gwStr, nil
 		}
 	}
@@ -185,7 +185,7 @@ func DiscoverBox(ctx context.Context, httpClient *http.Client, host string) (str
 		if gw != nil && gw.String() == ip {
 			continue
 		}
-		if probeCandidate(ctx, httpClient, ip) {
+		if probeCandidate(ctx, httpClient, ip, insecure) {
 			return ip, nil
 		}
 	}
@@ -293,14 +293,14 @@ func (c *Client) checkHostDNS(ctx context.Context) error {
 		}
 		if transport == nil {
 			transport = &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: c.InsecureTLS}, //nolint:gosec // self-signed box cert; honour user setting
 			}
 		}
 		discHTTPClient := &http.Client{
 			Timeout:   1 * time.Second,
 			Transport: transport,
 		}
-		detectedIP, detectErr := DiscoverBox(ctx, discHTTPClient, host)
+		detectedIP, detectErr := DiscoverBox(ctx, discHTTPClient, host, c.InsecureTLS)
 		if detectErr == nil && detectedIP != "" {
 			return fmt.Errorf("host %q resolves to a public IP (%s). Local FRITZ!Box detected at %s. Try setting SYMFRITZ_HOST=%s", host, strings.Join(ips, ", "), detectedIP, detectedIP)
 		}
