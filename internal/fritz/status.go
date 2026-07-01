@@ -3,6 +3,7 @@ package fritz
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -25,9 +26,11 @@ type Status struct {
 
 // StatusError records a single sub-query failure inside Status.
 type StatusError struct {
-	Service string
-	Action  string
-	Message string
+	Service string    `json:"service"`
+	Action  string    `json:"action"`
+	Message string    `json:"message"`
+	Kind    ErrorKind `json:"kind,omitempty"`
+	Err     error     `json:"-"`
 }
 
 func (e StatusError) Error() string {
@@ -51,10 +54,17 @@ func (c *Client) Status(ctx context.Context) (*Status, error) {
 	var errs []StatusError
 
 	addErr := func(service, action string, err error) {
+		var kind ErrorKind
+		var fe *FritzError
+		if errors.As(err, &fe) {
+			kind = fe.Kind
+		}
 		errs = append(errs, StatusError{
 			Service: service,
 			Action:  action,
 			Message: err.Error(),
+			Kind:    kind,
+			Err:     err,
 		})
 	}
 
@@ -86,7 +96,20 @@ func (c *Client) Status(ctx context.Context) (*Status, error) {
 	s.Partial = len(errs) > 0
 
 	if len(errs) == 4 {
-		return s, fmt.Errorf("all status sub-queries failed; check connection and credentials")
+		var prioErr error
+		for _, e := range errs {
+			if IsUnauthorized(e.Err) {
+				prioErr = e.Err
+				break
+			}
+		}
+		if prioErr == nil && len(errs) > 0 {
+			prioErr = errs[0].Err
+		}
+		if prioErr == nil {
+			prioErr = fmt.Errorf("all status sub-queries failed; check connection and credentials")
+		}
+		return s, prioErr
 	}
 
 	return s, nil

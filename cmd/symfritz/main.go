@@ -23,8 +23,14 @@ var version = "0.2.0"
 
 func main() {
 	slog.SetDefault(logkit.NewFromEnv("symfritz"))
-	if err := newRootCmd().Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "Error:", exitcodes.FormatCLIError(err))
+	cmd, err := newRootCmd().ExecuteC()
+	if err != nil {
+		asJSON, _ := cmd.Flags().GetBool("json")
+		if asJSON && cmd.Name() != "status" {
+			printJSONError(err)
+		} else {
+			fmt.Fprintln(os.Stderr, "Error:", exitcodes.FormatCLIError(err))
+		}
 		os.Exit(int(exitcodes.ExitCodeFromError(err)))
 	}
 }
@@ -107,7 +113,7 @@ func secretOptions(box config.Box) secret.Options {
 
 // newClient builds a fritz.Client, resolving the password via the backend chain
 // (env → symvault → keychain → plaintext).
-func newClient() (*fritz.Client, *config.Config, error) {
+var newClient = func() (*fritz.Client, *config.Config, error) {
 	box, cfg := boxFromEnv()
 	res, err := secret.Resolve(context.Background(), secretOptions(box))
 	if err != nil {
@@ -229,4 +235,39 @@ func wrapFritzError(err error, msg string) error {
 		return cliErr
 	}
 	return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, msg)
+}
+
+func printJSONError(err error) {
+	type errDetails struct {
+		Kind    string `json:"kind"`
+		Service string `json:"service,omitempty"`
+		Action  string `json:"action,omitempty"`
+		Raw     string `json:"raw,omitempty"`
+		Message string `json:"message,omitempty"`
+	}
+	type jsonErr struct {
+		Error errDetails `json:"error"`
+	}
+
+	var fe *fritz.FritzError
+	if errors.As(err, &fe) {
+		_ = printJSON(jsonErr{
+			Error: errDetails{
+				Kind:    string(fe.Kind),
+				Service: fe.Service,
+				Action:  fe.Action,
+				Raw:     fe.Raw,
+				Message: err.Error(),
+			},
+		})
+		return
+	}
+
+	// Fallback for non-FritzError
+	_ = printJSON(jsonErr{
+		Error: errDetails{
+			Kind:    "unavailable",
+			Message: err.Error(),
+		},
+	})
 }
