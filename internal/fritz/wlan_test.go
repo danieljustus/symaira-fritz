@@ -318,3 +318,39 @@ func TestSetGuestWLAN_Disable(t *testing.T) {
 		t.Errorf("sent NewEnable = %q, want 0", gotValue)
 	}
 }
+
+func TestRadios_ErrorPropagation(t *testing.T) {
+	t.Run("auth error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		}))
+		t.Cleanup(srv.Close)
+		c := New("fritz.box")
+		c.tr064BaseURL = srv.URL
+
+		_, err := c.Radios(context.Background(), 3)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !IsUnauthorized(err) {
+			t.Errorf("expected unauthorized error, got %v", err)
+		}
+	})
+
+	t.Run("first index fails", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		t.Cleanup(srv.Close)
+		c := New("fritz.box")
+		c.tr064BaseURL = srv.URL
+
+		_, err := c.Radios(context.Background(), 3)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !IsServiceUnavailable(err) {
+			t.Errorf("expected service unavailable error, got %v", err)
+		}
+	})
+}
