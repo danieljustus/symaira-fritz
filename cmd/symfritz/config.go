@@ -40,6 +40,6 @@ func newConfigCmd() *cobra.Command {
 		},
 	}
 	initCmd.Flags().Bool("force", false, "overwrite existing config file")
-	cfg.AddCommand(initCmd)
+	cfg.AddCommand(initCmd, newDetectCmd())
 	return cfg
 }

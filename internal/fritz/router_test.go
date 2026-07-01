@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -168,5 +169,70 @@ func TestResolveHostInfoFor(t *testing.T) {
 	_, err = ResolveHostInfoFor(context.Background(), "nonexistent.invalid")
 	if err == nil {
 		t.Error("expected error for non-existent host")
+	}
+}
+
+func TestCheckHostDNS_PublicHost(t *testing.T) {
+	// Backup mockable variables
+	origLookupHost := lookupHost
+	origDefaultGateway := defaultGateway
+	defer func() {
+		lookupHost = origLookupHost
+		defaultGateway = origDefaultGateway
+	}()
+
+	// 1. Mock DNS resolution of fritz.box to a public IP
+	lookupHost = func(ctx context.Context, host string) ([]string, error) {
+		if host == "fritz.box" {
+			return []string{"212.42.244.122"}, nil
+		}
+		return nil, fmt.Errorf("unknown host")
+	}
+
+	// 2. Mock default gateway
+	defaultGateway = func() (net.IP, error) {
+		return net.ParseIP("192.168.188.1"), nil
+	}
+
+	// 3. Create a mock TR-064 server running at the default gateway (localhost in test)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/tr64desc.xml" {
+			w.Header().Set("Content-Type", "text/xml")
+			fmt.Fprint(w, `<?xml version="1.0"?>
+<root xmlns="urn:schemas-upnp-org:device-1-0">
+  <device>
+    <deviceType>urn:schemas-upnp-org:device:LivingNetworkDevice:1</deviceType>
+  </device>
+</root>`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	u, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("failed to parse server URL: %v", err)
+	}
+	serverHost := u.Hostname()
+	serverPort := u.Port()
+
+	// 4. Configure fritz client with a transport that routes requests to the test server
+	c := New("fritz.box")
+	c.http.Transport = &http.Transport{
+		DialContext: func(_ context.Context, network, _ string) (net.Conn, error) {
+			return net.Dial(network, net.JoinHostPort(serverHost, serverPort))
+		},
+	}
+
+	// 5. Run checkHostDNS and verify it returns a helpful error pointing to the gateway (which we mocked)
+	err = c.checkHostDNS(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	expectedSub := `Local FRITZ!Box detected at 192.168.188.1. Try setting SYMFRITZ_HOST=192.168.188.1`
+	if !strings.Contains(err.Error(), expectedSub) {
+		t.Errorf("expected error to contain %q, got: %v", expectedSub, err)
 	}
 }

@@ -64,5 +64,16 @@ Override with --port (repeatable).`,
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
 	cmd.Flags().IntSliceVar(&ports, "port", nil, "TCP port to probe (repeatable; replaces default ports 22, 5900, 8001)")
+
+	routerCmd := &cobra.Command{
+		Use:   "router",
+		Short: "Detect and diagnose the local FRITZ!Box router",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runDetect(cmd, asJSON)
+		},
+	}
+	routerCmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
+	cmd.AddCommand(routerCmd)
+
 	return cmd
 }
