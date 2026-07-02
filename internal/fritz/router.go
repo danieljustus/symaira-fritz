@@ -70,8 +70,11 @@ func ProbeTR064(ctx context.Context, httpClient *http.Client, ip string, port in
 	if err != nil {
 		return false
 	}
-	// A valid tr64desc.xml contains the UPnP device-1-0 namespace.
-	return bytesContains(body, []byte("urn:schemas-upnp-org:device-1-0"))
+	// A valid tr64desc.xml contains a UPnP or DSL Forum device-1-0 namespace.
+	// Real FRITZ!Box devices use urn:dslforum-org; the standard UPnP namespace
+	// is urn:schemas-upnp-org. Accept either.
+	return bytesContains(body, []byte("urn:schemas-upnp-org:device-1-0")) ||
+		bytesContains(body, []byte("urn:dslforum-org:device-1-0"))
 }
 
 // probeCandidate checks both port 49000 (HTTP) and 49443 (HTTPS) for TR-064.
@@ -190,7 +193,11 @@ func DiscoverBox(ctx context.Context, httpClient *http.Client, host string, inse
 		}
 	}
 
-	return "", fmt.Errorf("discover: could not find a FRITZ!Box on the local network")
+	gwHint := ""
+	if err == nil && gw != nil {
+		gwHint = fmt.Sprintf(" or set SYMFRITZ_HOST=%s (your default gateway)", gw)
+	}
+	return "", fmt.Errorf("discover: could not find a FRITZ!Box on the local network; run 'symfritz detect' to troubleshoot%s", gwHint)
 }
 
 // ResolveHostInfo contains the result of resolving a hostname.

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -68,12 +69,68 @@ Override with --port (repeatable).`,
 	routerCmd := &cobra.Command{
 		Use:   "router",
 		Short: "Detect and diagnose the local FRITZ!Box router",
+		Long: `Detect the local FRITZ!Box and run end-to-end diagnosis on it.
+
+When SYMFRITZ_HOST is set, skips discovery and diagnoses that explicit host
+directly.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runDetect(cmd, asJSON)
+			return runDiagnoseRouter(cmd, asJSON, ports)
 		},
 	}
 	routerCmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
+	routerCmd.Flags().IntSliceVar(&ports, "port", nil, "TCP port to probe (repeatable; replaces default ports 22, 5900, 8001)")
 	cmd.AddCommand(routerCmd)
 
 	return cmd
+}
+
+func runDiagnoseRouter(cmd *cobra.Command, asJSON bool, ports []int) error {
+	box, _ := boxFromEnv()
+	ctx := context.Background()
+
+	httpClient := newHTTPClient()
+
+	var routerHost string
+	envHost := os.Getenv("SYMFRITZ_HOST")
+	if envHost != "" {
+		routerHost = envHost
+	} else {
+		ip, err := fritz.DiscoverBox(ctx, httpClient, box.Host, true)
+		if err != nil {
+			return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "could not find FRITZ!Box on the network")
+		}
+		routerHost = ip
+	}
+
+	c, _, err := newClient()
+	if err != nil {
+		return err
+	}
+	c.Host = routerHost
+
+	opts := fritz.DiagnoseOptions{}
+	for _, p := range ports {
+		opts.Ports = append(opts.Ports, fritz.PortProbe{Port: p, Label: "custom"})
+	}
+	d := c.Diagnose(ctx, routerHost, opts)
+	if asJSON {
+		if err := printJSON(d); err != nil {
+			return err
+		}
+	} else {
+		fmt.Printf("Diagnose router  →  %s\n", d.Target)
+		for _, ch := range d.Checks {
+			fmt.Printf("  %s %-26s %s\n", statusGlyph(ch.Status), ch.Name, ch.Detail)
+		}
+		if d.OK {
+			fmt.Println("\nResult: reachable (no failed checks)")
+		} else {
+			fmt.Println("\nResult: problems detected")
+		}
+	}
+	if !d.OK {
+		return exitcodes.Wrap(fmt.Errorf("diagnosis found failing checks"),
+			exitcodes.ExitGeneric, exitcodes.KindUnavailable, "router not fully reachable")
+	}
+	return nil
 }
