@@ -163,9 +163,9 @@ symfritz diagnose macmini
 
 ### Raw TR-064 service names
 
-Shortcuts: `deviceinfo`, `wanip`, `wancommon`, `hosts`, `wlan1`. Any other name
-is resolved through `tr64desc.xml` discovery, so `call` reaches every action the
-box advertises.
+Shortcuts: `deviceinfo`, `wanip`, `wanppp`, `wancommon`, `hosts`, `wlan1`. Any
+other name is resolved through `tr64desc.xml` discovery, so `call` reaches every
+action the box advertises.
 
 ## MCP server
 
