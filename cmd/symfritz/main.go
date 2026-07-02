@@ -215,6 +215,10 @@ func dataRate(link fritz.MeshLink) string {
 // wrapFritzError converts a fritz.FritzError into an exitcodes.CLIError
 // with the appropriate exit code, kind, and actionable hint.
 func wrapFritzError(err error, msg string) error {
+	if errors.Is(err, fritz.ErrNoCredential) {
+		return exitcodes.Wrap(err, exitcodes.ExitNoAuth, exitcodes.KindAuth, "no credential")
+	}
+
 	var fe *fritz.FritzError
 	if errors.As(err, &fe) {
 		code := exitcodes.ExitGeneric
@@ -263,7 +267,18 @@ func printJSONError(err error) {
 		return
 	}
 
-	// Fallback for non-FritzError
+	var cliErr *exitcodes.CLIError
+	if errors.As(err, &cliErr) {
+		_ = printJSON(jsonErr{
+			Error: errDetails{
+				Kind:    string(cliErr.Kind),
+				Message: err.Error(),
+			},
+		})
+		return
+	}
+
+	// Fallback for non-FritzError/non-CLIError
 	_ = printJSON(jsonErr{
 		Error: errDetails{
 			Kind:    "unavailable",
