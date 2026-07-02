@@ -167,6 +167,47 @@ Shortcuts: `deviceinfo`, `wanip`, `wancommon`, `hosts`, `wlan1`. Any other name
 is resolved through `tr64desc.xml` discovery, so `call` reaches every action the
 box advertises.
 
+## MCP server
+
+`symfritz mcp` starts a stdio MCP server that exposes the FRITZ!Box capabilities
+to AI agents such as Hermes.
+
+### Registering in Hermes
+
+Add a server block to your Hermes configuration. The example below assumes the
+Homebrew-installed binary at `/opt/homebrew/bin/symfritz`; adjust the path to
+your installation:
+
+```yaml
+mcp_servers:
+  symfritz:
+    command: /opt/homebrew/bin/symfritz
+    args:
+      - mcp
+    env:
+      SYMFRITZ_HOST: "192.168.188.1"
+    enabled: true
+```
+
+> **Note:** `fritz.box` can resolve to a public IP address on some networks, which
+> causes the MCP server to fail to reach the box. Use an explicit local IP or a
+> DNS name you control, and set it via `SYMFRITZ_HOST` or `host` in the config.
+
+### Smoke test
+
+After registering, verify the server starts and exposes the expected tools:
+
+```bash
+$ SYMFRITZ_HOST=192.168.188.1 symfritz mcp
+initialize: OK
+serverInfo.name: symfritz
+serverInfo.version: <version>
+tools/list: 9 tools
+```
+
+The expected tools are `status`, `host_list`, `host_get`, `diagnose`, `mesh`,
+`wlan_clients`, `wake_on_lan`, `home_list`, and `home_switch`.
+
 ## Architecture
 
 ```
