@@ -81,7 +81,7 @@ func (c *Client) Call(ctx context.Context, svc Service, action string, args map[
 		switch {
 		case resp.StatusCode == http.StatusUnauthorized:
 			fe.Kind = ErrUnauthorized
-		case resp.StatusCode >= 500 && strings.Contains(fault, "Invalid Action"):
+		case strings.Contains(fault, "Invalid Action"):
 			fe.Kind = ErrUnsupportedAction
 		case resp.StatusCode >= 500:
 			fe.Kind = ErrServiceUnavailable

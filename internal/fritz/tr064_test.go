@@ -170,6 +170,43 @@ func TestCall_SOAPFault(t *testing.T) {
 	}
 }
 
+func TestCall_InvalidActionOnClientError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `<s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError</faultstring><detail><UPnPError errorcode="401"><errorDescription>Invalid Action</errorDescription></UPnPError></detail></s:Fault>`)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("fritz.box")
+	c.tr064BaseURL = srv.URL
+
+	_, err := c.Call(context.Background(), ServiceHosts, "X_AVM-DE_GetMeshListPath", nil)
+	if err == nil {
+		t.Fatal("expected error for Invalid Action")
+	}
+	if !IsUnsupportedAction(err) {
+		t.Errorf("expected unsupported action, got %v", err)
+	}
+}
+
+func TestCall_Unauthorized(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("fritz.box")
+	c.tr064BaseURL = srv.URL
+
+	_, err := c.Call(context.Background(), ServiceHosts, "X_AVM-DE_GetMeshListPath", nil)
+	if err == nil {
+		t.Fatal("expected error for 401")
+	}
+	if !IsUnauthorized(err) {
+		t.Errorf("expected unauthorized, got %v", err)
+	}
+}
+
 func TestCall_UnauthorizedNoDigest(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

@@ -256,6 +256,91 @@ func TestMCPServerTools(t *testing.T) {
 	}
 }
 
+func TestMCPServerStatus_AllPrimaryFail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+		sa := r.Header.Get("SoapAction")
+		body, _ := io.ReadAll(r.Body)
+
+		if strings.Contains(sa, "GetInfo") {
+			if strings.Contains(string(body), "UserInterface") || strings.Contains(sa, "UserInterface") {
+				_, _ = io.WriteString(w, soapEnvelope("GetInfo", map[string]string{
+					"NewUpgradeAvailable": "0",
+				}))
+				return
+			}
+		}
+		if strings.Contains(sa, "GetExternalIPAddress") {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := fritz.New("fritz.box")
+	c.SetMockURLs(srv.URL)
+
+	s := buildServer(c)
+
+	reqJSON := `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"status","arguments":{}},"id":1}`
+	var rBuf bytes.Buffer
+	var wBuf bytes.Buffer
+	rBuf.WriteString(fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(reqJSON), reqJSON))
+
+	ctx := context.Background()
+	if err := s.ServeIO(ctx, &rBuf, &wBuf); err != nil {
+		t.Fatalf("ServeIO error = %v", err)
+	}
+
+	res := wBuf.String()
+	if !strings.Contains(res, `"isError":true`) {
+		t.Errorf("expected isError=true, got: %s", res)
+	}
+	if !strings.Contains(res, "unauthorized") {
+		t.Errorf("expected unauthorized in error text, got: %s", res)
+	}
+}
+
+func TestMCPServerMesh_AuthError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+		sa := r.Header.Get("SoapAction")
+		if strings.Contains(sa, "GetMeshListPath") {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := fritz.New("fritz.box")
+	c.SetMockURLs(srv.URL)
+
+	s := buildServer(c)
+
+	reqJSON := `{"jsonrpc":"2.0","method":"tools/call","params":{"name":"mesh","arguments":{}},"id":1}`
+	var rBuf bytes.Buffer
+	var wBuf bytes.Buffer
+	rBuf.WriteString(fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(reqJSON), reqJSON))
+
+	ctx := context.Background()
+	if err := s.ServeIO(ctx, &rBuf, &wBuf); err != nil {
+		t.Fatalf("ServeIO error = %v", err)
+	}
+
+	res := wBuf.String()
+	if !strings.Contains(res, `"isError":true`) {
+		t.Errorf("expected isError=true, got: %s", res)
+	}
+	if !strings.Contains(res, "kind=unauthorized") {
+		t.Errorf("expected kind=unauthorized in error text, got: %s", res)
+	}
+	if !strings.Contains(res, "X_AVM-DE_GetMeshListPath") {
+		t.Errorf("expected action in error text, got: %s", res)
+	}
+}
+
 func soapEnvelope(action string, args map[string]string) string {
 	var sb strings.Builder
 	sb.WriteString(`<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">`)

@@ -6,6 +6,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/danieljustus/symaira-corekit/mcpserver"
@@ -26,6 +27,22 @@ func toJSON(v any) (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+// formatToolError exposes FRITZ!Box error classification in MCP tool error text.
+func formatToolError(tool string, err error) error {
+	if err == nil {
+		return nil
+	}
+	var fe *fritz.FritzError
+	if errors.As(err, &fe) {
+		msg := fe.Raw
+		if msg == "" {
+			msg = fe.Error()
+		}
+		return fmt.Errorf("%s: kind=%s service=%s action=%s: %s", tool, fe.Kind, fe.Service, fe.Action, msg)
+	}
+	return fmt.Errorf("%s: %s", tool, err.Error())
 }
 
 // StartServer runs the MCP stdio server backed by the given client.
@@ -51,7 +68,7 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 		Handler: func(ctx context.Context, _ json.RawMessage) (any, error) {
 			st, err := c.Status(ctx)
 			if err != nil {
-				return nil, err
+				return nil, formatToolError("status", err)
 			}
 			return toJSON(st)
 		},
@@ -69,13 +86,13 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 			if args.ActiveOnly {
 				hosts, err := c.ActiveHosts(ctx)
 				if err != nil {
-					return nil, err
+					return nil, formatToolError("host_list", err)
 				}
 				return toJSON(hosts)
 			}
 			hosts, err := c.Hosts(ctx)
 			if err != nil {
-				return nil, err
+				return nil, formatToolError("host_list", err)
 			}
 			return toJSON(hosts)
 		},
@@ -105,7 +122,7 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 				return nil, fmt.Errorf("provide one of name, mac, or ip")
 			}
 			if err != nil {
-				return nil, err
+				return nil, formatToolError("host_get", err)
 			}
 			return toJSON(host)
 		},
@@ -141,7 +158,7 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 		Handler: func(ctx context.Context, _ json.RawMessage) (any, error) {
 			topo, err := c.MeshTopology(ctx)
 			if err != nil {
-				return nil, err
+				return nil, formatToolError("mesh", err)
 			}
 			return toJSON(topo)
 		},
@@ -154,7 +171,7 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 		Handler: func(ctx context.Context, _ json.RawMessage) (any, error) {
 			clients, err := c.AllWLANClients(ctx, 3)
 			if err != nil {
-				return nil, err
+				return nil, formatToolError("wlan_clients", err)
 			}
 			return toJSON(clients)
 		},
@@ -176,12 +193,12 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 				}
 				h, err := c.ResolveHost(ctx, args.Host)
 				if err != nil {
-					return nil, err
+					return nil, formatToolError("wake_on_lan", err)
 				}
 				mac = h.MAC
 			}
 			if err := c.WakeOnLAN(ctx, mac); err != nil {
-				return nil, err
+				return nil, formatToolError("wake_on_lan", err)
 			}
 			return toJSON(map[string]string{"woke": mac})
 		},
@@ -194,7 +211,7 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 		Handler: func(ctx context.Context, _ json.RawMessage) (any, error) {
 			devices, err := c.Devices(ctx)
 			if err != nil {
-				return nil, err
+				return nil, formatToolError("home_list", err)
 			}
 			return toJSON(devices)
 		},
@@ -222,7 +239,7 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 				err = c.SwitchOff(ctx, args.AIN)
 			}
 			if err != nil {
-				return nil, err
+				return nil, formatToolError("home_switch", err)
 			}
 			return toJSON(map[string]any{"ain": args.AIN, "on": args.On})
 		},
