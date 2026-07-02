@@ -169,6 +169,45 @@ func TestStatus_AllFail(t *testing.T) {
 	}
 }
 
+func TestStatus_AllPrimaryFail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		sa := r.Header.Get("SoapAction")
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", `text/xml; charset="utf-8"`)
+
+		if strings.Contains(sa, "GetInfo") {
+			if strings.Contains(string(body), "UserInterface") || strings.Contains(sa, "UserInterface") {
+				_, _ = io.WriteString(w, soapEnvelope("GetInfo", map[string]string{
+					"NewUpgradeAvailable": "0",
+				}))
+				return
+			}
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+	c := New("fritz.box")
+	c.tr064BaseURL = srv.URL
+
+	s, err := c.Status(context.Background())
+	if err == nil {
+		t.Fatal("expected error when all primary sub-queries fail")
+	}
+	if !s.Partial {
+		t.Error("Partial = false, want true")
+	}
+	if len(s.Errors) != 3 {
+		t.Errorf("Errors has %d entries, want 3", len(s.Errors))
+	}
+	if !IsUnauthorized(err) {
+		t.Errorf("expected unauthorized error, got %v", err)
+	}
+}
+
 func TestStatus_PrioritizeAuthError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sa := r.Header.Get("SoapAction")
