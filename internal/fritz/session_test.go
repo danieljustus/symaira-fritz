@@ -1,7 +1,12 @@
 package fritz
 
 import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -54,5 +59,25 @@ func TestComputeChallengeResponse_Dispatch(t *testing.T) {
 	}
 	if _, err := computeChallengeResponse("", "x"); err == nil {
 		t.Error("expected error for empty challenge")
+	}
+}
+
+func TestSID_NoPasswordDoesNotContactBox(t *testing.T) {
+	var requests int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		t.Fatalf("SID contacted the box without a configured password: %s", r.URL.String())
+	}))
+	defer srv.Close()
+
+	c := New("fritz.box")
+	c.httpBaseURL = srv.URL
+
+	_, err := c.SID(context.Background())
+	if !errors.Is(err, ErrNoCredential) {
+		t.Fatalf("SID error = %v, want ErrNoCredential", err)
+	}
+	if got := atomic.LoadInt32(&requests); got != 0 {
+		t.Fatalf("requests = %d, want 0", got)
 	}
 }

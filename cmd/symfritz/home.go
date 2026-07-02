@@ -36,7 +36,7 @@ func newHomeCmd() *cobra.Command {
 			if useTR064 {
 				devs, err := c.HomeautoDevices(ctx)
 				if err != nil {
-					return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "device list failed")
+					return wrapFritzError(err, "device list failed")
 				}
 				if listJSON {
 					return printJSON(devs)
@@ -54,7 +54,7 @@ func newHomeCmd() *cobra.Command {
 
 			devs, err := c.Devices(ctx)
 			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "device list failed")
+				return wrapFritzError(err, "device list failed")
 			}
 			groups, err := c.Groups(ctx)
 			if err != nil {
@@ -166,7 +166,7 @@ func newHomeCmd() *cobra.Command {
 			}
 
 			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "switch failed")
+				return wrapFritzError(err, "switch failed")
 			}
 			fmt.Printf("OK: %s -> %s\n", args[0], strings.ToLower(args[1]))
 			return nil
@@ -198,7 +198,7 @@ func newHomeCmd() *cobra.Command {
 				}
 			}
 			if err := c.SetHkrTemp(ctx, args[0], temp); err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "set temp failed")
+				return wrapFritzError(err, "set temp failed")
 			}
 			fmt.Printf("OK: %s -> %s\n", args[0], args[1])
 			return nil

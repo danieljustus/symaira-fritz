@@ -39,6 +39,9 @@ func (c *Client) SID(ctx context.Context) (string, error) {
 	if c.sid != "" && c.sid != invalidSID {
 		return c.sid, nil
 	}
+	if strings.TrimSpace(c.Password) == "" {
+		return "", ErrNoCredential
+	}
 
 	// Step 1: fetch a challenge.
 	info, err := c.fetchSession(ctx, nil)

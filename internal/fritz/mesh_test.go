@@ -65,7 +65,7 @@ func TestMeshTopology_ParsesNodesAndLinks(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := New("fritz.box")
+	c := New("fritz.box", WithPassword("secret"))
 	c.tr064BaseURL = srv.URL
 	c.httpBaseURL = srv.URL
 
@@ -118,7 +118,7 @@ func TestMeshTopology_EmptyPath(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := New("fritz.box")
+	c := New("fritz.box", WithPassword("secret"))
 	c.tr064BaseURL = srv.URL
 	c.httpBaseURL = srv.URL
 
@@ -148,7 +148,7 @@ func TestMeshTopology_JSONFetchError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := New("fritz.box")
+	c := New("fritz.box", WithPassword("secret"))
 	c.tr064BaseURL = srv.URL
 	c.httpBaseURL = srv.URL
 
@@ -178,7 +178,7 @@ func TestMeshTopology_InvalidJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := New("fritz.box")
+	c := New("fritz.box", WithPassword("secret"))
 	c.tr064BaseURL = srv.URL
 	c.httpBaseURL = srv.URL
 

@@ -17,6 +17,11 @@ const (
 	ErrTransport          ErrorKind = "transport_error"
 )
 
+// ErrNoCredential is returned before session-login-only interfaces attempt to
+// authenticate without a configured password. This avoids burning FRITZ!Box
+// login attempts and triggering rate limits when the user has not run auth login.
+var ErrNoCredential = errors.New("no password configured (run 'symfritz auth login')")
+
 // FritzError is a structured error from the FRITZ!Box TR-064 or AHA-HTTP layer.
 type FritzError struct {
 	Kind       ErrorKind

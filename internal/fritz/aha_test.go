@@ -35,7 +35,7 @@ func TestHome_RefreshesSIDOn403(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := New("fritz.box")
+	c := New("fritz.box", WithPassword("secret"))
 	c.httpBaseURL = srv.URL
 	// Seed a cached SID so the first request uses it (and then gets a 403).
 	c.sid = "staleSID00000000"
@@ -71,7 +71,7 @@ func fakeAHA(t *testing.T, handler func(cmd string, params url.Values) (string, 
 		}
 	}))
 	t.Cleanup(srv.Close)
-	c := New("fritz.box")
+	c := New("fritz.box", WithPassword("secret"))
 	c.httpBaseURL = srv.URL
 	return c
 }

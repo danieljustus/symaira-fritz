@@ -1,6 +1,39 @@
 package main
 
-import "testing"
+import (
+	"bytes"
+	"strings"
+	"testing"
+
+	"github.com/danieljustus/symaira-corekit/exitcodes"
+	"github.com/danieljustus/symaira-fritz/internal/config"
+	"github.com/danieljustus/symaira-fritz/internal/fritz"
+)
+
+func TestHomeList_NoCredentialFailsBeforeLogin(t *testing.T) {
+	origNewClient := newClient
+	t.Cleanup(func() { newClient = origNewClient })
+	newClient = func() (*fritz.Client, *config.Config, error) {
+		return fritz.New("fritz.box"), config.Defaults(), nil
+	}
+
+	cmd := newRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"home", "list", "--json"})
+
+	_, err := cmd.ExecuteC()
+	if err == nil {
+		t.Fatal("expected no-credential error, got nil")
+	}
+	if got := exitcodes.ExitCodeFromError(err); got != exitcodes.ExitNoAuth {
+		t.Fatalf("exit code = %d, want %d (err: %v)", got, exitcodes.ExitNoAuth, err)
+	}
+	if !strings.Contains(err.Error(), "no password configured") {
+		t.Fatalf("error = %q, want no-password message", err.Error())
+	}
+}
 
 func TestParseHkrTemp(t *testing.T) {
 	tests := []struct {
