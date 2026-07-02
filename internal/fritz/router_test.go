@@ -38,7 +38,7 @@ func TestIsPrivateIP(t *testing.T) {
 }
 
 func TestProbeTR064(t *testing.T) {
-	// Test with a valid TR-064 response
+	// Test with a valid TR-064 response using standard UPnP namespace
 	validServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/tr64desc.xml" {
 			http.NotFound(w, r)
@@ -53,6 +53,22 @@ func TestProbeTR064(t *testing.T) {
 </root>`)
 	}))
 	defer validServer.Close()
+
+	// Test with a FRITZ!Box-style response using DSL Forum namespace
+	fritzBoxServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/tr64desc.xml" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/xml")
+		fmt.Fprint(w, `<?xml version="1.0"?>
+<root xmlns="urn:dslforum-org:device-1-0">
+  <device>
+    <deviceType>urn:dslforum-org:device:InternetGatewayDevice:1</deviceType>
+  </device>
+</root>`)
+	}))
+	defer fritzBoxServer.Close()
 
 	// Test with an invalid response
 	invalidServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +88,8 @@ func TestProbeTR064(t *testing.T) {
 		server *httptest.Server
 		want   bool
 	}{
-		{"valid TR-064", validServer, true},
+		{"valid TR-064 (UPnP namespace)", validServer, true},
+		{"valid TR-064 (DSL Forum namespace)", fritzBoxServer, true},
 		{"invalid response", invalidServer, false},
 		{"not found", notFoundServer, false},
 	}
@@ -172,6 +189,129 @@ func TestResolveHostInfoFor(t *testing.T) {
 	}
 }
 
+// fritzBoxTR064Body is the XML body a real FRITZ!Box returns from /tr64desc.xml,
+// using the DSL Forum namespace (not the standard UPnP one).
+const fritzBoxTR064Body = `<?xml version="1.0"?>
+<root xmlns="urn:dslforum-org:device-1-0">
+  <device>
+    <deviceType>urn:dslforum-org:device:InternetGatewayDevice:1</deviceType>
+  </device>
+</root>`
+
+func TestDiscoverBox_PublicIPGatewayFallback(t *testing.T) {
+	origLookupHost := lookupHost
+	origDefaultGateway := defaultGateway
+	defer func() {
+		lookupHost = origLookupHost
+		defaultGateway = origDefaultGateway
+	}()
+
+	lookupHost = func(_ context.Context, host string) ([]string, error) {
+		if host == "fritz.box" {
+			return []string{"212.42.244.122"}, nil
+		}
+		return nil, fmt.Errorf("unknown host: %s", host)
+	}
+
+	defaultGateway = func() (net.IP, error) {
+		return net.ParseIP("192.168.188.1"), nil
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/tr64desc.xml" {
+			w.Header().Set("Content-Type", "text/xml")
+			fmt.Fprint(w, fritzBoxTR064Body)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	u, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("failed to parse server URL: %v", err)
+	}
+	serverHost := u.Hostname()
+	serverPort := u.Port()
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, network, addr string) (net.Conn, error) {
+				host, _, _ := net.SplitHostPort(addr)
+				if host == "192.168.188.1" {
+					return net.Dial(network, net.JoinHostPort(serverHost, serverPort))
+				}
+				return nil, fmt.Errorf("connect: no route to host %s", host)
+			},
+		},
+	}
+
+	ip, err := DiscoverBox(context.Background(), httpClient, "fritz.box", true)
+	if err != nil {
+		t.Fatalf("DiscoverBox failed: %v", err)
+	}
+	if ip != "192.168.188.1" {
+		t.Errorf("DiscoverBox returned %q, want %q", ip, "192.168.188.1")
+	}
+}
+
+func TestDiscoverBox_PublicIPCommonIPFallback(t *testing.T) {
+	origLookupHost := lookupHost
+	origDefaultGateway := defaultGateway
+	defer func() {
+		lookupHost = origLookupHost
+		defaultGateway = origDefaultGateway
+	}()
+
+	lookupHost = func(_ context.Context, host string) ([]string, error) {
+		if host == "fritz.box" {
+			return []string{"212.42.244.122"}, nil
+		}
+		return nil, fmt.Errorf("unknown host: %s", host)
+	}
+
+	defaultGateway = func() (net.IP, error) {
+		return nil, fmt.Errorf("no gateway")
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/tr64desc.xml" {
+			w.Header().Set("Content-Type", "text/xml")
+			fmt.Fprint(w, fritzBoxTR064Body)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	u, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("failed to parse server URL: %v", err)
+	}
+	serverHost := u.Hostname()
+	serverPort := u.Port()
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, network, addr string) (net.Conn, error) {
+				host, _, _ := net.SplitHostPort(addr)
+				if host == "192.168.188.1" {
+					return net.Dial(network, net.JoinHostPort(serverHost, serverPort))
+				}
+				return nil, fmt.Errorf("connect: no route to host %s", host)
+			},
+		},
+	}
+
+	ip, err := DiscoverBox(context.Background(), httpClient, "fritz.box", true)
+	if err != nil {
+		t.Fatalf("DiscoverBox failed: %v", err)
+	}
+	if ip != "192.168.188.1" {
+		t.Errorf("DiscoverBox returned %q, want %q", ip, "192.168.188.1")
+	}
+}
+
 func TestCheckHostDNS_PublicHost(t *testing.T) {
 	// Backup mockable variables
 	origLookupHost := lookupHost
@@ -198,12 +338,7 @@ func TestCheckHostDNS_PublicHost(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/tr64desc.xml" {
 			w.Header().Set("Content-Type", "text/xml")
-			fmt.Fprint(w, `<?xml version="1.0"?>
-<root xmlns="urn:schemas-upnp-org:device-1-0">
-  <device>
-    <deviceType>urn:schemas-upnp-org:device:LivingNetworkDevice:1</deviceType>
-  </device>
-</root>`)
+			fmt.Fprint(w, fritzBoxTR064Body)
 			return
 		}
 		http.NotFound(w, r)
