@@ -70,17 +70,24 @@ func (c *Client) Calls(ctx context.Context, typ CallType, max int, days int) ([]
 		Duration string `xml:"Duration"`
 	}
 	type XmlCallList struct {
-		XMLName xml.Name  `xml:"CallList"`
-		Calls   []XmlCall `xml:"Call"`
+		XMLName    xml.Name
+		Calls      []XmlCall `xml:"Call"`
+		NestedList struct {
+			Calls []XmlCall `xml:"Call"`
+		} `xml:"CallList"`
 	}
 
 	var list XmlCallList
 	if err := xml.Unmarshal(xmlData, &list); err != nil {
 		return nil, err
 	}
+	xmlCalls := list.Calls
+	if len(xmlCalls) == 0 {
+		xmlCalls = list.NestedList.Calls
+	}
 
 	var result []Call
-	for _, xc := range list.Calls {
+	for _, xc := range xmlCalls {
 		ct := CallType(xc.Type)
 		if typ != CallAll && ct != typ {
 			continue

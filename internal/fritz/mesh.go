@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -60,32 +61,19 @@ func (c *Client) MeshTopology(ctx context.Context) (*MeshTopology, error) {
 		return nil, fmt.Errorf("mesh: box returned no mesh list path (unsupported firmware?)")
 	}
 
-	// The path needs a valid session id appended.
-	sid, err := c.SID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	u := c.baseHTTP() + path
-	if !strings.Contains(path, "sid=") {
-		sep := "?"
-		if strings.Contains(path, "?") {
-			sep = "&"
+	if !strings.Contains(strings.ToLower(path), "sid=") {
+		sid, err := c.SID(ctx)
+		if err != nil {
+			return nil, err
 		}
-		u += sep + "sid=" + sid
+		path = appendQueryParam(path, "sid", sid)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	resp, err := c.fetchMeshList(ctx, path)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("mesh: fetching mesh list: %w", err)
-	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("mesh: mesh list returned HTTP %d", resp.StatusCode)
-	}
 	// Limit to 8MB — large residential meshes with many nodes/links can
 	// produce substantial JSON, but 8MB is a safe upper bound.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
@@ -97,6 +85,66 @@ func (c *Client) MeshTopology(ctx context.Context) (*MeshTopology, error) {
 		return nil, fmt.Errorf("mesh: parsing mesh list JSON: %w", err)
 	}
 	return &topo, nil
+}
+
+func (c *Client) fetchMeshList(ctx context.Context, path string) (*http.Response, error) {
+	var lastErr error
+	for _, u := range c.meshListURLCandidates(path) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := c.http.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("mesh: fetching mesh list from %s: %w", safeURLForError(u), err)
+			continue
+		}
+		if resp.StatusCode == http.StatusOK {
+			return resp, nil
+		}
+		lastErr = fmt.Errorf("mesh: mesh list returned HTTP %d from %s", resp.StatusCode, safeURLForError(u))
+		resp.Body.Close()
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("mesh: no mesh list URL candidates")
+}
+
+func (c *Client) meshListURLCandidates(path string) []string {
+	if u, err := url.Parse(path); err == nil && u.IsAbs() {
+		return []string{path}
+	}
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	candidates := []string{c.tr064Base() + path}
+	web := c.baseHTTP() + path
+	if web != candidates[0] {
+		candidates = append(candidates, web)
+	}
+	return candidates
+}
+
+func appendQueryParam(rawURL, key, value string) string {
+	sep := "?"
+	if strings.Contains(rawURL, "?") {
+		sep = "&"
+	}
+	return rawURL + sep + url.QueryEscape(key) + "=" + url.QueryEscape(value)
+}
+
+func safeURLForError(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	q := u.Query()
+	if q.Has("sid") {
+		q.Set("sid", "REDACTED")
+		u.RawQuery = q.Encode()
+	}
+	return u.String()
 }
 
 // NodeName resolves a node UID to its device name for readable link output.

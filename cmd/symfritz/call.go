@@ -18,7 +18,7 @@ func newCallCmd() *cobra.Command {
 		Short: "Invoke a raw TR-064 action (power user)",
 		Long: `Invoke any TR-064 action by service shortcut and action name.
 
-Known shortcuts: deviceinfo, wanip, wancommon, hosts, wlan1. Any other service
+Known shortcuts: deviceinfo, wanip, wanppp, wancommon, hosts, wlan1. Any other service
 name is resolved via tr64desc.xml discovery (e.g. "WLANConfiguration:2").
 Arguments are passed as Key=Value pairs (TR-064 input arguments).
 
@@ -69,6 +69,8 @@ func serviceByShortcut(name string) (fritz.Service, bool) {
 		return fritz.ServiceDeviceInfo, true
 	case "wanip":
 		return fritz.ServiceWANIPConnection, true
+	case "wanppp":
+		return fritz.ServiceWANPPPConnection, true
 	case "wancommon":
 		return fritz.ServiceWANCommonIFC, true
 	case "hosts":
