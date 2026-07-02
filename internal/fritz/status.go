@@ -95,7 +95,9 @@ func (c *Client) Status(ctx context.Context) (*Status, error) {
 	s.Errors = errs
 	s.Partial = len(errs) > 0
 
-	if len(errs) == 4 {
+	isEmpty := s.ModelName == "" && s.FirmwareVersion == "" && s.ExternalIP == "" && s.ConnectionState == "" && s.Uptime == ""
+
+	if len(errs) == 4 || (isEmpty && s.Partial) {
 		var prioErr error
 		for _, e := range errs {
 			if IsUnauthorized(e.Err) {
