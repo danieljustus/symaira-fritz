@@ -76,15 +76,15 @@ func (c *Client) Status(ctx context.Context) (*Status, error) {
 		addErr(serviceName(ServiceDeviceInfo), "GetInfo", err)
 	}
 
-	if conn, err := c.Call(ctx, ServiceWANIPConnection, "GetInfo", nil); err == nil {
+	if conn, err := c.wanConnectionCall(ctx, "GetInfo"); err == nil {
 		s.ConnectionState = conn["NewConnectionStatus"]
 	} else {
-		addErr(serviceName(ServiceWANIPConnection), "GetInfo", err)
+		addErr("WANConnection", "GetInfo", err)
 	}
-	if ip, err := c.Call(ctx, ServiceWANIPConnection, "GetExternalIPAddress", nil); err == nil {
+	if ip, err := c.wanConnectionCall(ctx, "GetExternalIPAddress"); err == nil {
 		s.ExternalIP = ip["NewExternalIPAddress"]
 	} else {
-		addErr(serviceName(ServiceWANIPConnection), "GetExternalIPAddress", err)
+		addErr("WANConnection", "GetExternalIPAddress", err)
 	}
 	if upd, err := c.UpdateAvailable(ctx); err == nil {
 		s.UpdateAvailable = upd
@@ -115,6 +115,21 @@ func (c *Client) Status(ctx context.Context) (*Status, error) {
 	}
 
 	return s, nil
+}
+
+func (c *Client) wanConnectionCall(ctx context.Context, action string) (map[string]string, error) {
+	res, err := c.Call(ctx, ServiceWANIPConnection, action, nil)
+	if err == nil {
+		return res, nil
+	}
+	if !IsUnsupportedAction(err) {
+		return nil, err
+	}
+	res, pppErr := c.Call(ctx, ServiceWANPPPConnection, action, nil)
+	if pppErr == nil {
+		return res, nil
+	}
+	return nil, fmt.Errorf("WANIPConnection.%s failed: %w; WANPPPConnection.%s fallback failed: %v", action, err, action, pppErr)
 }
 
 // UpdateAvailable checks if a firmware upgrade is available and returns the new version.

@@ -80,6 +80,59 @@ func TestStatus_ReturnsAllFields(t *testing.T) {
 	}
 }
 
+func TestStatus_FallsBackToWANPPPConnection(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		sa := r.Header.Get("SoapAction")
+		w.Header().Set("Content-Type", `text/xml; charset="utf-8"`)
+
+		switch {
+		case strings.Contains(sa, "DeviceInfo") && strings.Contains(sa, "GetInfo"):
+			_, _ = io.WriteString(w, soapEnvelope("GetInfo", map[string]string{
+				"NewModelName":       "FRITZ!Box 4060",
+				"NewSoftwareVersion": "8.02",
+				"NewUpTime":          "3600",
+			}))
+		case strings.Contains(sa, "WANIPConnection"):
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `<s:Envelope><s:Body><s:Fault><detail><UPnPError><errorDescription>Invalid Action</errorDescription></UPnPError></detail></s:Fault></s:Body></s:Envelope>`)
+		case strings.Contains(sa, "WANPPPConnection") && strings.Contains(sa, "GetInfo"):
+			_, _ = io.WriteString(w, soapEnvelope("GetInfo", map[string]string{
+				"NewConnectionStatus":  "Connected",
+				"NewExternalIPAddress": "203.0.113.9",
+			}))
+		case strings.Contains(sa, "WANPPPConnection") && strings.Contains(sa, "GetExternalIPAddress"):
+			_, _ = io.WriteString(w, soapEnvelope("GetExternalIPAddress", map[string]string{
+				"NewExternalIPAddress": "203.0.113.9",
+			}))
+		case strings.Contains(sa, "UserInterface") && strings.Contains(sa, "GetInfo"):
+			_, _ = io.WriteString(w, soapEnvelope("GetInfo", map[string]string{"NewUpgradeAvailable": "0"}))
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c := New("fritz.box")
+	c.tr064BaseURL = srv.URL
+
+	s, err := c.Status(context.Background())
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if s.ConnectionState != "Connected" {
+		t.Errorf("ConnectionState = %q", s.ConnectionState)
+	}
+	if s.ExternalIP != "203.0.113.9" {
+		t.Errorf("ExternalIP = %q", s.ExternalIP)
+	}
+	if s.Partial {
+		t.Fatalf("Partial = true, errors: %+v", s.Errors)
+	}
+}
+
 func TestStatus_PartialFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

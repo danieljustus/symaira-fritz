@@ -35,6 +35,7 @@ type Service struct {
 var (
 	ServiceDeviceInfo            = Service{"urn:dslforum-org:service:DeviceInfo:1", "/upnp/control/deviceinfo"}
 	ServiceWANIPConnection       = Service{"urn:dslforum-org:service:WANIPConnection:1", "/upnp/control/wanipconnection1"}
+	ServiceWANPPPConnection      = Service{"urn:dslforum-org:service:WANPPPConnection:1", "/upnp/control/wanpppconn1"}
 	ServiceWANCommonIFC          = Service{"urn:dslforum-org:service:WANCommonInterfaceConfig:1", "/upnp/control/wancommonifconfig1"}
 	ServiceHosts                 = Service{"urn:dslforum-org:service:Hosts:1", "/upnp/control/hosts"}
 	ServiceWLANConfig1           = Service{"urn:dslforum-org:service:WLANConfiguration:1", "/upnp/control/wlanconfig1"}

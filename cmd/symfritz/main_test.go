@@ -256,6 +256,8 @@ func TestModelSuffix(t *testing.T) {
 }
 
 func TestBoxFromEnv(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
 	t.Run("defaults when no env vars", func(t *testing.T) {
 		t.Setenv("SYMFRITZ_HOST", "")
 		t.Setenv("SYMFRITZ_USER", "")

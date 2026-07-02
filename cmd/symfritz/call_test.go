@@ -15,6 +15,7 @@ func TestServiceByShortcut(t *testing.T) {
 	}{
 		{"deviceinfo", "deviceinfo", fritz.ServiceDeviceInfo, true},
 		{"wanip", "wanip", fritz.ServiceWANIPConnection, true},
+		{"wanppp", "wanppp", fritz.ServiceWANPPPConnection, true},
 		{"wancommon", "wancommon", fritz.ServiceWANCommonIFC, true},
 		{"hosts", "hosts", fritz.ServiceHosts, true},
 		{"wlan1", "wlan1", fritz.ServiceWLANConfig1, true},

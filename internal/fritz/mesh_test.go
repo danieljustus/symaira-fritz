@@ -106,6 +106,45 @@ func TestMeshTopology_ParsesNodesAndLinks(t *testing.T) {
 	}
 }
 
+func TestMeshTopology_FetchesRelativePathFromTR064Port(t *testing.T) {
+	jsonBody := []byte(`{"schema_version":"7.8","nodes":[{"uid":"n-1","device_name":"FRITZ!Box 4060"}]}`)
+
+	webSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer webSrv.Close()
+
+	tr064Srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost:
+			w.Header().Set("Content-Type", `text/xml; charset="utf-8"`)
+			_, _ = io.WriteString(w, soapEnvelope("X_AVM-DE_GetMeshListPath",
+				map[string]string{"NewX_AVM-DE_MeshListPath": "/meshlist.lua?sid=from-soap"}))
+		case r.URL.Path == "/meshlist.lua":
+			if r.URL.Query().Get("sid") != "from-soap" {
+				t.Errorf("sid = %q, want from-soap", r.URL.Query().Get("sid"))
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(jsonBody)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer tr064Srv.Close()
+
+	c := New("fritz.box", WithPassword("secret"))
+	c.tr064BaseURL = tr064Srv.URL
+	c.httpBaseURL = webSrv.URL
+
+	result, err := c.MeshTopology(context.Background())
+	if err != nil {
+		t.Fatalf("MeshTopology: %v", err)
+	}
+	if len(result.Nodes) != 1 || result.Nodes[0].DeviceName != "FRITZ!Box 4060" {
+		t.Fatalf("unexpected topology: %+v", result)
+	}
+}
+
 func TestMeshTopology_EmptyPath(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
