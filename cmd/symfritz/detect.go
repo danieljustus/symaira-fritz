@@ -47,16 +47,49 @@ func runDetect(cmd *cobra.Command, asJSON bool) error {
 		return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "detect failed")
 	}
 
+	// Probe unauthenticated WAN capacity/traffic via IGD
+	client := fritz.New(ip)
+	linkStats, _ := client.DSLLineStats(ctx)
+	trafficStats, _ := client.OnlineMonitor(ctx)
+
+	var (
+		downMax, upMax int
+		downBps, upBps float64
+		hasIGD         bool
+	)
+	if linkStats != nil && (linkStats.DownstreamMaxBitRate > 0 || linkStats.UpstreamMaxBitRate > 0) {
+		downMax = linkStats.DownstreamMaxBitRate
+		upMax = linkStats.UpstreamMaxBitRate
+		hasIGD = true
+	}
+	if trafficStats != nil && len(trafficStats.DownstreamInternet) > 0 {
+		downBps = trafficStats.DownstreamInternet[0]
+		if len(trafficStats.UpstreamDefaultPriority) > 0 {
+			upBps = trafficStats.UpstreamDefaultPriority[0]
+		}
+		hasIGD = true
+	}
+
 	if asJSON {
 		type DetectResult struct {
-			Host  string `json:"host"`
-			IP    string `json:"ip"`
-			Ready bool   `json:"ready"`
+			Host                 string  `json:"host"`
+			IP                   string  `json:"ip"`
+			Ready                bool    `json:"ready"`
+			DownstreamMaxBitRate int     `json:"downstream_max_bit_rate,omitempty"`
+			UpstreamMaxBitRate   int     `json:"upstream_max_bit_rate,omitempty"`
+			CurrentDownstreamBps float64 `json:"current_downstream_bps,omitempty"`
+			CurrentUpstreamBps   float64 `json:"current_upstream_bps,omitempty"`
+			IsReducedDataset     bool    `json:"is_reduced_dataset,omitempty"`
 		}
 		return printJSON(DetectResult{
-			Host:  box.Host,
-			IP:    ip,
-			Ready: true,
+			Host:                 box.Host,
+			IP:                   ip,
+			Ready:                true,
+			DownstreamMaxBitRate: downMax,
+			UpstreamMaxBitRate:   upMax,
+			CurrentDownstreamBps: downBps,
+			CurrentUpstreamBps:   upBps,
+			IsReducedDataset:     hasIGD,
 		})
 	}
 
@@ -69,9 +102,17 @@ func runDetect(cmd *cobra.Command, asJSON bool) error {
 		fmt.Printf("  host = \"%s\"\n", ip)
 	}
 
+	if hasIGD {
+		if downMax > 0 || upMax > 0 {
+			fmt.Printf("Link Capacity (IGD):     %d/%d bps (down/up)\n", downMax, upMax)
+		}
+		if downBps > 0 || upBps > 0 {
+			fmt.Printf("Current Throughput (IGD): %.0f/%.0f bps (down/up)\n", downBps, upBps)
+		}
+	}
+
 	// Verify the detected IP works
 	fmt.Printf("\nVerifying connection... ")
-	client := fritz.New(ip)
 	_, err = client.Discover(ctx)
 	if err != nil {
 		fmt.Printf("failed: %v\n", err)

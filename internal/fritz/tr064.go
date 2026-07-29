@@ -44,6 +44,7 @@ var (
 	ServiceOnTel                 = Service{"urn:dslforum-org:service:X_AVM-DE_OnTel:1", "/upnp/control/x_contact"}
 	ServiceUserInterface         = Service{"urn:dslforum-org:service:UserInterface:1", "/upnp/control/userif"}
 	ServiceHomeauto              = Service{"urn:dslforum-org:service:X_AVM-DE_Homeauto:1", "/upnp/control/x_homeauto"}
+	ServiceIGDWANCommonIFC       = Service{"urn:schemas-upnp-org:service:WANCommonInterfaceConfig:1", "/igdupnp/control/WANCommonIFC1"}
 )
 
 // Call invokes a TR-064 action and returns the output arguments as a map.
