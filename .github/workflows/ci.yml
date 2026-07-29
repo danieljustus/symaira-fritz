@@ -73,3 +73,13 @@ jobs:
 
       - name: Test
         run: CGO_ENABLED=0 go test ./...
+
+      - name: Check docs up to date
+        run: |
+          make docs
+          if [ -n "$(git status --porcelain docs/cli.md)" ]; then
+            echo "docs/cli.md is out of date. Run 'make docs' and commit the changes."
+            git diff docs/cli.md
+            exit 1
+          fi
+

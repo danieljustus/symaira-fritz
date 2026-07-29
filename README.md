@@ -41,7 +41,7 @@ What works today:
 - **Mesh** — topology of nodes, repeaters, and links.
 - **WLAN** — radios, associated clients, guest-network status/toggle.
 - **Wake-on-LAN** — by host name/IP or explicit MAC.
-- **AHA-HTTP** — DECT device listing and switch on/off (`symfritz home`).
+- **AHA-HTTP** — DECT device listing, switch on/off, and thermostat temperature control (`symfritz home`).
 - **Credentials** — `auth login/test/store`, resolved from env → symvault → macOS Keychain → config.
 - **Traffic** — real-time WAN traffic monitoring (downstream/upstream by category).
 - **DSL** — line statistics: noise margin, attenuation, max bit rate.
@@ -50,9 +50,10 @@ What works today:
 - **`status`**, **`reboot`**, an **MCP server** (stdio) exposing the above, config + env loading.
 - `--json` on the query/diagnose commands for scripting.
 
-Still planned: thermostat (HKR) control, per-radio band labelling, and the
-web-UI `data.lua` scraping layer for stats TR-064 doesn't expose (firmware-fragile,
-will be marked best-effort).
+Still planned: per-radio band labelling.
+
+There is also a best-effort `symfritz scrape` command for the web-UI `data.lua`
+endpoint (stats TR-064 doesn't expose), see Caveats below.
 
 ## Install
 
@@ -98,52 +99,24 @@ symfritz auth test                              # show source + verify web login
 
 ## Usage
 
+For the complete list of commands, subcommands, and flags, see the [CLI Command Reference](docs/cli.md).
+
+### Common commands
+
 ```bash
-symfritz status                            # model, firmware, connection, external IP
-symfritz detect                            # find FRITZ!Box on local network
-symfritz detect --json                     # machine-readable output
-
-# Hosts
-symfritz hosts list                        # all known devices
-symfritz hosts active                      # only currently-active devices
-symfritz hosts get macmini                 # by name…
-symfritz hosts get --mac f0:18:98:f3:64:b5 # …or MAC…
-symfritz hosts get --ip 192.168.188.65     # …or IP
-
-# End-to-end diagnosis (the headline use case)
-symfritz diagnose macmini                  # box entry → active → LAN/WLAN → DNS → ports
-symfritz diagnose macmini --port 22 --port 5900 --port 8001
-symfritz doctor macmini --json             # alias, machine-readable
-
-# Network shape
-symfritz mesh                              # mesh nodes + links
-symfritz wlan radios                       # SSID / band / channel / state
-symfritz wlan clients                      # associated devices + signal/speed
-symfritz wlan guest status|on|off
-symfritz traffic                           # real-time WAN traffic monitoring
-symfritz dsl                               # DSL line statistics (noise, attenuation, rate)
-
-# Wake the Mac Mini
-symfritz wol macmini                       # resolves MAC via host table
-symfritz wol --mac f0:18:98:f3:64:b5
-
-# DECT smart home
-symfritz home list
-symfritz home switch <AIN> on
-
-# Phone (if FRITZ!Box has telephony)
-symfritz calls                             # call list (--type missed/incoming/outgoing/rejected/all)
-symfritz dial <number>                     # dial a number via the FRITZ!Box
-symfritz hangup                            # hang up active call
-
-# Power-user / introspection
-symfritz services                          # discover all TR-064 services (tr64desc.xml)
-symfritz call deviceinfo GetInfo           # raw TR-064 action
-symfritz call WLANConfiguration:2 GetInfo  # any discovered service by name
-symfritz log                               # system event log (--filter sys/net/fon/wlan/usb)
-
-symfritz reboot --yes
-symfritz mcp                               # MCP stdio server for AI agents
+symfritz status                             # model, firmware, connection, external IP
+symfritz detect                             # find FRITZ!Box on local network
+symfritz diagnose macmini                   # end-to-end host reachability check
+symfritz diagnose router                    # detect and diagnose local router
+symfritz hosts list                         # all known network devices
+symfritz wlan radios                        # WLAN SSIDs, channels, state
+symfritz traffic                            # real-time WAN traffic monitoring
+symfritz dsl                                # DSL line statistics
+symfritz home list                          # DECT smart-home actors
+symfritz home temp <ain> <celsius|on|off>   # set target temperature for thermostat
+symfritz calls                              # recent call list
+symfritz reboot --yes                       # reboot the FRITZ!Box
+symfritz mcp                                # start MCP stdio server for AI agents
 ```
 
 ### Typical Mac Mini check
