@@ -17,13 +17,13 @@ func TestNewAuthCmd(t *testing.T) {
 		subNames[sub.Use] = true
 	}
 
-	for _, want := range []string{"test", "login", "store"} {
+	for _, want := range []string{"test", "login", "store", "trust"} {
 		if !subNames[want] {
 			t.Errorf("missing subcommand %q, got: %v", want, cmd.Commands())
 		}
 	}
 
-	if len(cmd.Commands()) != 3 {
-		t.Errorf("expected 3 subcommands, got %d", len(cmd.Commands()))
+	if len(cmd.Commands()) != 4 {
+		t.Errorf("expected 4 subcommands, got %d", len(cmd.Commands()))
 	}
 }

@@ -15,6 +15,8 @@ package fritz
 
 import (
 	"crypto/tls"
+	"crypto/x509"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -39,6 +41,8 @@ type Client struct {
 	InsecureTLS bool
 
 	http *http.Client
+
+	pinStore *PinStore
 
 	// Base URL overrides for testing against a local fake box. When empty the
 	// real host:port endpoints are used.
@@ -67,6 +71,11 @@ func WithTLS(insecure bool) Option {
 	}
 }
 
+// WithPinStore sets a custom PinStore for certificate verification.
+func WithPinStore(ps *PinStore) Option {
+	return func(c *Client) { c.pinStore = ps }
+}
+
 // WithTimeout sets the HTTP client timeout.
 func WithTimeout(d time.Duration) Option {
 	return func(c *Client) { c.http.Timeout = d }
@@ -91,8 +100,43 @@ func New(host string, opts ...Option) *Client {
 	}
 
 	// Build a transport that honours the InsecureTLS choice once options applied.
+	var tlsConfig *tls.Config
+	if c.InsecureTLS {
+		tlsConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // opt-out specified by user
+	} else if c.UseTLS {
+		tlsConfig = &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // manual verification in VerifyPeerCertificate
+			VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+				if len(rawCerts) == 0 {
+					return fmt.Errorf("no server certificate presented")
+				}
+				pin, err := CalculateSPKIPin(rawCerts[0])
+				if err != nil {
+					return fmt.Errorf("invalid server certificate: %w", err)
+				}
+				store := c.pinStore
+				if store == nil {
+					store = NewPinStore("")
+				}
+				storedPin := store.GetPin(c.Host)
+				if storedPin == "" {
+					if err := store.SetPin(c.Host, pin); err != nil {
+						return fmt.Errorf("failed to record certificate pin: %w", err)
+					}
+					return nil
+				}
+				if storedPin != pin {
+					return &FritzError{
+						Kind: ErrUnauthorized,
+						Raw:  fmt.Sprintf("certificate pin mismatch for %s (possible MITM attack or firmware update)", c.Host),
+					}
+				}
+				return nil
+			},
+		}
+	}
 	c.http.Transport = &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: c.InsecureTLS}, //nolint:gosec // self-signed box cert; opt-in via WithTLS(insecure)
+		TLSClientConfig: tlsConfig,
 	}
 	return c
 }

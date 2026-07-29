@@ -15,6 +15,7 @@ const (
 	ErrUnsupportedAction  ErrorKind = "unsupported_action"
 	ErrTimeout            ErrorKind = "timeout"
 	ErrTransport          ErrorKind = "transport_error"
+	ErrInternal           ErrorKind = "internal_error"
 )
 
 // ErrNoCredential is returned before session-login-only interfaces attempt to
@@ -44,6 +45,8 @@ func (e *FritzError) Error() string {
 		return fmt.Sprintf("timeout contacting %s.%s: %s", e.Service, e.Action, e.Raw)
 	case ErrTransport:
 		return fmt.Sprintf("transport error for %s.%s: %s", e.Service, e.Action, e.Raw)
+	case ErrInternal:
+		return fmt.Sprintf("internal FRITZ!Box error for %s.%s: %s", e.Service, e.Action, e.Raw)
 	default:
 		return fmt.Sprintf("%s.%s: %s", e.Service, e.Action, e.Raw)
 	}
@@ -53,6 +56,9 @@ func (e *FritzError) Error() string {
 func (e *FritzError) Hint() string {
 	switch e.Kind {
 	case ErrUnauthorized:
+		if strings.Contains(e.Raw, "pin mismatch") {
+			return fmt.Sprintf("Possible MITM attack or firmware update. To reset the pinned certificate, run: symfritz auth trust --reset %s", e.Service)
+		}
 		return "Run: symfritz auth login"
 	case ErrUnsupportedAction:
 		return fmt.Sprintf("This FRITZ!Box model may not support %s.%s", e.Service, e.Action)
@@ -60,8 +66,26 @@ func (e *FritzError) Hint() string {
 		return "Check network connectivity and try again"
 	case ErrTransport:
 		return "Check that the FRITZ!Box is reachable and SYMFRITZ_HOST is correct"
+	case ErrInternal:
+		return "The FRITZ!Box reported an internal error; check system logs or try rebooting"
 	default:
 		return ""
+	}
+}
+
+// ClassifyCode maps a UPnP error code to an ErrorKind.
+func ClassifyCode(code int) (ErrorKind, bool) {
+	switch code {
+	case 401, 402:
+		return ErrUnsupportedAction, true
+	case 606:
+		return ErrUnauthorized, true
+	case 713, 714:
+		return ErrServiceUnavailable, true
+	case 501, 603, 820:
+		return ErrInternal, true
+	default:
+		return "", false
 	}
 }
 
@@ -155,6 +179,15 @@ func IsTransport(err error) bool {
 	var fe *FritzError
 	if errors.As(err, &fe) {
 		return fe.Kind == ErrTransport
+	}
+	return false
+}
+
+// IsInternal reports whether err is (or wraps) an internal FritzError.
+func IsInternal(err error) bool {
+	var fe *FritzError
+	if errors.As(err, &fe) {
+		return fe.Kind == ErrInternal
 	}
 	return false
 }

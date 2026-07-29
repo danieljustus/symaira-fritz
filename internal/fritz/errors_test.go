@@ -157,3 +157,38 @@ func TestIsUnsupportedAction(t *testing.T) {
 		t.Error("IsUnsupportedAction() = false, want true")
 	}
 }
+
+func TestClassifyCode(t *testing.T) {
+	tests := []struct {
+		code     int
+		wantKind ErrorKind
+		wantOk   bool
+	}{
+		{401, ErrUnsupportedAction, true},
+		{402, ErrUnsupportedAction, true},
+		{606, ErrUnauthorized, true},
+		{713, ErrServiceUnavailable, true},
+		{714, ErrServiceUnavailable, true},
+		{501, ErrInternal, true},
+		{603, ErrInternal, true},
+		{820, ErrInternal, true},
+		{999, "", false},
+	}
+
+	for _, tt := range tests {
+		gotKind, gotOk := ClassifyCode(tt.code)
+		if gotOk != tt.wantOk {
+			t.Errorf("ClassifyCode(%d) ok = %v, want %v", tt.code, gotOk, tt.wantOk)
+		}
+		if gotKind != tt.wantKind {
+			t.Errorf("ClassifyCode(%d) kind = %q, want %q", tt.code, gotKind, tt.wantKind)
+		}
+	}
+}
+
+func TestIsInternal(t *testing.T) {
+	err := &FritzError{Kind: ErrInternal, Service: "Test", Action: "GetInfo", Raw: "Internal Error"}
+	if !IsInternal(err) {
+		t.Error("IsInternal() = false, want true")
+	}
+}

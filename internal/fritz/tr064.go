@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -44,6 +45,7 @@ var (
 	ServiceOnTel                 = Service{"urn:dslforum-org:service:X_AVM-DE_OnTel:1", "/upnp/control/x_contact"}
 	ServiceUserInterface         = Service{"urn:dslforum-org:service:UserInterface:1", "/upnp/control/userif"}
 	ServiceHomeauto              = Service{"urn:dslforum-org:service:X_AVM-DE_Homeauto:1", "/upnp/control/x_homeauto"}
+	ServiceIGDWANCommonIFC       = Service{"urn:schemas-upnp-org:service:WANCommonInterfaceConfig:1", "/igdupnp/control/WANCommonIFC1"}
 )
 
 // Call invokes a TR-064 action and returns the output arguments as a map.
@@ -72,22 +74,27 @@ func (c *Client) Call(ctx context.Context, svc Service, action string, args map[
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		fault := soapFaultString(raw)
+		code, fault := parseSOAPFault(raw)
 		fe := &FritzError{
 			Service:    shortService(svc.Type),
 			Action:     action,
+			ErrorCode:  code,
 			Raw:        fault,
 			HTTPStatus: resp.StatusCode,
 		}
-		switch {
-		case resp.StatusCode == http.StatusUnauthorized:
-			fe.Kind = ErrUnauthorized
-		case strings.Contains(fault, "Invalid Action"):
-			fe.Kind = ErrUnsupportedAction
-		case resp.StatusCode >= 500:
-			fe.Kind = ErrServiceUnavailable
-		default:
-			fe.Kind = ErrServiceUnavailable
+		if kind, ok := ClassifyCode(code); ok {
+			fe.Kind = kind
+		} else {
+			switch {
+			case resp.StatusCode == http.StatusUnauthorized:
+				fe.Kind = ErrUnauthorized
+			case strings.Contains(fault, "Invalid Action") || strings.Contains(fault, "invalid action"):
+				fe.Kind = ErrUnsupportedAction
+			case strings.Contains(fault, "No such entry") || strings.Contains(fault, "no such entry"):
+				fe.Kind = ErrServiceUnavailable
+			default:
+				fe.Kind = ErrServiceUnavailable
+			}
 		}
 		return nil, fe
 	}
@@ -172,6 +179,39 @@ func parseSOAPResponse(raw []byte, action string) (map[string]string, error) {
 		return out, nil // action may legitimately return no out-args
 	}
 	return out, nil
+}
+
+// parseSOAPFault extracts the numeric UPnP errorCode and human-readable description.
+func parseSOAPFault(raw []byte) (int, string) {
+	var (
+		code int
+		desc string
+	)
+	dec := xml.NewDecoder(bytes.NewReader(raw))
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			if t.Name.Local == "errorCode" {
+				var val string
+				if err := dec.DecodeElement(&val, &t); err == nil {
+					code, _ = strconv.Atoi(strings.TrimSpace(val))
+				}
+			} else if t.Name.Local == "errorDescription" {
+				var val string
+				if err := dec.DecodeElement(&val, &t); err == nil {
+					desc = strings.TrimSpace(val)
+				}
+			}
+		}
+	}
+	if desc == "" {
+		desc = soapFaultString(raw)
+	}
+	return code, desc
 }
 
 // soapFaultString pulls a human-readable error out of a SOAP fault body.
