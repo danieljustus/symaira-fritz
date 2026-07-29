@@ -26,7 +26,34 @@ Keychain → plaintext config. 'auth login' captures the password once, verifies
 it against the box, and stores it in the Keychain or symvault so nothing sits in
 a dotfile.`,
 	}
-	cmd.AddCommand(newAuthTestCmd(), newAuthLoginCmd(), newAuthStoreCmd())
+	cmd.AddCommand(newAuthTestCmd(), newAuthLoginCmd(), newAuthStoreCmd(), newAuthTrustCmd())
+	return cmd
+}
+
+func newAuthTrustCmd() *cobra.Command {
+	var resetHost string
+	cmd := &cobra.Command{
+		Use:   "trust",
+		Short: "Manage trusted TLS certificate pins (TOFU)",
+		Long:  "Display or reset trusted host TLS public key pins.",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if resetHost != "" {
+				store := fritz.NewPinStore("")
+				reset, err := store.ResetPin(resetHost)
+				if err != nil {
+					return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindInternal, "failed to reset pin")
+				}
+				if reset {
+					fmt.Printf("Reset certificate pin for %s.\nNext TLS connection will pin the current certificate.\n", resetHost)
+				} else {
+					fmt.Printf("No pin recorded for %s.\n", resetHost)
+				}
+				return nil
+			}
+			return cmd.Help()
+		},
+	}
+	cmd.Flags().StringVar(&resetHost, "reset", "", "Reset the pinned TLS certificate for the specified host")
 	return cmd
 }
 

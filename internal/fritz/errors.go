@@ -53,6 +53,9 @@ func (e *FritzError) Error() string {
 func (e *FritzError) Hint() string {
 	switch e.Kind {
 	case ErrUnauthorized:
+		if strings.Contains(e.Raw, "pin mismatch") {
+			return fmt.Sprintf("Possible MITM attack or firmware update. To reset the pinned certificate, run: symfritz auth trust --reset %s", e.Service)
+		}
 		return "Run: symfritz auth login"
 	case ErrUnsupportedAction:
 		return fmt.Sprintf("This FRITZ!Box model may not support %s.%s", e.Service, e.Action)

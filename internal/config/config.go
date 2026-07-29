@@ -39,8 +39,7 @@ type Box struct {
 	KeychainAccount string `json:"keychain_account" toml:"keychain_account"`
 	// UseTLS selects the https TR-064 endpoint (port 49443).
 	UseTLS bool `json:"use_tls" toml:"use_tls"`
-	// InsecureTLS skips certificate verification (needed for the box's
-	// self-signed certificate when UseTLS is on).
+	// InsecureTLS skips certificate verification (disables TOFU certificate pinning; optional opt-out for legacy setups).
 	InsecureTLS bool `json:"insecure_tls" toml:"insecure_tls"`
 	// TimeoutSeconds is the per-request HTTP timeout.
 	TimeoutSeconds int `json:"timeout_seconds" toml:"timeout_seconds"`
@@ -113,8 +112,8 @@ password = ""
 # Use the TLS TR-064 endpoint (https, port 49443).
 use_tls = false
 
-# Skip TLS certificate verification (required for the box's self-signed cert
-# when use_tls = true).
+# Skip TLS certificate verification (disables TOFU certificate pinning;
+# optional opt-out for legacy setups).
 insecure_tls = false
 
 # Per-request HTTP timeout in seconds.
