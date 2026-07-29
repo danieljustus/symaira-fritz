@@ -32,6 +32,10 @@ lint:
 	$(GO) fmt ./...
 	CGO_ENABLED=0 $(GO) vet ./...
 
+.PHONY: docs
+docs:
+	CGO_ENABLED=0 $(GO) run ./cmd/gen-docs
+
 .PHONY: clean
 clean:
 	rm -f $(BINARY_NAME)

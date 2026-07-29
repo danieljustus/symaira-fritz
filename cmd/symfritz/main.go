@@ -76,6 +76,7 @@ the SYMFRITZ_PASSWORD environment variable.`,
 		newLogCmd(),
 		newDetectCmd(),
 	)
+	root.AddCommand(newGenDocsCmd(root))
 	return root
 }
 
