@@ -14,15 +14,15 @@
 </systemVersion>
 <device>
 <deviceType>urn:dslforum-org:device:InternetGatewayDevice:1</deviceType>
-<friendlyName>fritz-box4060</friendlyName>
+<friendlyName>FRITZ!Box 4060</friendlyName>
 <manufacturer>AVM</manufacturer>
 <manufacturerURL>www.avm.de</manufacturerURL>
 <modelDescription>FRITZ!Box 4060</modelDescription>
 <modelName>FRITZ!Box 4060</modelName>
 <modelNumber>4060 - avme</modelNumber>
 <modelURL>www.avm.de</modelURL>
-<UDN>uuid:739f2409-bccb-40e7-8e6c-08B657B54CDB</UDN>
-<serialNumber>08:B6:57:B5:4C:DB</serialNumber>
+<UDN>uuid:00000000-0000-4000-8000-000000000001</UDN>
+<serialNumber>00:00:00:00:00:01</serialNumber>
 <originUDN></originUDN>
 <iconList>
 <icon>
@@ -201,7 +201,7 @@
 <modelName>LANDevice - FRITZ!Box 4060</modelName>
 <modelNumber>4060 - avme</modelNumber>
 <modelURL>www.avm.de</modelURL>
-<UDN>uuid:75802409-bccb-40e7-8e6b-08B657B54CDB</UDN>
+<UDN>uuid:00000000-0000-4000-8000-000000000002</UDN>
 <UPC>AVM TR-064</UPC>
 <serviceList>
 <service>
@@ -244,7 +244,7 @@
 <modelName>WANDevice - FRITZ!Box 4060</modelName>
 <modelNumber>4060 - avme</modelNumber>
 <modelURL>www.avm.de</modelURL>
-<UDN>uuid:75802409-bccb-40e7-8e6a-08B657B54CDB</UDN>
+<UDN>uuid:00000000-0000-4000-8000-000000000003</UDN>
 <UPC>AVM TR-064</UPC>
 <serviceList>
 <service>
@@ -265,7 +265,7 @@
 <modelName>WANConnectionDevice - FRITZ!Box 4060</modelName>
 <modelNumber>4060 - avme</modelNumber>
 <modelURL>www.avm.de</modelURL>
-<UDN>uuid:75802409-bccb-40e7-8e69-08B657B54CDB</UDN>
+<UDN>uuid:00000000-0000-4000-8000-000000000004</UDN>
 <UPC>AVM TR-064</UPC>
 <serviceList>
 <service>
@@ -301,6 +301,6 @@
 </deviceList>
 </device>
 </deviceList>
-<presentationURL>http://192.168.188.1</presentationURL>
+<presentationURL>http://192.0.2.1</presentationURL>
 </device>
 </root>

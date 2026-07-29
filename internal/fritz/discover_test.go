@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// tr64descFixture is a capture from the FRITZ!Box used for development.
+// tr64descFixture is a redacted capture from the FRITZ!Box used for development.
 //
 //go:embed testdata/tr64desc.xml
 var tr64descFixture []byte
