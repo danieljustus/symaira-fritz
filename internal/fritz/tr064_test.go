@@ -2,6 +2,7 @@ package fritz
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -223,5 +224,31 @@ func TestCall_UnauthorizedNoDigest(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "401 without a parseable digest challenge") {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestCall_NumericErrorCodeClassification(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, `<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError</faultstring><detail><UPnPError xmlns="urn:dslforum-org:control-1-0"><errorCode>606</errorCode><errorDescription>Aktion nicht autorisiert</errorDescription></UPnPError></detail></s:Fault></s:Body></s:Envelope>`)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("fritz.box")
+	c.tr064BaseURL = srv.URL
+
+	_, err := c.Call(context.Background(), ServiceDeviceInfo, "GetInfo", nil)
+	if err == nil {
+		t.Fatal("expected error for SOAP fault 606")
+	}
+	var fe *FritzError
+	if !errors.As(err, &fe) {
+		t.Fatalf("expected FritzError, got %T", err)
+	}
+	if fe.ErrorCode != 606 {
+		t.Errorf("ErrorCode = %d, want 606", fe.ErrorCode)
+	}
+	if !IsUnauthorized(err) {
+		t.Errorf("expected Kind == ErrUnauthorized for code 606, got %v", fe.Kind)
 	}
 }
