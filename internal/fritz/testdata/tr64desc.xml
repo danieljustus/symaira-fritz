@@ -1,0 +1,138 @@
+<?xml version="1.0"?>
+<root xmlns="urn:dslforum-org:device-1-0">
+  <!--
+    Realistic tr64desc.xml fixture simulating a FRITZ!Box 7590.
+
+    Service names and URNs are AVM/UPnP published standards, not proprietary
+    expression. Multiple WLANConfiguration services exist because the box
+    exposes 2.4 GHz, 5 GHz, and guest network as separate service instances;
+    WANIPConnection appears in two versions for IPv4 and IPv6. Together these
+    exercise the ambiguity-resolution branches in ServiceByName.
+  -->
+  <device>
+    <deviceType>urn:dslforum-org:device:InternetGatewayDevice:1</deviceType>
+    <friendlyName>FRITZ!Box 7590</friendlyName>
+    <manufacturer>AVM Berlin</manufacturer>
+    <modelName>FRITZ!Box 7590</modelName>
+    <serviceList>
+      <service>
+        <serviceType>urn:dslforum-org:service:DeviceInfo:1</serviceType>
+        <serviceId>urn:dslforum-org:serviceId:DeviceInfo1</serviceId>
+        <controlURL>/upnp/control/deviceinfo</controlURL>
+        <eventSubURL>/upnp/event/deviceinfo</eventSubURL>
+        <SCPDURL>/deviceinfoSCPD.xml</SCPDURL>
+      </service>
+      <service>
+        <serviceType>urn:dslforum-org:service:DeviceConfig:1</serviceType>
+        <serviceId>urn:dslforum-org:serviceId:DeviceConfig1</serviceId>
+        <controlURL>/upnp/control/deviceconfig</controlURL>
+        <eventSubURL>/upnp/event/deviceconfig</eventSubURL>
+        <SCPDURL>/deviceconfigSCPD.xml</SCPDURL>
+      </service>
+      <service>
+        <serviceType>urn:dslforum-org:service:LANConfigSecurity:1</serviceType>
+        <serviceId>urn:dslforum-org:serviceId:LANConfigSecurity1</serviceId>
+        <controlURL>/upnp/control/lanconfigsecurity</controlURL>
+        <eventSubURL>/upnp/event/lanconfigsecurity</eventSubURL>
+        <SCPDURL>/lanconfigsecuritySCPD.xml</SCPDURL>
+      </service>
+      <service>
+        <serviceType>urn:dslforum-org:service:ManagementServer:1</serviceType>
+        <serviceId>urn:dslforum-org:serviceId:ManagementServer1</serviceId>
+        <controlURL>/upnp/control/mgmsrv</controlURL>
+        <eventSubURL>/upnp/event/mgmsrv</eventSubURL>
+        <SCPDURL>/mgmsrvSCPD.xml</SCPDURL>
+      </service>
+      <service>
+        <serviceType>urn:dslforum-org:service:Time:1</serviceType>
+        <serviceId>urn:dslforum-org:serviceId:Time1</serviceId>
+        <controlURL>/upnp/control/time</controlURL>
+        <eventSubURL>/upnp/event/time</eventSubURL>
+        <SCPDURL>/timeSCPD.xml</SCPDURL>
+      </service>
+      <service>
+        <serviceType>urn:dslforum-org:service:UserInterface:1</serviceType>
+        <serviceId>urn:dslforum-org:serviceId:UserInterface1</serviceId>
+        <controlURL>/upnp/control/userinterface</controlURL>
+        <eventSubURL>/upnp/event/userinterface</eventSubURL>
+        <SCPDURL>/userinterfaceSCPD.xml</SCPDURL>
+      </service>
+    </serviceList>
+
+    <deviceList>
+      <!-- WAN device with IP connection services -->
+      <device>
+        <deviceType>urn:dslforum-org:device:WANDevice:1</deviceType>
+        <serviceList>
+          <service>
+            <serviceType>urn:dslforum-org:service:WANCommonInterfaceConfig:1</serviceType>
+            <serviceId>urn:dslforum-org:serviceId:WANCommonInterfaceConfig1</serviceId>
+            <controlURL>/upnp/control/wancommoninterfaceconfig</controlURL>
+          </service>
+        </serviceList>
+        <deviceList>
+          <device>
+            <deviceType>urn:dslforum-org:device:WANConnectionDevice:1</deviceType>
+            <serviceList>
+              <service>
+                <serviceType>urn:dslforum-org:service:WANIPConnection:1</serviceType>
+                <serviceId>urn:dslforum-org:serviceId:WANIPConnection1</serviceId>
+                <controlURL>/upnp/control/wanipconnection</controlURL>
+              </service>
+              <service>
+                <!-- Second WANIPConnection variant (IPv6 support) -->
+                <serviceType>urn:dslforum-org:service:WANIPConnection:2</serviceType>
+                <serviceId>urn:dslforum-org:serviceId:WANIPConnection2</serviceId>
+                <controlURL>/upnp/control/wanipconnection2</controlURL>
+              </service>
+              <service>
+                <serviceType>urn:dslforum-org:service:WANPPPConnection:1</serviceType>
+                <serviceId>urn:dslforum-org:serviceId:WANPPPConnection1</serviceId>
+                <controlURL>/upnp/control/wanpppconnection</controlURL>
+              </service>
+            </serviceList>
+          </device>
+        </deviceList>
+      </device>
+
+      <!-- LAN device with multiple WLAN configurations -->
+      <device>
+        <deviceType>urn:dslforum-org:device:LANDevice:1</deviceType>
+        <serviceList>
+          <service>
+            <serviceType>urn:dslforum-org:service:Hosts:1</serviceType>
+            <serviceId>urn:dslforum-org:serviceId:Hosts1</serviceId>
+            <controlURL>/upnp/control/hosts</controlURL>
+          </service>
+          <service>
+            <serviceType>urn:dslforum-org:service:WLANConfiguration:1</serviceType>
+            <serviceId>urn:dslforum-org:serviceId:WLANConfiguration1</serviceId>
+            <controlURL>/upnp/control/wlanconfig1</controlURL>
+          </service>
+          <service>
+            <serviceType>urn:dslforum-org:service:WLANConfiguration:2</serviceType>
+            <serviceId>urn:dslforum-org:serviceId:WLANConfiguration2</serviceId>
+            <controlURL>/upnp/control/wlanconfig2</controlURL>
+          </service>
+          <service>
+            <serviceType>urn:dslforum-org:service:WLANConfiguration:3</serviceType>
+            <serviceId>urn:dslforum-org:serviceId:WLANConfiguration3</serviceId>
+            <controlURL>/upnp/control/wlanconfig3</controlURL>
+          </service>
+        </serviceList>
+      </device>
+
+      <!-- Layer3Forwarding device -->
+      <device>
+        <deviceType>urn:dslforum-org:device:InternetGatewayDevice:1</deviceType>
+        <serviceList>
+          <service>
+            <serviceType>urn:dslforum-org:service:Layer3Forwarding:1</serviceType>
+            <serviceId>urn:dslforum-org:serviceId:Layer3Forwarding1</serviceId>
+            <controlURL>/upnp/control/layer3forwarding</controlURL>
+          </service>
+        </serviceList>
+      </device>
+    </deviceList>
+  </device>
+</root>
