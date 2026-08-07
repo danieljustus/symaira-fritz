@@ -12,8 +12,7 @@ import (
 // hosts, services, reboot, and wol commands.
 func extraMockServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	var srv *httptest.Server
-	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/login_sid.lua" {
 			_, _ = io.WriteString(w, loginSIDXML)
 			return
