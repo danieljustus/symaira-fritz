@@ -95,7 +95,7 @@ func runDiagnoseRouter(cmd *cobra.Command, asJSON bool, ports []int) error {
 	if envHost != "" {
 		routerHost = envHost
 	} else {
-		ip, err := fritz.DiscoverBox(ctx, httpClient, box.Host, true)
+		ip, err := discoverBox(ctx, httpClient, box.Host, true)
 		if err != nil {
 			return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "could not find FRITZ!Box on the network")
 		}

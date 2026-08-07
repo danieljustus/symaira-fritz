@@ -13,6 +13,13 @@ import (
 	"github.com/danieljustus/symaira-fritz/internal/fritz"
 )
 
+// discoverBox is a test seam around fritz.DiscoverBox so command tests can
+// stub network discovery without a live box.
+var discoverBox = fritz.DiscoverBox
+
+// newDetectClient is a test seam for the client built from a discovered IP.
+var newDetectClient = func(ip string) *fritz.Client { return fritz.New(ip) }
+
 func newDetectCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
@@ -41,13 +48,13 @@ func runDetect(cmd *cobra.Command, asJSON bool) error {
 	httpClient := newHTTPClient()
 
 	// Run discovery
-	ip, err := fritz.DiscoverBox(ctx, httpClient, box.Host, true)
+	ip, err := discoverBox(ctx, httpClient, box.Host, true)
 	if err != nil {
 		return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "detect failed")
 	}
 
 	// Probe unauthenticated WAN capacity/traffic via IGD
-	client := fritz.New(ip)
+	client := newDetectClient(ip)
 	linkStats, _ := client.DSLLineStats(ctx)
 	trafficStats, _ := client.OnlineMonitor(ctx)
 

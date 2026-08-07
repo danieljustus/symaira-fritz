@@ -17,6 +17,7 @@ vendor/
 
 # Agent/developer workspace files
 AGENTS.md
+.worktrees/
 
 # Local audit reports
 .github/audit/
