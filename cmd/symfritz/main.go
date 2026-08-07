@@ -126,8 +126,9 @@ var newClient = func() (*fritz.Client, *config.Config, error) {
 	return newClientFor(box, res.Password), cfg, nil
 }
 
-// newClientFor builds a client for a box with an explicit password.
-func newClientFor(box config.Box, password string) *fritz.Client {
+// newClientFor builds a client for a box with an explicit password. It is a
+// var so tests can substitute a mock-URL client.
+var newClientFor = func(box config.Box, password string) *fritz.Client {
 	opts := []fritz.Option{
 		fritz.WithUser(box.User),
 		fritz.WithPassword(password),

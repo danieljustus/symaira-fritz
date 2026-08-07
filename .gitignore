@@ -17,9 +17,12 @@ vendor/
 
 # Agent/developer workspace files
 AGENTS.md
+.worktrees/
 
 # Local audit reports
 .github/audit/
 
 # Documentation builds / local notes
 docs/adopt/
+.github/review/
+.github/coverage/
