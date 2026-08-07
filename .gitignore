@@ -24,3 +24,5 @@ AGENTS.md
 
 # Documentation builds / local notes
 docs/adopt/
+.github/review/
+.github/coverage/
