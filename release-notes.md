@@ -1,9 +1,9 @@
 ## What's Changed
 
-### Dependencies
-- Bump `github.com/danieljustus/symaira-corekit` from 0.6.0 to 0.8.0 (#91)
+### Fixes
+- #92 Return an error instead of calling `os.Exit` on `detect` verification failure, so `symfritz detect --json` emits the standard structured JSON error contract
 
-### Docs
-- Make generated CLI documentation reproducible by removing Cobra's volatile generation date.
+### Tests
+- #99 Raise command-layer coverage from 33.8% to 84.2% with httptest-based command tests — closes #98
 
-**Full Changelog**: https://github.com/danieljustus/symaira-fritz/compare/v0.4.0...v0.4.1
+**Full Changelog**: https://github.com/danieljustus/symaira-fritz/compare/v0.4.1...v0.4.2
