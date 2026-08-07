@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -113,10 +112,8 @@ func runDetect(cmd *cobra.Command, asJSON bool) error {
 
 	// Verify the detected IP works
 	fmt.Printf("\nVerifying connection... ")
-	_, err = client.Discover(ctx)
-	if err != nil {
-		fmt.Printf("failed: %v\n", err)
-		os.Exit(1)
+	if _, err = client.Discover(ctx); err != nil {
+		return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "connection verification failed")
 	}
 	fmt.Printf("ok\n")
 
