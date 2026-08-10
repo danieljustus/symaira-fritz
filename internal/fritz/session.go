@@ -94,6 +94,13 @@ func (c *Client) fetchSession(ctx context.Context, params url.Values) (*sessionI
 	}
 	defer resp.Body.Close()
 
+	// The box reports failed logins (wrong password, rate limit) with HTTP 200
+	// and an invalid SID, so any non-200 status is a genuine error and not a
+	// payload worth XML-parsing.
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("login_sid.lua returned HTTP %d", resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 	if err != nil {
 		return nil, err
