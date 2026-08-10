@@ -1,9 +1,13 @@
 ## What's Changed
 
 ### Fixes
-- #92 Return an error instead of calling `os.Exit` on `detect` verification failure, so `symfritz detect --json` emits the standard structured JSON error contract
+- #104 Return an explicit error for non-200 session-login responses instead of attempting to parse an error page as XML.
+- Update `symaira-corekit` to v0.9.1, including its configuration-loader concurrency fix and MCP protocol improvements.
 
 ### Tests
-- #99 Raise command-layer coverage from 33.8% to 84.2% with httptest-based command tests — closes #98
+- #104 Add protocol-level coverage for legacy MD5 and PBKDF2 session login, ready SIDs, rejected credentials, rate limiting, malformed XML, transport failures, and non-200 responses.
 
-**Full Changelog**: https://github.com/danieljustus/symaira-fritz/compare/v0.4.1...v0.4.2
+### Documentation
+- #103 Align the contributor Go prerequisite with the version required by the module and CI.
+
+**Full Changelog**: https://github.com/danieljustus/symaira-fritz/compare/v0.4.2...v0.4.3
