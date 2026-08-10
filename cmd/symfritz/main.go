@@ -19,7 +19,7 @@ import (
 	"github.com/danieljustus/symaira-fritz/internal/secret"
 )
 
-var version = "0.4.2"
+var version = "0.4.3"
 
 func main() {
 	slog.SetDefault(logkit.NewFromEnv("symfritz"))
