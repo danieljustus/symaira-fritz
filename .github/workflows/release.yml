@@ -66,25 +66,42 @@ jobs:
           NOTARY_API_ISSUER: ${{ secrets.NOTARY_API_ISSUER }}
           NOTARY_API_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
         run: |
-          if [ -z "${NOTARY_API_KEY:-}" ]; then
-            echo "::warning::NOTARY_API_KEY secret is not set. Skipping notarization."
-            exit 0
+          set -euo pipefail
+          for required in NOTARY_API_KEY NOTARY_API_KEY_ID NOTARY_API_ISSUER; do
+            if [ -z "${!required:-}" ]; then
+              echo "::error::$required secret is not set. Refusing an unnotarized release."
+              exit 1
+            fi
+          done
+          KEY_FILE="$RUNNER_TEMP/notary-api-key.p8"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          if printf '%s' "$NOTARY_API_KEY" | openssl base64 -d -A > "$KEY_FILE" 2>/dev/null \
+            && openssl pkey -in "$KEY_FILE" -noout >/dev/null 2>&1; then
+            :
+          else
+            printf '%s' "$NOTARY_API_KEY" > "$KEY_FILE"
           fi
+          FOUND=0
           for ARCH in amd64 arm64; do
-            for f in dist/*_darwin_${ARCH}/*; do
+            for f in dist/*_darwin_${ARCH}*/*; do
               if [ -f "$f" ] && file "$f" | grep -q "Mach-O"; then
+                FOUND=1
                 echo "Notarizing $f..."
                 ZIP_PATH="$RUNNER_TEMP/notarize_${ARCH}.zip"
                 ditto -c -k --keepParent "$f" "$ZIP_PATH"
                 xcrun notarytool submit "$ZIP_PATH" \
-                  --apple-id "${NOTARY_API_KEY_ID}" \
-                  --team-id "${NOTARY_API_ISSUER}" \
-                  --password "${NOTARY_API_KEY}" \
+                  --key "$KEY_FILE" \
+                  --key-id "$NOTARY_API_KEY_ID" \
+                  --issuer "$NOTARY_API_ISSUER" \
                   --wait
                 rm -f "$ZIP_PATH"
               fi
             done
           done
+          if [ "$FOUND" -eq 0 ]; then
+            echo "::error::No Darwin Mach-O artifacts found for notarization."
+            exit 1
+          fi
 
       - name: Clean up signing material
         if: always()
