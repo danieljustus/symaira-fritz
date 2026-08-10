@@ -6,7 +6,7 @@ Thank you for your interest in contributing to Symaira Fritz! This document prov
 
 ### Prerequisites
 
-- Go 1.26.4 or later
+- Go 1.26.5 or later
 - Git
 
 ### Getting Started
