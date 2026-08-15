@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="854" height="1187" viewBox="0 0 854 1187" role="img" aria-label="symfritz terminal demo: output of symfritz version, symfritz --help, and symfritz status --help">
+<defs><style>text{font-family:Menlo, Monaco, 'Courier New', monospace;font-size:14px;}</style></defs>
+<rect width="854" height="1187" rx="12" fill="#1e1e2e"/>
+<rect width="854" height="40" rx="12" fill="#2a2a3c"/>
+<rect y="28" width="854" height="12" fill="#2a2a3c"/>
+<circle cx="34" cy="20.0" r="6.5" fill="#ff5f56"/>
+<circle cx="56" cy="20.0" r="6.5" fill="#ffbd2e"/>
+<circle cx="78" cy="20.0" r="6.5" fill="#27c93f"/>
+<text x="427.0" y="25.0" text-anchor="middle" fill="#7f849c" font-size="13">symfritz — zsh — 88×24</text>
+<text x="20" y="67" fill="#8aff80">$</text>
+<text x="34" y="67" fill="#c6a0f6">./symfritz version</text>
+<text x="20" y="86" fill="#e6e6f0">symfritz dev</text>
+<text x="20" y="124" fill="#8aff80">$</text>
+<text x="34" y="124" fill="#c6a0f6">./symfritz --help</text>
+<text x="20" y="143" fill="#e6e6f0">symfritz talks to a FRITZ!Box over its documented interfaces:</text>
+<text x="20" y="162" fill="#e6e6f0"></text>
+<text x="20" y="181" fill="#e6e6f0">  TR-064  (SOAP)  administration: status, WAN/IP, WLAN, hosts, mesh, reboot</text>
+<text x="20" y="200" fill="#e6e6f0">  AHA-HTTP        DECT smart-home actors (switches, thermostats)</text>
+<text x="20" y="219" fill="#e6e6f0">  Session login   for AHA and (later) web-UI data scraping</text>
+<text x="20" y="238" fill="#e6e6f0"></text>
+<text x="20" y="257" fill="#e6e6f0">Configure the box once with &#x27;symfritz config init&#x27;, then set the password via</text>
+<text x="20" y="276" fill="#e6e6f0">the SYMFRITZ_PASSWORD environment variable.</text>
+<text x="20" y="295" fill="#e6e6f0"></text>
+<text x="20" y="314" fill="#e6e6f0">Usage:</text>
+<text x="20" y="333" fill="#e6e6f0">  symfritz [command]</text>
+<text x="20" y="352" fill="#e6e6f0"></text>
+<text x="20" y="371" fill="#e6e6f0">Available Commands:</text>
+<text x="20" y="390" fill="#e6e6f0">  auth        Manage FRITZ!Box credentials (test, login, store)</text>
+<text x="20" y="409" fill="#e6e6f0">  call        Invoke a raw TR-064 action (power user)</text>
+<text x="20" y="428" fill="#e6e6f0">  calls       Show FRITZ!Box call list</text>
+<text x="20" y="447" fill="#e6e6f0">  completion  Generate the autocompletion script for the specified shell</text>
+<text x="20" y="466" fill="#e6e6f0">  config      Manage symfritz configuration</text>
+<text x="20" y="485" fill="#e6e6f0">  detect      Detect the local FRITZ!Box on the network</text>
+<text x="20" y="504" fill="#e6e6f0">  diagnose    End-to-end reachability check for a host (name, MAC, or IP)</text>
+<text x="20" y="523" fill="#e6e6f0">  dial        Instruct the FRITZ!Box to dial a phone number</text>
+<text x="20" y="542" fill="#e6e6f0">  dsl         Show DSL line statistics (noise margin, attenuation, max bit rate)</text>
+<text x="20" y="561" fill="#e6e6f0">  hangup      Hang up any active call initiated by dial</text>
+<text x="20" y="580" fill="#e6e6f0">  help        Help about any command</text>
+<text x="20" y="599" fill="#e6e6f0">  home        DECT smart-home actors (switches, thermostats)</text>
+<text x="20" y="618" fill="#e6e6f0">  hosts       FRITZ!Box host table (LAN/WLAN devices)</text>
+<text x="20" y="637" fill="#e6e6f0">  log         Show FRITZ!Box system event log</text>
+<text x="20" y="656" fill="#e6e6f0">  mcp         Start the MCP stdio server</text>
+<text x="20" y="675" fill="#e6e6f0">  mesh        Show the mesh topology (nodes, repeaters, links)</text>
+<text x="20" y="694" fill="#e6e6f0">  reboot      Reboot the FRITZ!Box</text>
+<text x="20" y="713" fill="#e6e6f0">  scrape      Fetch a data.lua page (best-effort, fragile)</text>
+<text x="20" y="732" fill="#e6e6f0">  services    Discover TR-064 services advertised by the box (tr64desc.xml)</text>
+<text x="20" y="751" fill="#e6e6f0">  status      Show a box overview (model, firmware, connection, external IP, CPU temperature)</text>
+<text x="20" y="770" fill="#e6e6f0">  traffic     Show real-time WAN traffic monitoring data</text>
+<text x="20" y="789" fill="#e6e6f0">  version     Print version</text>
+<text x="20" y="808" fill="#e6e6f0">  wlan        WLAN radios, clients, and guest network</text>
+<text x="20" y="827" fill="#e6e6f0">  wol         Send a Wake-on-LAN packet via the FRITZ!Box</text>
+<text x="20" y="846" fill="#e6e6f0"></text>
+<text x="20" y="865" fill="#e6e6f0">Flags:</text>
+<text x="20" y="884" fill="#e6e6f0">  -h, --help      help for symfritz</text>
+<text x="20" y="903" fill="#e6e6f0">  -v, --version   version for symfritz</text>
+<text x="20" y="922" fill="#e6e6f0"></text>
+<text x="20" y="941" fill="#e6e6f0">Use &quot;symfritz [command] --help&quot; for more information about a command.</text>
+<text x="20" y="979" fill="#8aff80">$</text>
+<text x="34" y="979" fill="#c6a0f6">./symfritz status --help</text>
+<text x="20" y="998" fill="#e6e6f0">Show a box overview (model, firmware, connection, external IP, CPU temperature)</text>
+<text x="20" y="1017" fill="#e6e6f0"></text>
+<text x="20" y="1036" fill="#e6e6f0">Usage:</text>
+<text x="20" y="1055" fill="#e6e6f0">  symfritz status [flags]</text>
+<text x="20" y="1074" fill="#e6e6f0"></text>
+<text x="20" y="1093" fill="#e6e6f0">Flags:</text>
+<text x="20" y="1112" fill="#e6e6f0">      --cpu    Show CPU temperatures (experimental)</text>
+<text x="20" y="1131" fill="#e6e6f0">  -h, --help   help for status</text>
+<text x="20" y="1150" fill="#e6e6f0">      --json   Output as JSON</text>
+</svg>

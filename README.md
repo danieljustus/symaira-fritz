@@ -4,10 +4,14 @@
 [![License](https://img.shields.io/github/license/danieljustus/symaira-fritz)](LICENSE)
 [![Go](https://img.shields.io/github/go-mod/go-version/danieljustus/symaira-fritz)](go.mod)
 [![Release](https://img.shields.io/github/v/release/danieljustus/symaira-fritz)](https://github.com/danieljustus/symaira-fritz/releases/latest)
-[![Demo](https://img.shields.io/badge/demo-terminal_output-2ea44f)](https://github.com/danieljustus/symaira-fritz#typical-mac-mini-check)
+[![Demo](https://img.shields.io/badge/demo-terminal_output-2ea44f)](https://github.com/danieljustus/symaira-fritz#demo)
 
 A CLI to **administer, analyse, and control an AVM FRITZ!Box** — part of the
 Symaira ecosystem. Binary name: `symfritz`.
+
+<a name="demo"></a>
+
+![symfritz terminal demo](docs/assets/symfritz-demo.svg)
 
 ## Why symfritz
 
