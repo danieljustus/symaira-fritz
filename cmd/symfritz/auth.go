@@ -217,14 +217,21 @@ func verifyCredential(ctx context.Context, box config.Box, password string) (ses
 	return sessionOK, tr064OK
 }
 
+// termIsTerminal and readPassword are var seams over golang.org/x/term so the
+// interactive prompt can be exercised in tests without a real PTY.
+var (
+	termIsTerminal = term.IsTerminal
+	readPassword   = term.ReadPassword
+)
+
 // promptHidden reads a line from the terminal without echoing it.
 func promptHidden(prompt string) (string, error) {
 	fmt.Fprint(os.Stderr, prompt)
 	fd := int(os.Stdin.Fd())
-	if !term.IsTerminal(fd) {
+	if !termIsTerminal(fd) {
 		return "", fmt.Errorf("cannot prompt for password: stdin is not a terminal (set SYMFRITZ_PASSWORD instead)")
 	}
-	b, err := term.ReadPassword(fd)
+	b, err := readPassword(fd)
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
 		return "", fmt.Errorf("reading password: %w", err)
