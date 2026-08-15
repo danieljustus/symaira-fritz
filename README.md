@@ -61,6 +61,8 @@ endpoint (stats TR-064 doesn't expose), see Caveats below.
 make build           # → ./symfritz
 # or
 go install github.com/danieljustus/symaira-fritz/cmd/symfritz@latest
+# or via Homebrew
+brew install danieljustus/tap/symfritz
 ```
 
 ## Configure

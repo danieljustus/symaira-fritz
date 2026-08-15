@@ -56,4 +56,21 @@ if [[ "$status" != "Accepted" ]]; then
   exit 1
 fi
 
-printf 'Signed and notarized %s\n' "$binary"
+# Staple the notary ticket to the binary so Gatekeeper can validate it
+# offline. The ticket can take a few seconds to become available after
+# "Accepted", so retry briefly before failing closed.
+staple_ok=0
+for attempt in 1 2 3; do
+  if xcrun stapler staple "$binary" 2>/dev/null; then
+    staple_ok=1
+    break
+  fi
+  printf 'Staple attempt %d/3 failed for %s; retrying...\n' "$attempt" "$binary" >&2
+  sleep 5
+done
+if [[ "$staple_ok" != 1 ]] || ! xcrun stapler validate "$binary" >/dev/null 2>&1; then
+  printf 'Stapling failed for %s\n' "$binary" >&2
+  exit 1
+fi
+
+printf 'Signed, notarized, and stapled %s\n' "$binary"
