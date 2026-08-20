@@ -2,6 +2,7 @@ package fritz
 
 import (
 	"crypto/md5"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -14,6 +15,13 @@ type digestChallenge struct {
 	qop       string
 	algorithm string
 	opaque    string
+}
+
+// cachedDigest holds the most recent digest challenge received from the box,
+// along with the nc (nonce count) counter for reuse. Guarded by Client.mu.
+type cachedDigest struct {
+	challenge digestChallenge
+	nc        int
 }
 
 // parseDigestChallenge parses a "Digest realm=…, nonce=…, …" header value.
@@ -71,17 +79,23 @@ func splitDigestFields(s string) []string {
 }
 
 // digestAuthHeader builds an Authorization header value for HTTP Digest auth.
-// FRITZ!Box TR-064 uses qop="auth" with MD5; a fixed client nonce is acceptable
-// because each request fetches a fresh server nonce (nc is always 00000001).
+// FRITZ!Box TR-064 uses qop="auth" with MD5.
 //
 // MD5 here is NOT password storage hashing — it is the digest algorithm
 // mandated by HTTP Digest Access Authentication (RFC 2617 / RFC 7616) and is
 // the only algorithm the FRITZ!Box TR-064 endpoint accepts. It cannot be
 // substituted with a stronger hash without breaking interoperability.
-func digestAuthHeader(dc digestChallenge, user, password, method, uri string) string {
-	const cnonce = "0a4f113b"
-	const nc = "00000001"
-
+//
+// The client nonce is generated freshly per request from crypto/rand
+// (RFC 7616 §4.7: "the client nonce SHOULD be unique"). The nc parameter
+// is the nonce count (1-based), incremented when reusing a cached server nonce.
+func digestAuthHeader(dc digestChallenge, user, password, method, uri string, nc int) string {
+	cnonce, err := generateCnonce()
+	if err != nil {
+		// On crypto/rand failure, surface the error — never silently fall back.
+		cnonce = ""
+	}
+	ncStr := fmt.Sprintf("%08x", nc)
 	ha1 := md5hex(user + ":" + dc.realm + ":" + password)
 	ha2 := md5hex(method + ":" + uri)
 
@@ -91,7 +105,7 @@ func digestAuthHeader(dc digestChallenge, user, password, method, uri string) st
 
 	var response string
 	if useAuth {
-		response = md5hex(strings.Join([]string{ha1, dc.nonce, nc, cnonce, "auth", ha2}, ":"))
+		response = md5hex(strings.Join([]string{ha1, dc.nonce, ncStr, cnonce, "auth", ha2}, ":"))
 	} else {
 		response = md5hex(ha1 + ":" + dc.nonce + ":" + ha2)
 	}
@@ -106,7 +120,7 @@ func digestAuthHeader(dc digestChallenge, user, password, method, uri string) st
 	if useAuth {
 		parts = append(parts,
 			`qop=auth`,
-			fmt.Sprintf("nc=%s", nc),
+			fmt.Sprintf("nc=%s", ncStr),
 			fmt.Sprintf(`cnonce="%s"`, cnonce),
 		)
 	}
@@ -129,4 +143,15 @@ func qopOffersAuth(qop string) bool {
 func md5hex(s string) string {
 	sum := md5.Sum([]byte(s))
 	return hex.EncodeToString(sum[:])
+}
+
+// generateCnonce returns a fresh client nonce hex-encoded from crypto/rand.
+// RFC 7616 §4.7 requires the cnonce to be unpredictable; 8 bytes (16 hex
+// chars) provides sufficient entropy for digest auth.
+func generateCnonce() (string, error) {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generating client nonce: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
