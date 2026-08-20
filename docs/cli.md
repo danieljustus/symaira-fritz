@@ -46,7 +46,7 @@ To regenerate this documentation: `make docs`
 - [symfritz scrape](#symfritz-scrape) — Fetch a data.lua page (best-effort, fragile)
 - [symfritz services](#symfritz-services) — Discover TR-064 services advertised by the box (tr64desc.xml)
 - [symfritz status](#symfritz-status) — Show a box overview (model, firmware, connection, external IP, CPU temperature)
-- [symfritz traffic](#symfritz-traffic) — Show real-time WAN traffic monitoring data
+- [symfritz traffic](#symfritz-traffic) — Show WAN traffic statistics
 - [symfritz version](#symfritz-version) — Print version
 - [symfritz wlan](#symfritz-wlan) — WLAN radios, clients, and guest network
 - [symfritz wlan clients](#symfritz-wlan-clients) — List devices associated with the WLAN radios
@@ -101,7 +101,7 @@ the SYMFRITZ_PASSWORD environment variable.
 * [symfritz scrape](#symfritzscrape)	 - Fetch a data.lua page (best-effort, fragile)
 * [symfritz services](#symfritzservices)	 - Discover TR-064 services advertised by the box (tr64desc.xml)
 * [symfritz status](#symfritzstatus)	 - Show a box overview (model, firmware, connection, external IP, CPU temperature)
-* [symfritz traffic](#symfritztraffic)	 - Show real-time WAN traffic monitoring data
+* [symfritz traffic](#symfritztraffic)	 - Show WAN traffic statistics
 * [symfritz version](#symfritzversion)	 - Print version
 * [symfritz wlan](#symfritzwlan)	 - WLAN radios, clients, and guest network
 * [symfritz wol](#symfritzwol)	 - Send a Wake-on-LAN packet via the FRITZ!Box
@@ -1105,7 +1105,17 @@ symfritz status [flags]
 
 ## symfritz traffic
 
-Show real-time WAN traffic monitoring data
+Show WAN traffic statistics
+
+### Synopsis
+
+Show downstream/upstream traffic by category. When --watch is set,
+re-poll and redraw at the configured --interval until Ctrl-C.
+
+Examples:
+  symfritz traffic            # one-shot snapshot
+  symfritz traffic --watch    # live-updating view (exits on Ctrl-C)
+  symfritz traffic --watch --interval 5s
 
 ```
 symfritz traffic [flags]
@@ -1114,8 +1124,10 @@ symfritz traffic [flags]
 ### Options
 
 ```
-  -h, --help   help for traffic
-      --json   Output as JSON
+  -h, --help                help for traffic
+      --interval duration   Polling interval for --watch mode (default 2s)
+      --json                Output as JSON
+      --watch               Continuously re-poll and redraw until Ctrl-C
 ```
 
 ### SEE ALSO
