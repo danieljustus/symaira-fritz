@@ -39,7 +39,7 @@ func newWoLCmd() *cobra.Command {
 					exitcodes.ExitGeneric, exitcodes.KindValidation, "no mac")
 			}
 			if err := c.WakeOnLAN(ctx, mac); err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "wol failed")
+				return wrapFritzError(err, "wol failed")
 			}
 			fmt.Printf("Wake-on-LAN packet sent to %s.\n", mac)
 			return nil

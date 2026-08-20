@@ -134,19 +134,6 @@ func appendQueryParam(rawURL, key, value string) string {
 	return rawURL + sep + url.QueryEscape(key) + "=" + url.QueryEscape(value)
 }
 
-func safeURLForError(rawURL string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return rawURL
-	}
-	q := u.Query()
-	if q.Has("sid") {
-		q.Set("sid", "REDACTED")
-		u.RawQuery = q.Encode()
-	}
-	return u.String()
-}
-
 // NodeName resolves a node UID to its device name for readable link output.
 func (t *MeshTopology) NodeName(uid string) string {
 	for _, n := range t.Nodes {
