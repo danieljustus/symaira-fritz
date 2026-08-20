@@ -50,14 +50,17 @@ var (
 
 // Call invokes a TR-064 action and returns the output arguments as a map.
 // args are the input arguments (may be nil). It transparently performs the HTTP
-// digest auth handshake.
+// digest auth handshake, caching the challenge to avoid a 401 round-trip on
+// subsequent calls.
 func (c *Client) Call(ctx context.Context, svc Service, action string, args map[string]string) (map[string]string, error) {
 	body := buildSOAPRequest(svc.Type, action, args)
 	soapAction := svc.Type + "#" + action
 	url := c.tr064Base() + svc.ControlURL
 
-	// First attempt — expect a 401 carrying the digest challenge.
-	resp, raw, err := c.doSOAP(ctx, url, svc.ControlURL, soapAction, body, "")
+	// Try pre-sending a cached Authorization header (Issue #122).
+	auth := c.getCachedDigestAuth(http.MethodPost, svc.ControlURL)
+
+	resp, raw, err := c.doSOAP(ctx, url, svc.ControlURL, soapAction, body, auth)
 	if err != nil {
 		return nil, classifyError(err, svc, action)
 	}
@@ -66,7 +69,9 @@ func (c *Client) Call(ctx context.Context, svc Service, action string, args map[
 		if !ok {
 			return nil, &FritzError{Kind: ErrUnauthorized, Service: shortService(svc.Type), Action: action, Raw: "401 without a parseable digest challenge", HTTPStatus: 401}
 		}
-		auth := digestAuthHeader(dc, c.User, c.Password, http.MethodPost, svc.ControlURL)
+		// Cache the challenge for reuse, increment nc.
+		c.setCachedDigestChallenge(dc)
+		auth := c.buildDigestAuth(dc, http.MethodPost, svc.ControlURL)
 		resp, raw, err = c.doSOAP(ctx, url, svc.ControlURL, soapAction, body, auth)
 		if err != nil {
 			return nil, classifyError(err, svc, action)
@@ -259,7 +264,8 @@ func (c *Client) fetchAuthenticatedURL(ctx context.Context, rawURL string) ([]by
 		if !ok {
 			return nil, fmt.Errorf("fetch: 401 without digest challenge")
 		}
-		auth := digestAuthHeader(dc, c.User, c.Password, http.MethodGet, parsedURL.RequestURI())
+		c.setCachedDigestChallenge(dc)
+		auth := c.buildDigestAuth(dc, http.MethodGet, parsedURL.RequestURI())
 		req2, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 		if err != nil {
 			return nil, err
