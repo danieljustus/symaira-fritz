@@ -34,7 +34,30 @@ type scpdRoot struct {
 
 // Discover fetches and parses /tr64desc.xml, returning all advertised services
 // keyed by service type. The description document is unauthenticated.
+// Results are cached on the client; call RefreshDiscovery to force a re-fetch.
 func (c *Client) Discover(ctx context.Context) ([]Service, error) {
+	c.discoverMu.Lock()
+	if c.discovered != nil {
+		cached := c.discovered
+		c.discoverMu.Unlock()
+		return cached, nil
+	}
+	c.discoverMu.Unlock()
+
+	services, err := c.fetchDiscovery(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c.discoverMu.Lock()
+	if c.discovered == nil {
+		c.discovered = services
+	}
+	c.discoverMu.Unlock()
+	return services, nil
+}
+
+// fetchDiscovery performs the actual HTTP fetch and XML parse of tr64desc.xml.
+func (c *Client) fetchDiscovery(ctx context.Context) ([]Service, error) {
 	if err := c.checkHostDNS(ctx); err != nil {
 		return nil, err
 	}
@@ -81,6 +104,16 @@ func (c *Client) Discover(ctx context.Context) ([]Service, error) {
 
 	sort.Slice(services, func(i, j int) bool { return services[i].Type < services[j].Type })
 	return services, nil
+}
+
+// RefreshDiscovery forces a re-fetch of /tr64desc.xml, replacing any cached
+// service list. Use this when the box firmware has changed and the service
+// inventory may differ from the cached snapshot.
+func (c *Client) RefreshDiscovery(ctx context.Context) ([]Service, error) {
+	c.discoverMu.Lock()
+	c.discovered = nil
+	c.discoverMu.Unlock()
+	return c.Discover(ctx)
 }
 
 // ServiceByName finds a discovered service whose type contains the given

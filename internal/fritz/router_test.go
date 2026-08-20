@@ -371,3 +371,26 @@ func TestCheckHostDNS_PublicHost(t *testing.T) {
 		t.Errorf("expected error to contain %q, got: %v", expectedSub, err)
 	}
 }
+
+func TestAllPublic(t *testing.T) {
+	tests := []struct {
+		name string
+		ips  []string
+		want bool
+	}{
+		{"all private", []string{"192.168.1.1", "10.0.0.1"}, false},
+		{"all public", []string{"8.8.8.8", "1.1.1.1"}, true},
+		{"mixed", []string{"192.168.1.1", "8.8.8.8"}, false},
+		{"empty", nil, true},
+		{"unparseable", []string{"not-an-ip"}, true},
+		{"localhost", []string{"127.0.0.1"}, true},
+		{"link-local", []string{"169.254.1.1"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := allPublic(tt.ips); got != tt.want {
+				t.Errorf("allPublic(%v) = %v, want %v", tt.ips, got, tt.want)
+			}
+		})
+	}
+}
