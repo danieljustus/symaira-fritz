@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -23,8 +25,18 @@ var version = "0.4.4"
 
 func main() {
 	slog.SetDefault(logkit.NewFromEnv("symfritz"))
-	cmd, err := newRootCmd().ExecuteC()
+
+	rootCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	root := newRootCmd()
+	root.SetContext(rootCtx)
+	cmd, err := root.ExecuteC()
 	if err != nil {
+		// Map context.Canceled to a distinct exit code (Issue #123).
+		if errors.Is(err, context.Canceled) {
+			os.Exit(int(ExitCanceled))
+		}
 		asJSON, _ := cmd.Flags().GetBool("json")
 		if asJSON && cmd.Name() != "status" {
 			printJSONError(err)
@@ -33,6 +45,9 @@ func main() {
 		}
 		os.Exit(int(exitcodes.ExitCodeFromError(err)))
 	}
+
+	// Propagate root context cancellation to cobra's RunE via ExecuteContext.
+	_ = rootCtx
 }
 
 func newRootCmd() *cobra.Command {
