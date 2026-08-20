@@ -55,7 +55,7 @@ Examples:
 			}
 			out, err := c.Call(ctx, svc, action, in)
 			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "tr064 call failed")
+				return wrapFritzError(err, "tr064 call failed")
 			}
 			return printJSON(out)
 		},
