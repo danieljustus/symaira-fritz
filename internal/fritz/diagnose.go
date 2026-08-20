@@ -6,6 +6,7 @@ import (
 	"net"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -118,30 +119,53 @@ func (c *Client) Diagnose(ctx context.Context, ref string, opts DiagnoseOptions)
 		return d
 	}
 
-	for _, p := range opts.Ports {
-		typ := p.Type
-		if typ == "" {
-			typ = "tcp"
-		}
-		name := fmt.Sprintf("%s %d (%s)", strings.ToUpper(typ), p.Port, p.Label)
+	// Fan the port probes out concurrently — they are independent, and running
+	// them in parallel collapses N sequential dial timeouts into one.
+	results := make([]probeResult, len(opts.Ports))
+	var wg sync.WaitGroup
+	for i, p := range opts.Ports {
+		wg.Add(1)
+		go func(idx int, probe PortProbe) {
+			defer wg.Done()
+			results[idx] = probePort(ctx, d.Target, probe, opts.DialTimeout)
+		}(i, p)
+	}
+	wg.Wait()
 
-		if typ == "ssh" {
-			if dialSSH(ctx, d.Target, p.Port, opts.DialTimeout) {
-				d.add(name, StatusOK, "ssh handshake ok")
-			} else {
-				d.add(name, StatusFail, "closed or no ssh banner")
-			}
-		} else {
-			if dialTCP(ctx, d.Target, p.Port, opts.DialTimeout) {
-				d.add(name, StatusOK, "open")
-			} else {
-				d.add(name, StatusFail, "closed or filtered")
-			}
-		}
+	for _, r := range results {
+		d.add(r.name, r.status, r.detail)
 	}
 
 	d.finalize()
 	return d
+}
+
+// probeResult records the outcome of one port probe, indexed by its position
+// in the original opts.Ports slice so results stay deterministic.
+type probeResult struct {
+	name   string
+	status CheckStatus
+	detail string
+}
+
+// probePort dials a single port and classifies the result.
+func probePort(ctx context.Context, target string, p PortProbe, timeout time.Duration) probeResult {
+	typ := p.Type
+	if typ == "" {
+		typ = "tcp"
+	}
+	name := fmt.Sprintf("%s %d (%s)", strings.ToUpper(typ), p.Port, p.Label)
+
+	if typ == "ssh" {
+		if dialSSH(ctx, target, p.Port, timeout) {
+			return probeResult{name, StatusOK, "ssh handshake ok"}
+		}
+		return probeResult{name, StatusFail, "closed or no ssh banner"}
+	}
+	if dialTCP(ctx, target, p.Port, timeout) {
+		return probeResult{name, StatusOK, "open"}
+	}
+	return probeResult{name, StatusFail, "closed or filtered"}
 }
 
 func (d *Diagnosis) add(name string, status CheckStatus, detail string) {
