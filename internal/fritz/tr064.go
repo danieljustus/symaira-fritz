@@ -246,7 +246,7 @@ func (c *Client) fetchAuthenticatedURL(ctx context.Context, rawURL string) ([]by
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetch: contacting %s: %w", safeURLForError(rawURL), err)
 	}
 	defer resp.Body.Close()
 
@@ -267,7 +267,7 @@ func (c *Client) fetchAuthenticatedURL(ctx context.Context, rawURL string) ([]by
 		req2.Header.Set("Authorization", auth)
 		resp2, err := c.http.Do(req2)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("fetch: contacting %s: %w", safeURLForError(rawURL), err)
 		}
 		defer resp2.Body.Close()
 		if resp2.StatusCode != http.StatusOK {

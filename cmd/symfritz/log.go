@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
-	"github.com/danieljustus/symaira-corekit/exitcodes"
 )
 
 func newLogCmd() *cobra.Command {
@@ -24,7 +22,7 @@ func newLogCmd() *cobra.Command {
 			}
 			events, err := c.DeviceLog(context.Background(), filter)
 			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "log failed")
+				return wrapFritzError(err, "log failed")
 			}
 			if asJSON {
 				return printJSON(events)

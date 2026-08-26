@@ -33,7 +33,7 @@ func newCallsCmd() *cobra.Command {
 			}
 			calls, err := c.Calls(context.Background(), ct, limit, days)
 			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "calls failed")
+				return wrapFritzError(err, "calls failed")
 			}
 			if asJSON {
 				return printJSON(calls)
@@ -82,7 +82,7 @@ func newDialCmd() *cobra.Command {
 				return err
 			}
 			if err := c.Dial(context.Background(), args[0]); err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "dial failed")
+				return wrapFritzError(err, "dial failed")
 			}
 			fmt.Printf("Dialing %s...\n", args[0])
 			return nil
@@ -101,7 +101,7 @@ func newHangupCmd() *cobra.Command {
 				return err
 			}
 			if err := c.Hangup(context.Background()); err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "hangup failed")
+				return wrapFritzError(err, "hangup failed")
 			}
 			fmt.Println("Hanging up...")
 			return nil

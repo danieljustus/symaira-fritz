@@ -127,8 +127,9 @@ func New(host string, opts ...Option) *Client {
 				}
 				if storedPin != pin {
 					return &FritzError{
-						Kind: ErrUnauthorized,
-						Raw:  fmt.Sprintf("certificate pin mismatch for %s (possible MITM attack or firmware update)", c.Host),
+						Kind:    ErrUnauthorized,
+						Service: c.Host,
+						Raw:     fmt.Sprintf("certificate pin mismatch for %s (possible MITM attack or firmware update)", c.Host),
 					}
 				}
 				return nil

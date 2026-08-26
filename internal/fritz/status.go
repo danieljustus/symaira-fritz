@@ -160,7 +160,7 @@ func (c *Client) CPUTemperatures(ctx context.Context) ([]int, error) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("status: contacting %s: %w", safeURLForError(u), err)
 	}
 	defer resp.Body.Close()
 
@@ -178,7 +178,7 @@ func (c *Client) CPUTemperatures(ctx context.Context) ([]int, error) {
 		req2.Header.Set("Content-Type", "application/json")
 		resp2, err := c.http.Do(req2)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("status: contacting %s: %w", safeURLForError(u), err)
 		}
 		defer resp2.Body.Close()
 		resp = resp2
