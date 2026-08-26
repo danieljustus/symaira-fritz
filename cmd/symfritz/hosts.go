@@ -94,7 +94,7 @@ func newHostsCmd() *cobra.Command {
 			}
 			if err != nil {
 				return wrapFritzError(err, "host lookup failed")
-				}
+			}
 			if asJSON {
 				return printJSON(host)
 			}
