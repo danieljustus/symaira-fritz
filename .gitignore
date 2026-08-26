@@ -26,3 +26,17 @@ AGENTS.md
 docs/adopt/
 .github/review/
 .github/coverage/
+
+# --- Symaira internal working artifacts (never published; see root AGENTS.md) ---
+.github/prerelease/
+.github/app-test/
+.github/admin/
+.github/branch-protection/
+**/docs/adopt/
+**/docs/teardown/
+**/docs/planned/
+**/docs/intern/
+**/docs/roadmap.md
+PLANUNG.md
+ARCHITEKTUR.md
+.claude/
