@@ -18,8 +18,8 @@ func newStatusCmd() *cobra.Command {
 		showCPU bool
 	)
 	cmd := &cobra.Command{
-		Use:     "status",
-		Short:   "Show a box overview (model, firmware, connection, external IP, CPU temperature)",
+		Use:   "status",
+		Short: "Show a box overview (model, firmware, connection, external IP, CPU temperature)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runWithClient(cmd, "status failed", func(ctx context.Context, c *fritz.Client) error {
 				st, err := c.Status(ctx)

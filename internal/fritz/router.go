@@ -1,6 +1,7 @@
 package fritz
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -73,8 +74,8 @@ func ProbeTR064(ctx context.Context, httpClient *http.Client, ip string, port in
 	// A valid tr64desc.xml contains a UPnP or DSL Forum device-1-0 namespace.
 	// Real FRITZ!Box devices use urn:dslforum-org; the standard UPnP namespace
 	// is urn:schemas-upnp-org. Accept either.
-	return bytesContains(body, []byte("urn:schemas-upnp-org:device-1-0")) ||
-		bytesContains(body, []byte("urn:dslforum-org:device-1-0"))
+	return bytes.Contains(body, []byte("urn:schemas-upnp-org:device-1-0")) ||
+		bytes.Contains(body, []byte("urn:dslforum-org:device-1-0"))
 }
 
 // probeCandidate checks both port 49000 (HTTP) and 49443 (HTTPS) for TR-064.
@@ -88,25 +89,15 @@ func probeCandidate(ctx context.Context, httpClient *http.Client, ip string, ins
 	return false
 }
 
-func bytesContains(b, subs []byte) bool {
-	return len(b) >= len(subs) && bytesContainsSubsequence(b, subs)
-}
-
-func bytesContainsSubsequence(b, subs []byte) bool {
-	if len(subs) == 0 {
-		return true
-	}
-	for i := 0; i <= len(b)-len(subs); i++ {
-		if equalBytes(b[i:i+len(subs)], subs) {
-			return true
+// allPublic returns true if every IP in the list parses as a public (non-private)
+// address. Used to classify resolved hosts as public vs. local.
+func allPublic(ips []string) bool {
+	for _, ipStr := range ips {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			continue
 		}
-	}
-	return false
-}
-
-func equalBytes(a, b []byte) bool {
-	for i := range a {
-		if a[i] != b[i] {
+		if IsPrivateIP(ip) {
 			return false
 		}
 	}
@@ -123,14 +114,7 @@ func publicHostHint(ctx context.Context, host string) string {
 	if err != nil || len(ips) == 0 {
 		return ""
 	}
-	allPublic := true
-	for _, ipStr := range ips {
-		ip := net.ParseIP(ipStr)
-		if ip != nil && IsPrivateIP(ip) {
-			allPublic = false
-			break
-		}
-	}
+	allPublic := allPublic(ips)
 	if !allPublic {
 		return ""
 	}
@@ -238,15 +222,7 @@ func ResolveHostInfoFor(ctx context.Context, host string) (*ResolveHostInfo, err
 	}
 
 	// If no private IPs were found, consider it public.
-	allPublic := true
-	for _, ipStr := range ips {
-		ip := net.ParseIP(ipStr)
-		if ip != nil && IsPrivateIP(ip) {
-			allPublic = false
-			break
-		}
-	}
-	info.IsPublic = allPublic
+	info.IsPublic = allPublic(ips)
 
 	return info, nil
 }
@@ -283,14 +259,7 @@ func (c *Client) checkHostDNS(ctx context.Context) error {
 		return nil
 	}
 
-	allPublic := true
-	for _, ipStr := range ips {
-		ip := net.ParseIP(ipStr)
-		if ip != nil && IsPrivateIP(ip) {
-			allPublic = false
-			break
-		}
-	}
+	allPublic := allPublic(ips)
 
 	if allPublic {
 		// Public IP! Perform quick local discovery using a short timeout.
