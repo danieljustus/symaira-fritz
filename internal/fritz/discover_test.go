@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -78,6 +79,60 @@ func TestDiscover_WalksNestedDevices(t *testing.T) {
 	}
 	if services[1].ControlURL != "/upnp/control/hosts" {
 		t.Errorf("Hosts controlURL = %q", services[1].ControlURL)
+	}
+}
+
+// TestDiscover_CachesServiceList verifies Issue #127: a second Discover or
+// ServiceByName call must not re-fetch /tr64desc.xml.
+func TestDiscover_CachesServiceList(t *testing.T) {
+	var fetchCount int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&fetchCount, 1)
+		if r.URL.Path == "/tr64desc.xml" {
+			_, _ = w.Write([]byte(tr64descSample))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("fritz.box")
+	c.tr064BaseURL = srv.URL
+
+	// First call fetches.
+	_, err := c.Discover(context.Background())
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if fetchCount != 1 {
+		t.Fatalf("after first Discover: fetchCount = %d, want 1", fetchCount)
+	}
+
+	// Second call must hit cache.
+	_, err = c.Discover(context.Background())
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if fetchCount != 1 {
+		t.Fatalf("after second Discover: fetchCount = %d, want 1 (cached)", fetchCount)
+	}
+
+	// ServiceByName also hits cache.
+	_, err = c.ServiceByName(context.Background(), "DeviceInfo")
+	if err != nil {
+		t.Fatalf("ServiceByName: %v", err)
+	}
+	if fetchCount != 1 {
+		t.Fatalf("after ServiceByName: fetchCount = %d, want 1 (cached)", fetchCount)
+	}
+
+	// RefreshDiscovery must re-fetch.
+	_, err = c.RefreshDiscovery(context.Background())
+	if err != nil {
+		t.Fatalf("RefreshDiscovery: %v", err)
+	}
+	if fetchCount != 2 {
+		t.Fatalf("after RefreshDiscovery: fetchCount = %d, want 2", fetchCount)
 	}
 }
 

@@ -161,6 +161,7 @@ func TestClient_CertificatePinning(t *testing.T) {
 	if err != nil || !reset {
 		t.Fatalf("failed to reset pin: reset=%v err=%v", reset, err)
 	}
+	client.http.CloseIdleConnections()
 	resp3, err := client.http.Do(req)
 	if err != nil {
 		t.Fatalf("expected successful connection after reset, got %v", err)
