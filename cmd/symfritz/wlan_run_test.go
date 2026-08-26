@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -56,7 +57,7 @@ func TestSetGuest(t *testing.T) {
 		srv := wlanMockServer(t)
 		stubNewClient(t, srv)
 		out := captureStdout(t, func() {
-			if err := setGuest(3, true); err != nil {
+			if err := setGuest(context.Background(), 3, true); err != nil {
 				t.Fatalf("setGuest: %v", err)
 			}
 		})
@@ -69,7 +70,7 @@ func TestSetGuest(t *testing.T) {
 		srv := wlanMockServer(t)
 		stubNewClient(t, srv)
 		out := captureStdout(t, func() {
-			if err := setGuest(3, false); err != nil {
+			if err := setGuest(context.Background(), 3, false); err != nil {
 				t.Fatalf("setGuest: %v", err)
 			}
 		})
@@ -84,7 +85,7 @@ func TestSetGuest(t *testing.T) {
 		}))
 		t.Cleanup(srv.Close)
 		stubNewClient(t, srv)
-		err := setGuest(3, true)
+		err := setGuest(context.Background(), 3, true)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}

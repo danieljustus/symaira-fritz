@@ -1,8 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+)
 
-func TestFormatRateList(t *testing.T) {
+func TestFormatSpeedList(t *testing.T) {
 	tests := []struct {
 		name  string
 		rates []float64
@@ -16,14 +18,23 @@ func TestFormatRateList(t *testing.T) {
 		{"takes first value", []float64{2000000, 1000000}, "2.00 Mbit/s"},
 		{"exactly 1M", []float64{1000000}, "1.00 Mbit/s"},
 		{"exactly 1k", []float64{1000}, "1.00 kbit/s"},
-		{"zero", []float64{0}, "0 bit/s"},
+		{"zero", []float64{0}, "—"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := formatRateList(tt.rates)
+			got := formatSpeedList(tt.rates)
 			if got != tt.want {
-				t.Errorf("formatRateList(%v) = %q, want %q", tt.rates, got, tt.want)
+				t.Errorf("formatSpeedList(%v) = %q, want %q", tt.rates, got, tt.want)
 			}
 		})
 	}
+}
+
+// formatSpeedList formats the first value of a float64 slice as a human-readable
+// speed string.
+func formatSpeedList(rates []float64) string {
+	if len(rates) == 0 || rates[0] == 0 {
+		return "—"
+	}
+	return formatSpeed(rates[0])
 }

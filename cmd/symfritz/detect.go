@@ -40,9 +40,13 @@ FRITZ!Box, causing connection timeouts.`,
 	return cmd
 }
 
+// runDetect is the detect command body, factored out for test seam.
 func runDetect(cmd *cobra.Command, asJSON bool) error {
 	box, _ := boxFromEnv()
-	ctx := context.Background()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	// Create an HTTP client for probing
 	httpClient := newHTTPClient()

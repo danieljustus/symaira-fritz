@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-
 	"github.com/spf13/cobra"
 
 	"github.com/danieljustus/symaira-fritz/internal/mcp"
@@ -21,7 +19,7 @@ func newMCPCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return mcp.StartServer(context.Background(), c)
+			return mcp.StartServer(cmd.Context(), c)
 		},
 	}
 }
