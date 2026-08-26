@@ -3,9 +3,92 @@ package fritz
 import (
 	"context"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestDiagnose_ConcurrentPortProbes(t *testing.T) {
+	// Two probes against unreachable ports (port 1 always refuses on loopback).
+	// Sequential: ~1s. Concurrent: << 1s. We assert wall-clock stays well under
+	// the sum of both timeouts.
+	c := New("fritz.box")
+	c.tr064BaseURL = "http://127.0.0.1:1"
+
+	start := time.Now()
+	d := c.Diagnose(context.Background(), "127.0.0.1", DiagnoseOptions{
+		Ports: []PortProbe{
+			{Port: 1, Label: "closed1", Type: "tcp"},
+			{Port: 1, Label: "closed2", Type: "tcp"},
+			{Port: 1, Label: "closed3", Type: "tcp"},
+		},
+		DialTimeout: 500 * time.Millisecond,
+	})
+	elapsed := time.Since(start)
+
+	// Sequential would be ~1.5s. Concurrent should be under 1s.
+	if elapsed > 800*time.Millisecond {
+		t.Errorf("concurrent probes took %v (sequential would be ~1.5s)", elapsed)
+	}
+
+	// Collect only the TCP probe checks (skip the "FRITZ!Box knows host" check).
+	var tcpChecks []Check
+	for _, ch := range d.Checks {
+		if strings.HasPrefix(ch.Name, "TCP ") {
+			tcpChecks = append(tcpChecks, ch)
+		}
+	}
+	if len(tcpChecks) != 3 {
+		t.Fatalf("expected 3 TCP checks, got %d", len(tcpChecks))
+	}
+	// Results must be in original order (closed1, closed2, closed3).
+	for i, want := range []string{"closed1", "closed2", "closed3"} {
+		if !strings.Contains(tcpChecks[i].Name, want) {
+			t.Errorf("tcp check[%d] = %q, want to contain %q", i, tcpChecks[i].Name, want)
+		}
+	}
+}
+
+func TestDiagnose_PortOrder(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	c := New("fritz.box")
+	c.tr064BaseURL = "http://127.0.0.1:1"
+
+	d := c.Diagnose(context.Background(), "127.0.0.1", DiagnoseOptions{
+		Ports: []PortProbe{
+			{Port: 9999, Label: "z-first"},
+			{Port: port, Label: "a-second"},
+			{Port: 9998, Label: "m-third"},
+		},
+		DialTimeout: 500 * time.Millisecond,
+	})
+
+	// Collect only the TCP probe checks — despite concurrency they must be in input order.
+	var tcpChecks []Check
+	for _, ch := range d.Checks {
+		if strings.HasPrefix(ch.Name, "TCP ") {
+			tcpChecks = append(tcpChecks, ch)
+		}
+	}
+	if len(tcpChecks) != 3 {
+		t.Fatalf("expected 3 TCP checks, got %d", len(tcpChecks))
+	}
+	if !strings.Contains(tcpChecks[0].Name, "z-first") {
+		t.Errorf("tcp check[0] = %q, want to contain z-first", tcpChecks[0].Name)
+	}
+	if !strings.Contains(tcpChecks[1].Name, "a-second") {
+		t.Errorf("tcp check[1] = %q, want to contain a-second", tcpChecks[1].Name)
+	}
+	if tcpChecks[1].Status != StatusOK {
+		t.Errorf("tcp check[1] = %+v, want StatusOK", tcpChecks[1])
+	}
+}
 
 func TestDiagnose_PortProbes(t *testing.T) {
 	// Open a listener so one probe succeeds.
