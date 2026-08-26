@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/danieljustus/symaira-fritz/internal/fritz"
 )
 
 func newDSLCmd() *cobra.Command {
@@ -13,23 +15,21 @@ func newDSLCmd() *cobra.Command {
 		Use:   "dsl",
 		Short: "Show DSL line statistics (noise margin, attenuation, max bit rate)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			c, _, err := newClient()
-			if err != nil {
-				return err
-			}
-			stats, err := c.DSLLineStats(context.Background())
-			if err != nil {
-				return wrapFritzError(err, "dsl stats failed")
-			}
-			if asJSON {
-				return printJSON(stats)
-			}
+			return runWithClient(cmd, "dsl stats failed", func(ctx context.Context, c *fritz.Client) error {
+				stats, err := c.DSLLineStats(ctx)
+				if err != nil {
+					return wrapFritzError(err, "dsl stats failed")
+				}
+				if asJSON {
+					return printJSON(stats)
+				}
 
-			fmt.Println("DSL Line Statistics:")
-			fmt.Printf("Noise Margin:   %d dB (Up) / %d dB (Down)\n", stats.UpstreamNoiseMargin/10, stats.DownstreamNoiseMargin/10)
-			fmt.Printf("Attenuation:    %d dB (Up) / %d dB (Down)\n", stats.UpstreamAttenuation/10, stats.DownstreamAttenuation/10)
-			fmt.Printf("Max Bit Rate:   %s (Up) / %s (Down)\n", formatBitRate(stats.UpstreamMaxBitRate), formatBitRate(stats.DownstreamMaxBitRate))
-			return nil
+				fmt.Println("DSL Line Statistics:")
+				fmt.Printf("Noise Margin:   %d dB (Up) / %d dB (Down)\n", stats.UpstreamNoiseMargin/10, stats.DownstreamNoiseMargin/10)
+				fmt.Printf("Attenuation:    %d dB (Up) / %d dB (Down)\n", stats.UpstreamAttenuation/10, stats.DownstreamAttenuation/10)
+				fmt.Printf("Max Bit Rate:   %s (Up) / %s (Down)\n", formatBitRate(stats.UpstreamMaxBitRate), formatBitRate(stats.DownstreamMaxBitRate))
+				return nil
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")

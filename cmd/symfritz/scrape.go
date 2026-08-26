@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/danieljustus/symaira-corekit/exitcodes"
+	"github.com/danieljustus/symaira-fritz/internal/fritz"
 )
 
 func newScrapeCmd() *cobra.Command {
@@ -38,16 +39,14 @@ Examples:
 				}
 				params.Add(k, v)
 			}
-			c, _, err := newClient()
-			if err != nil {
-				return err
-			}
-			out, err := c.ScrapeDataLUA(context.Background(), page, params)
-			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "scrape failed")
-			}
-			fmt.Println(out)
-			return nil
+			return runWithClient(cmd, "scrape failed", func(ctx context.Context, c *fritz.Client) error {
+				out, err := c.ScrapeDataLUA(ctx, page, params)
+				if err != nil {
+					return wrapFritzError(err, "scrape failed")
+				}
+				fmt.Println(out)
+				return nil
+			})
 		},
 	}
 	return cmd

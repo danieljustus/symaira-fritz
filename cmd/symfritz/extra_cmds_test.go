@@ -126,7 +126,7 @@ func TestTrafficCmd(t *testing.T) {
 				t.Fatalf("traffic: %v", err)
 			}
 		})
-		if !strings.Contains(out, "WAN Traffic Monitoring") || !strings.Contains(out, "Internet: 1.20 Mbit/s") {
+		if !strings.Contains(out, "WAN Traffic Statistics:") || !strings.Contains(out, "Internet") || !strings.Contains(out, "1.20 Mbit/s") {
 			t.Errorf("unexpected traffic output:\n%s", out)
 		}
 	})

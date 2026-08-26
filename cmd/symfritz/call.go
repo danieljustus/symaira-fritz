@@ -38,26 +38,24 @@ Examples:
 				}
 				in[k] = v
 			}
-			c, _, err := newClient()
-			if err != nil {
-				return err
-			}
-			ctx := context.Background()
-			svc, ok := serviceByShortcut(args[0])
-			if !ok {
-				// Fall back to tr64desc.xml discovery for any advertised service.
-				svc, err = c.ServiceByName(ctx, args[0])
-				if err != nil {
-					return exitcodes.Wrap(
-						fmt.Errorf("unknown service %q: %w (known shortcuts: deviceinfo, wanip, wancommon, hosts, wlan1)", args[0], err),
-						exitcodes.ExitConfig, exitcodes.KindValidation, "bad service")
+			return runWithClient(cmd, "tr064 call failed", func(ctx context.Context, c *fritz.Client) error {
+				svc, ok := serviceByShortcut(args[0])
+				if !ok {
+					// Fall back to tr64desc.xml discovery for any advertised service.
+					var err error
+					svc, err = c.ServiceByName(ctx, args[0])
+					if err != nil {
+						return exitcodes.Wrap(
+							fmt.Errorf("unknown service %q: %w", args[0], err),
+							exitcodes.ExitConfig, exitcodes.KindValidation, "bad service")
+					}
 				}
-			}
-			out, err := c.Call(ctx, svc, action, in)
-			if err != nil {
-				return wrapFritzError(err, "tr064 call failed")
-			}
-			return printJSON(out)
+				out, err := c.Call(ctx, svc, action, in)
+				if err != nil {
+					return wrapFritzError(err, "tr064 call failed")
+				}
+				return printJSON(out)
+			})
 		},
 	}
 	return cmd
