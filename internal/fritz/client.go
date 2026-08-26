@@ -55,8 +55,8 @@ type Client struct {
 	// Cached service list from tr64desc.xml, populated by the first Discover
 	// and reused by ServiceByName to avoid redundant HTTP fetches.
 	// Protected by discoverMu.
-	discoverMu  sync.Mutex
-	discovered  []Service
+	discoverMu sync.Mutex
+	discovered []Service
 }
 
 // Option configures a Client.
