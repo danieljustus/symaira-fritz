@@ -20,7 +20,7 @@ func newMeshCmd() *cobra.Command {
 			topo, err := c.MeshTopology(context.Background())
 			if err != nil {
 				return wrapFritzError(err, "mesh failed")
-				}
+			}
 			if asJSON {
 				return printJSON(topo)
 			}
