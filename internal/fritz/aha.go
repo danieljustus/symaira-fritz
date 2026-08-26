@@ -132,7 +132,7 @@ func (c *Client) doHome(ctx context.Context, switchcmd string, params url.Values
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return "", 0, fmt.Errorf("aha: contacting %s: %w", c.Host, err)
+		return "", 0, fmt.Errorf("aha: contacting %s: %w", safeURLForError(u), err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))

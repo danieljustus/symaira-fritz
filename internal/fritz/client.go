@@ -56,6 +56,12 @@ type Client struct {
 	// requests can pre-send the Authorization header instead of waiting for a
 	// 401 challenge. The nc counter increments per reuse (RFC 7616 §4.7).
 	digestCache *cachedDigest
+
+	// Cached service list from tr64desc.xml, populated by the first Discover
+	// and reused by ServiceByName to avoid redundant HTTP fetches.
+	// Protected by discoverMu.
+	discoverMu sync.Mutex
+	discovered []Service
 }
 
 // Option configures a Client.
@@ -132,8 +138,9 @@ func New(host string, opts ...Option) *Client {
 				}
 				if storedPin != pin {
 					return &FritzError{
-						Kind: ErrUnauthorized,
-						Raw:  fmt.Sprintf("certificate pin mismatch for %s (possible MITM attack or firmware update)", c.Host),
+						Kind:    ErrUnauthorized,
+						Service: c.Host,
+						Raw:     fmt.Sprintf("certificate pin mismatch for %s (possible MITM attack or firmware update)", c.Host),
 					}
 				}
 				return nil

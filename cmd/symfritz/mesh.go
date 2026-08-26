@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
-	"github.com/danieljustus/symaira-corekit/exitcodes"
 )
 
 func newMeshCmd() *cobra.Command {
@@ -21,7 +19,7 @@ func newMeshCmd() *cobra.Command {
 			}
 			topo, err := c.MeshTopology(context.Background())
 			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "mesh failed")
+				return wrapFritzError(err, "mesh failed")
 			}
 			if asJSON {
 				return printJSON(topo)

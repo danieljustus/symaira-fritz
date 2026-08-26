@@ -47,7 +47,7 @@ func newHostsCmd() *cobra.Command {
 			}
 			hosts, err := c.Hosts(context.Background())
 			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "hosts failed")
+				return wrapFritzError(err, "hosts list failed")
 			}
 			return printHosts(hosts)
 		},
@@ -63,7 +63,7 @@ func newHostsCmd() *cobra.Command {
 			}
 			hosts, err := c.ActiveHosts(context.Background())
 			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "hosts failed")
+				return wrapFritzError(err, "hosts list failed")
 			}
 			return printHosts(hosts)
 		},
@@ -93,7 +93,7 @@ func newHostsCmd() *cobra.Command {
 					exitcodes.ExitConfig, exitcodes.KindValidation, "missing host reference")
 			}
 			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitNotFound, exitcodes.KindNotFound, "host lookup failed")
+				return wrapFritzError(err, "host lookup failed")
 			}
 			if asJSON {
 				return printJSON(host)
