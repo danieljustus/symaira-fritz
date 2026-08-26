@@ -52,6 +52,11 @@ type Client struct {
 	mu  sync.Mutex
 	sid string // cached session id from session.go; "" means not logged in
 
+	// digestCache stores the most recent TR-064 digest challenge so subsequent
+	// requests can pre-send the Authorization header instead of waiting for a
+	// 401 challenge. The nc counter increments per reuse (RFC 7616 §4.7).
+	digestCache *cachedDigest
+
 	// Cached service list from tr64desc.xml, populated by the first Discover
 	// and reused by ServiceByName to avoid redundant HTTP fetches.
 	// Protected by discoverMu.
