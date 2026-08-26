@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
-	"github.com/danieljustus/symaira-corekit/exitcodes"
 )
 
 func newServicesCmd() *cobra.Command {
@@ -19,7 +17,7 @@ func newServicesCmd() *cobra.Command {
 			c := newClientFor(box, "")
 			services, err := c.Discover(context.Background())
 			if err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "discovery failed")
+				return wrapFritzError(err, "discovery failed")
 			}
 			if asJSON {
 				return printJSON(services)
