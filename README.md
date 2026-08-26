@@ -1,15 +1,18 @@
-# symaira-fritz
+# Symaira Fritz
 
 [![CI](https://github.com/danieljustus/symaira-fritz/actions/workflows/ci.yml/badge.svg)](https://github.com/danieljustus/symaira-fritz/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/danieljustus/symaira-fritz)](https://github.com/danieljustus/symaira-fritz/releases/latest)
 [![License](https://img.shields.io/github/license/danieljustus/symaira-fritz)](LICENSE)
 [![Go](https://img.shields.io/github/go-mod/go-version/danieljustus/symaira-fritz)](go.mod)
-[![Release](https://img.shields.io/github/v/release/danieljustus/symaira-fritz)](https://github.com/danieljustus/symaira-fritz/releases/latest)
-[![Demo](https://img.shields.io/badge/demo-terminal_output-2ea44f)](https://github.com/danieljustus/symaira-fritz#demo)
 
-A CLI to **administer, analyse, and control an AVM FRITZ!Box** — part of the
-Symaira ecosystem. Binary name: `symfritz`.
+![Symaira Fritz](docs/assets/social-preview.png)
 
-<a name="demo"></a>
+> A CLI to **administer, analyse, and control an AVM FRITZ!Box** — part of the
+> Symaira ecosystem. Binary name: `symfritz`.
+
+**Status:** Active development — see the [latest releases](https://github.com/danieljustus/symaira-fritz/releases).
+
+## Demo
 
 ![symfritz terminal demo](docs/assets/symfritz-demo.svg)
 
@@ -33,9 +36,7 @@ It speaks the FRITZ!Box's documented interfaces, no reverse-engineering required
 > the best TR-064 reference) and [`fritzctl`](https://github.com/bpicode/fritzctl)
 > (Go, the architectural blueprint).
 
-## Status
-
-What works today:
+## Capabilities
 
 - **Session auth** — modern PBKDF2 (FRITZ!OS 7.24+) *and* legacy MD5 challenge-response, with automatic re-login on session expiry.
 - **TR-064** — generic action calls with HTTP digest auth, plus `tr64desc.xml` service discovery (`symfritz services`).
@@ -55,9 +56,6 @@ What works today:
 - `--json` on the query/diagnose commands for scripting.
 
 Still planned: per-radio band labelling.
-
-There is also a best-effort `symfritz scrape` command for the web-UI `data.lua`
-endpoint (stats TR-064 doesn't expose), see Caveats below.
 
 ## Install
 
@@ -187,6 +185,13 @@ tools/list: 9 tools
 The expected tools are `status`, `host_list`, `host_get`, `diagnose`, `mesh`,
 `wlan_clients`, `wake_on_lan`, `home_list`, and `home_switch`.
 
+## Ecosystem
+
+Symaira Fritz is part of the [Symaira ecosystem](https://symaira.com). It can
+use [symvault](https://github.com/danieljustus/symaira-vault) as an optional
+credential store and exposes its capabilities to [Hermes Agent](https://hermes-agent.nousresearch.com/)
+through MCP.
+
 ## Architecture
 
 ```
@@ -223,6 +228,8 @@ tools could embed it later.
   logs, guest-WLAN details) are only available via **web-UI `data.lua` scraping**,
   which is FRITZ!OS-version-dependent and may break on firmware updates. That
   layer is intentionally not built yet and will be clearly marked "best effort".
+- There is also a best-effort `symfritz scrape` command for the web-UI `data.lua`
+  endpoint (stats TR-064 does not expose).
 
 ## Development
 
