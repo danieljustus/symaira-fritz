@@ -21,6 +21,10 @@ func newStatusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "Show a box overview (model, firmware, connection, external IP, CPU temperature)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			format, err := resolveOutputFormat(cmd, asJSON)
+			if err != nil {
+				return err
+			}
 			return runWithClient(cmd, "status failed", func(ctx context.Context, c *fritz.Client) error {
 				st, err := c.Status(ctx)
 
@@ -37,7 +41,7 @@ func newStatusCmd() *cobra.Command {
 				if showCPU && finalErr == nil {
 					cpuTemps, _ = c.CPUTemperatures(ctx)
 				}
-				if asJSON {
+				if format != outputText {
 					type jsonError struct {
 						Service string `json:"service"`
 						Action  string `json:"action"`
@@ -66,7 +70,7 @@ func newStatusCmd() *cobra.Command {
 							Error:   string(e.Kind),
 						})
 					}
-					printErr := printJSON(JSONStatus{
+					printErr := printOutput(JSONStatus{
 						ModelName:       st.ModelName,
 						FirmwareVersion: st.FirmwareVersion,
 						ExternalIP:      st.ExternalIP,
@@ -76,7 +80,7 @@ func newStatusCmd() *cobra.Command {
 						CPUTemperatures: cpuTemps,
 						Partial:         st.Partial,
 						Errors:          jsonErrs,
-					})
+					}, format)
 					if printErr != nil {
 						return printErr
 					}

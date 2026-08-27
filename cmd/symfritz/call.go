@@ -28,6 +28,13 @@ Examples:
   symfritz call hosts GetGenericHostEntry NewIndex=0`,
 		Args: cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			format, err := resolveOutputFormat(cmd, false)
+			if err != nil {
+				return err
+			}
+			if format == outputText {
+				format = outputJSON
+			}
 			action := args[1]
 			in := map[string]string{}
 			for _, kv := range args[2:] {
@@ -54,7 +61,7 @@ Examples:
 				if err != nil {
 					return wrapFritzError(err, "tr064 call failed")
 				}
-				return printJSON(out)
+				return printOutput(out, format)
 			})
 		},
 	}

@@ -16,6 +16,10 @@ func newLogCmd() *cobra.Command {
 		Use:   "log",
 		Short: "Show FRITZ!Box system event log",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			format, err := resolveOutputFormat(cmd, asJSON)
+			if err != nil {
+				return err
+			}
 			c, _, err := newClient()
 			if err != nil {
 				return err
@@ -24,8 +28,8 @@ func newLogCmd() *cobra.Command {
 			if err != nil {
 				return wrapFritzError(err, "log failed")
 			}
-			if asJSON {
-				return printJSON(events)
+			if format != outputText {
+				return printOutput(events, format)
 			}
 			if len(events) == 0 {
 				fmt.Println("No log events found.")

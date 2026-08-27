@@ -28,6 +28,7 @@ To regenerate this documentation: `make docs`
 - [symfritz diagnose](#symfritz-diagnose) — End-to-end reachability check for a host (name, MAC, or IP)
 - [symfritz diagnose router](#symfritz-diagnose-router) — Detect and diagnose the local FRITZ!Box router
 - [symfritz dial](#symfritz-dial) — Instruct the FRITZ!Box to dial a phone number
+- [symfritz doctor](#symfritz-doctor) — Check symfritz configuration, credentials, and box connectivity
 - [symfritz dsl](#symfritz-dsl) — Show DSL line statistics (noise margin, attenuation, max bit rate)
 - [symfritz hangup](#symfritz-hangup) — Hang up any active call initiated by dial
 - [symfritz help](#symfritz-help) — Help about any command
@@ -77,7 +78,9 @@ the SYMFRITZ_PASSWORD environment variable.
 ### Options
 
 ```
-  -h, --help   help for symfritz
+  -h, --help            help for symfritz
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -90,6 +93,7 @@ the SYMFRITZ_PASSWORD environment variable.
 * [symfritz detect](#symfritzdetect)	 - Detect the local FRITZ!Box on the network
 * [symfritz diagnose](#symfritzdiagnose)	 - End-to-end reachability check for a host (name, MAC, or IP)
 * [symfritz dial](#symfritzdial)	 - Instruct the FRITZ!Box to dial a phone number
+* [symfritz doctor](#symfritzdoctor)	 - Check symfritz configuration, credentials, and box connectivity
 * [symfritz dsl](#symfritzdsl)	 - Show DSL line statistics (noise margin, attenuation, max bit rate)
 * [symfritz hangup](#symfritzhangup)	 - Hang up any active call initiated by dial
 * [symfritz home](#symfritzhome)	 - DECT smart-home actors (switches, thermostats)
@@ -128,6 +132,13 @@ a dotfile.
   -h, --help   help for auth
 ```
 
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz](#symfritz)	 - Administer, analyse, and control an AVM FRITZ!Box
@@ -155,6 +166,13 @@ symfritz auth login [flags]
       --symvault string   Store in symvault at this entry path (e.g. fritz.password)
 ```
 
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz auth](#symfritzauth)	 - Manage FRITZ!Box credentials (test, login, store)
@@ -178,6 +196,13 @@ symfritz auth store [flags]
       --symvault string   Store in symvault at this entry path
 ```
 
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz auth](#symfritzauth)	 - Manage FRITZ!Box credentials (test, login, store)
@@ -197,6 +222,13 @@ symfritz auth test [flags]
 
 ```
   -h, --help   help for test
+```
+
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -223,6 +255,13 @@ symfritz auth trust [flags]
 ```
   -h, --help           help for trust
       --reset string   Reset the pinned TLS certificate for the specified host
+```
+
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -259,6 +298,13 @@ symfritz call <service> <action> [Key=Value ...] [flags]
   -h, --help   help for call
 ```
 
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz](#symfritz)	 - Administer, analyse, and control an AVM FRITZ!Box
@@ -284,6 +330,12 @@ symfritz calls [flags]
       --type string   Filter by type (incoming, missed, outgoing, rejected, all) (default "all")
 ```
 
+### Options inherited from parent commands
+
+```
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz](#symfritz)	 - Administer, analyse, and control an AVM FRITZ!Box
@@ -305,6 +357,13 @@ See each sub-command's help for details on how to use the generated script.
 
 ```
   -h, --help   help for completion
+```
+
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -357,6 +416,13 @@ symfritz completion bash
       --no-descriptions   disable completion descriptions
 ```
 
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz completion](#symfritzcompletion)	 - Generate the autocompletion script for the specified shell
@@ -394,6 +460,13 @@ symfritz completion fish [flags]
       --no-descriptions   disable completion descriptions
 ```
 
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz completion](#symfritzcompletion)	 - Generate the autocompletion script for the specified shell
@@ -426,6 +499,13 @@ symfritz completion powershell [flags]
 ```
   -h, --help              help for powershell
       --no-descriptions   disable completion descriptions
+```
+
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -476,6 +556,13 @@ symfritz completion zsh [flags]
       --no-descriptions   disable completion descriptions
 ```
 
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz completion](#symfritzcompletion)	 - Generate the autocompletion script for the specified shell
@@ -491,6 +578,13 @@ Manage symfritz configuration
 
 ```
   -h, --help   help for config
+```
+
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -527,6 +621,12 @@ symfritz config detect [flags]
       --json   Output as JSON
 ```
 
+### Options inherited from parent commands
+
+```
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz config](#symfritzconfig)	 - Manage symfritz configuration
@@ -547,6 +647,13 @@ symfritz config init [flags]
 ```
       --force   overwrite existing config file
   -h, --help    help for init
+```
+
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -581,6 +688,12 @@ symfritz detect [flags]
       --json   Output as JSON
 ```
 
+### Options inherited from parent commands
+
+```
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz](#symfritz)	 - Administer, analyse, and control an AVM FRITZ!Box
@@ -611,6 +724,12 @@ symfritz diagnose <host> [flags]
   -h, --help        help for diagnose
       --json        Output as JSON
       --port ints   TCP port to probe (repeatable; replaces default ports 22, 5900, 8001)
+```
+
+### Options inherited from parent commands
+
+```
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -644,6 +763,12 @@ symfritz diagnose router [flags]
       --port ints   TCP port to probe (repeatable; replaces default ports 22, 5900, 8001)
 ```
 
+### Options inherited from parent commands
+
+```
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz diagnose](#symfritzdiagnose)	 - End-to-end reachability check for a host (name, MAC, or IP)
@@ -663,6 +788,49 @@ symfritz dial <nummer> [flags]
 
 ```
   -h, --help   help for dial
+```
+
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
+### SEE ALSO
+
+* [symfritz](#symfritz)	 - Administer, analyse, and control an AVM FRITZ!Box
+
+
+---
+
+## symfritz doctor
+
+Check symfritz configuration, credentials, and box connectivity
+
+### Synopsis
+
+Check the local symfritz setup and its FRITZ!Box connection.
+
+The command verifies the global config file, credential resolution, TR-064
+service discovery, and session login. Smart-home availability is probed when
+the authenticated AHA endpoint reports actors.
+
+```
+symfritz doctor [flags]
+```
+
+### Options
+
+```
+  -h, --help   help for doctor
+```
+
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -687,6 +855,12 @@ symfritz dsl [flags]
       --json   Output as JSON
 ```
 
+### Options inherited from parent commands
+
+```
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz](#symfritz)	 - Administer, analyse, and control an AVM FRITZ!Box
@@ -706,6 +880,13 @@ symfritz hangup [flags]
 
 ```
   -h, --help   help for hangup
+```
+
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -734,6 +915,13 @@ symfritz help [command] [flags]
   -h, --help   help for help
 ```
 
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz](#symfritz)	 - Administer, analyse, and control an AVM FRITZ!Box
@@ -749,6 +937,13 @@ DECT smart-home actors (switches, thermostats)
 
 ```
   -h, --help   help for home
+```
+
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -777,6 +972,12 @@ symfritz home list [flags]
       --tr064   Use TR-064 Homeauto API
 ```
 
+### Options inherited from parent commands
+
+```
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz home](#symfritzhome)	 - DECT smart-home actors (switches, thermostats)
@@ -797,6 +998,13 @@ symfritz home switch <ain> <on|off> [flags]
 ```
   -h, --help    help for switch
       --tr064   Use TR-064 Homeauto API
+```
+
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -820,6 +1028,13 @@ symfritz home temp <ain> <celsius|on|off> [flags]
   -h, --help   help for temp
 ```
 
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz home](#symfritzhome)	 - DECT smart-home actors (switches, thermostats)
@@ -836,6 +1051,12 @@ FRITZ!Box host table (LAN/WLAN devices)
 ```
   -h, --help   help for hosts
       --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -865,7 +1086,8 @@ symfritz hosts active [flags]
 ### Options inherited from parent commands
 
 ```
-      --json   Output as JSON
+      --json            Output as JSON
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -894,7 +1116,8 @@ symfritz hosts get [name] [flags]
 ### Options inherited from parent commands
 
 ```
-      --json   Output as JSON
+      --json            Output as JSON
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -921,7 +1144,8 @@ symfritz hosts list [flags]
 ### Options inherited from parent commands
 
 ```
-      --json   Output as JSON
+      --json            Output as JSON
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -945,6 +1169,12 @@ symfritz log [flags]
       --filter string   Filter by category (all, sys, net, fon, wlan, usb) (default "all")
   -h, --help            help for log
       --json            Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -972,6 +1202,13 @@ symfritz mcp [flags]
   -h, --help   help for mcp
 ```
 
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz](#symfritz)	 - Administer, analyse, and control an AVM FRITZ!Box
@@ -994,6 +1231,12 @@ symfritz mesh [flags]
       --json   Output as JSON
 ```
 
+### Options inherited from parent commands
+
+```
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz](#symfritz)	 - Administer, analyse, and control an AVM FRITZ!Box
@@ -1014,6 +1257,13 @@ symfritz reboot [flags]
 ```
   -h, --help   help for reboot
       --yes    Confirm the reboot
+```
+
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -1051,6 +1301,13 @@ symfritz scrape <page> [Key=Value ...] [flags]
   -h, --help   help for scrape
 ```
 
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz](#symfritz)	 - Administer, analyse, and control an AVM FRITZ!Box
@@ -1071,6 +1328,12 @@ symfritz services [flags]
 ```
   -h, --help   help for services
       --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -1094,6 +1357,12 @@ symfritz status [flags]
       --cpu    Show CPU temperatures (experimental)
   -h, --help   help for status
       --json   Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -1130,6 +1399,12 @@ symfritz traffic [flags]
       --watch               Continuously re-poll and redraw until Ctrl-C
 ```
 
+### Options inherited from parent commands
+
+```
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz](#symfritz)	 - Administer, analyse, and control an AVM FRITZ!Box
@@ -1153,6 +1428,12 @@ symfritz version [flags]
       --json    Emit version as machine-readable JSON
 ```
 
+### Options inherited from parent commands
+
+```
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
+```
+
 ### SEE ALSO
 
 * [symfritz](#symfritz)	 - Administer, analyse, and control an AVM FRITZ!Box
@@ -1170,6 +1451,12 @@ WLAN radios, clients, and guest network
       --guest-index int   WLANConfiguration index of the guest radio (default 3)
   -h, --help              help for wlan
       --json              Output as JSON
+```
+
+### Options inherited from parent commands
+
+```
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -1201,6 +1488,7 @@ symfritz wlan clients [flags]
 ```
       --guest-index int   WLANConfiguration index of the guest radio (default 3)
       --json              Output as JSON
+      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -1225,6 +1513,7 @@ Guest WLAN status/enable/disable
 ```
       --guest-index int   WLANConfiguration index of the guest radio (default 3)
       --json              Output as JSON
+      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -1256,6 +1545,7 @@ symfritz wlan guest off [flags]
 ```
       --guest-index int   WLANConfiguration index of the guest radio (default 3)
       --json              Output as JSON
+      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -1284,6 +1574,7 @@ symfritz wlan guest on [flags]
 ```
       --guest-index int   WLANConfiguration index of the guest radio (default 3)
       --json              Output as JSON
+      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -1312,6 +1603,7 @@ symfritz wlan guest status [flags]
 ```
       --guest-index int   WLANConfiguration index of the guest radio (default 3)
       --json              Output as JSON
+      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -1340,6 +1632,7 @@ symfritz wlan radios [flags]
 ```
       --guest-index int   WLANConfiguration index of the guest radio (default 3)
       --json              Output as JSON
+      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO
@@ -1366,6 +1659,13 @@ symfritz wol [host] [flags]
 ```
   -h, --help         help for wol
       --mac string   Target MAC address
+```
+
+### Options inherited from parent commands
+
+```
+      --json            Output as JSON (shorthand for --output json)
+      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default "text")
 ```
 
 ### SEE ALSO

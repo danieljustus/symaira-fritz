@@ -17,9 +17,13 @@ func newHostsCmd() *cobra.Command {
 		Short: "FRITZ!Box host table (LAN/WLAN devices)",
 	}
 
-	printHosts := func(hosts []fritz.Host) error {
-		if asJSON {
-			return printJSON(hosts)
+	printHosts := func(cmd *cobra.Command, hosts []fritz.Host) error {
+		format, err := resolveOutputFormat(cmd, asJSON)
+		if err != nil {
+			return err
+		}
+		if format != outputText {
+			return printOutput(hosts, format)
 		}
 		if len(hosts) == 0 {
 			fmt.Println("No hosts found.")
@@ -46,7 +50,7 @@ func newHostsCmd() *cobra.Command {
 				if err != nil {
 					return wrapFritzError(err, "hosts list failed")
 				}
-				return printHosts(hosts)
+				return printHosts(cmd, hosts)
 			})
 		},
 	}
@@ -60,7 +64,7 @@ func newHostsCmd() *cobra.Command {
 				if err != nil {
 					return wrapFritzError(err, "hosts list failed")
 				}
-				return printHosts(hosts)
+				return printHosts(cmd, hosts)
 			})
 		},
 	}
@@ -71,6 +75,10 @@ func newHostsCmd() *cobra.Command {
 		Short: "Show one host by name, --mac, or --ip",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			format, err := resolveOutputFormat(cmd, asJSON)
+			if err != nil {
+				return err
+			}
 			return runWithClient(cmd, "host lookup failed", func(ctx context.Context, c *fritz.Client) error {
 				var host *fritz.Host
 				var err error
@@ -88,8 +96,8 @@ func newHostsCmd() *cobra.Command {
 				if err != nil {
 					return wrapFritzError(err, "host lookup failed")
 				}
-				if asJSON {
-					return printJSON(host)
+				if format != outputText {
+					return printOutput(host, format)
 				}
 				fmt.Printf("Name:    %s\n", orDash(host.Name))
 				fmt.Printf("IP:      %s\n", orDash(host.IP))

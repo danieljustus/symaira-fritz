@@ -23,6 +23,10 @@ func newCallsCmd() *cobra.Command {
 		Use:   "calls",
 		Short: "Show FRITZ!Box call list",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			format, err := resolveOutputFormat(cmd, asJSON)
+			if err != nil {
+				return err
+			}
 			c, _, err := newClient()
 			if err != nil {
 				return err
@@ -35,8 +39,8 @@ func newCallsCmd() *cobra.Command {
 			if err != nil {
 				return wrapFritzError(err, "calls failed")
 			}
-			if asJSON {
-				return printJSON(calls)
+			if format != outputText {
+				return printOutput(calls, format)
 			}
 			if len(calls) == 0 {
 				fmt.Println("No calls found.")

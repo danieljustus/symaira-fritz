@@ -43,6 +43,7 @@ It speaks the FRITZ!Box's documented interfaces, no reverse-engineering required
 - **Hosts** — first-class host table: `list`, `active`, `get` by name/MAC/IP.
 - **Detect** — find FRITZ!Box on local network when `fritz.box` resolves to a public IP.
 - **Diagnose** — end-to-end host reachability (box entry → active → LAN/WLAN → DNS → TCP ports).
+- **Doctor** — validate the local config, credential resolution, TR-064 discovery, session login, and optional AHA access.
 - **Mesh** — topology of nodes, repeaters, and links.
 - **WLAN** — radios, associated clients, guest-network status/toggle.
 - **Wake-on-LAN** — by host name/IP or explicit MAC.
@@ -53,7 +54,7 @@ It speaks the FRITZ!Box's documented interfaces, no reverse-engineering required
 - **Phone** — call list with type filtering, dial, and hangup.
 - **Log** — system event log with category filtering (sys/net/fon/wlan/usb).
 - **`status`**, **`reboot`**, an **MCP server** (stdio) exposing the above, config + env loading.
-- `--json` on the query/diagnose commands for scripting.
+- Global `--output text|json|yaml` for structured output; `--json` remains the shorthand on the root and existing subcommands.
 
 Still planned: per-radio band labelling.
 
@@ -75,6 +76,9 @@ symfritz config init                       # writes ~/.config/symfritz/config.to
 symfritz auth login                        # prompts, verifies against the box, stores it
 symfritz auth test                         # confirm it resolves and works
 ```
+
+`config init` is intentionally a subcommand rather than a top-level `init`: symfritz
+has one local configuration file and no other initialization state.
 
 ### Where the password comes from
 
@@ -112,6 +116,7 @@ symfritz status                             # model, firmware, connection, exter
 symfritz detect                             # find FRITZ!Box on local network
 symfritz diagnose macmini                   # end-to-end host reachability check
 symfritz diagnose router                    # detect and diagnose local router
+symfritz doctor                             # verify the local setup and box access
 symfritz hosts list                         # all known network devices
 symfritz wlan radios                        # WLAN SSIDs, channels, state
 symfritz traffic                            # current WAN traffic rates
@@ -120,6 +125,7 @@ symfritz dsl                                # DSL line statistics
 symfritz home list                          # DECT smart-home actors
 symfritz home temp <ain> <celsius|on|off>   # set target temperature for thermostat
 symfritz calls                              # recent call list
+symfritz status --output json                # machine-readable status
 symfritz reboot --yes                       # reboot the FRITZ!Box
 symfritz mcp                                # start MCP stdio server for AI agents
 ```

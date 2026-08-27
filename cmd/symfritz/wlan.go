@@ -20,13 +20,17 @@ func newWLANCmd() *cobra.Command {
 		Use:   "radios",
 		Short: "List WLAN radios (SSID, band, channel, state)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			format, err := resolveOutputFormat(cmd, asJSON)
+			if err != nil {
+				return err
+			}
 			return runWithClient(cmd, "wlan radios failed", func(ctx context.Context, c *fritz.Client) error {
 				radios, err := c.Radios(ctx, 3)
 				if err != nil {
 					return wrapFritzError(err, "wlan radios failed")
 				}
-				if asJSON {
-					return printJSON(radios)
+				if format != outputText {
+					return printOutput(radios, format)
 				}
 				fmt.Printf("%-3s %-24s %-8s %-8s %s\n", "IDX", "SSID", "ENABLED", "CHANNEL", "STANDARD")
 				for _, r := range radios {
@@ -41,13 +45,17 @@ func newWLANCmd() *cobra.Command {
 		Use:   "clients",
 		Short: "List devices associated with the WLAN radios",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			format, err := resolveOutputFormat(cmd, asJSON)
+			if err != nil {
+				return err
+			}
 			return runWithClient(cmd, "wlan clients failed", func(ctx context.Context, c *fritz.Client) error {
 				clients, err := c.AllWLANClients(ctx, 3)
 				if err != nil {
 					return wrapFritzError(err, "wlan clients failed")
 				}
-				if asJSON {
-					return printJSON(clients)
+				if format != outputText {
+					return printOutput(clients, format)
 				}
 				fmt.Printf("%-3s %-17s %-15s %-7s %s\n", "RAD", "MAC", "IP", "SIGNAL", "SPEED")
 				for _, cl := range clients {
@@ -63,13 +71,17 @@ func newWLANCmd() *cobra.Command {
 		Use:   "status",
 		Short: "Show guest WLAN state",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			format, err := resolveOutputFormat(cmd, asJSON)
+			if err != nil {
+				return err
+			}
 			return runWithClient(cmd, "guest status failed", func(ctx context.Context, c *fritz.Client) error {
 				r, err := c.GuestWLANStatus(ctx, guestIdx)
 				if err != nil {
 					return wrapFritzError(err, "guest status failed")
 				}
-				if asJSON {
-					return printJSON(r)
+				if format != outputText {
+					return printOutput(r, format)
 				}
 				fmt.Printf("Guest WLAN (index %d): SSID=%q enabled=%v\n", r.Index, r.SSID, r.Enabled)
 				return nil

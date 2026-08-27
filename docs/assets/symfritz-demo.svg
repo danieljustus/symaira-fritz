@@ -49,7 +49,7 @@
 <text x="20" y="789" fill="#e6e6f0">  version     Print version</text>
 <text x="20" y="808" fill="#e6e6f0">  wlan        WLAN radios, clients, and guest network</text>
 <text x="20" y="827" fill="#e6e6f0">  wol         Send a Wake-on-LAN packet via the FRITZ!Box</text>
-<text x="20" y="846" fill="#e6e6f0"></text>
+<text x="20" y="846" fill="#e6e6f0">  doctor      Check configuration, credentials, and box connectivity</text>
 <text x="20" y="865" fill="#e6e6f0">Flags:</text>
 <text x="20" y="884" fill="#e6e6f0">  -h, --help      help for symfritz</text>
 <text x="20" y="903" fill="#e6e6f0">  -v, --version   version for symfritz</text>

@@ -42,6 +42,10 @@ FRITZ!Box, causing connection timeouts.`,
 
 // runDetect is the detect command body, factored out for test seam.
 func runDetect(cmd *cobra.Command, asJSON bool) error {
+	format, err := resolveOutputFormat(cmd, asJSON)
+	if err != nil {
+		return err
+	}
 	box, _ := boxFromEnv()
 	ctx := cmd.Context()
 	if ctx == nil {
@@ -80,7 +84,7 @@ func runDetect(cmd *cobra.Command, asJSON bool) error {
 		hasIGD = true
 	}
 
-	if asJSON {
+	if format != outputText {
 		type DetectResult struct {
 			Host                 string  `json:"host"`
 			IP                   string  `json:"ip"`
@@ -91,7 +95,7 @@ func runDetect(cmd *cobra.Command, asJSON bool) error {
 			CurrentUpstreamBps   float64 `json:"current_upstream_bps,omitempty"`
 			IsReducedDataset     bool    `json:"is_reduced_dataset,omitempty"`
 		}
-		return printJSON(DetectResult{
+		return printOutput(DetectResult{
 			Host:                 box.Host,
 			IP:                   ip,
 			Ready:                true,
@@ -100,7 +104,7 @@ func runDetect(cmd *cobra.Command, asJSON bool) error {
 			CurrentDownstreamBps: downBps,
 			CurrentUpstreamBps:   upBps,
 			IsReducedDataset:     hasIGD,
-		})
+		}, format)
 	}
 
 	// Human-readable output

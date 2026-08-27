@@ -20,6 +20,10 @@ func homeMockServer(t *testing.T) *httptest.Server {
 			_, _ = io.WriteString(w, loginSIDXML)
 			return
 		}
+		if r.URL.Path == "/tr64desc.xml" {
+			_, _ = io.WriteString(w, tr64descXML)
+			return
+		}
 		if r.URL.Path == "/webservices/homeautoswitch.lua" {
 			switch r.URL.Query().Get("switchcmd") {
 			case "getdevicelistinfos":

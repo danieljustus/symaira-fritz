@@ -77,6 +77,17 @@ func Load() (*Config, error) {
 	return loader.Load()
 }
 
+// Reload reads a fresh configuration, bypassing the loader cache. It is used
+// by diagnostics that must verify the current file rather than a prior load.
+func Reload() (*Config, error) {
+	return loader.Reload()
+}
+
+// DefaultPath returns the global configuration path used by configkit.
+func DefaultPath() string {
+	return configkit.DefaultPath("symfritz")
+}
+
 // DefaultConfigTOML is the template written by `symfritz config init`.
 func DefaultConfigTOML() string {
 	return `# symfritz configuration
