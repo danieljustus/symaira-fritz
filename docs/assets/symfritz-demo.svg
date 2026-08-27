@@ -45,7 +45,7 @@
 <text x="20" y="713" fill="#e6e6f0">  scrape      Fetch a data.lua page (best-effort, fragile)</text>
 <text x="20" y="732" fill="#e6e6f0">  services    Discover TR-064 services advertised by the box (tr64desc.xml)</text>
 <text x="20" y="751" fill="#e6e6f0">  status      Show a box overview (model, firmware, connection, external IP, CPU temperature)</text>
-<text x="20" y="770" fill="#e6e6f0">  traffic     Show real-time WAN traffic monitoring data</text>
+<text x="20" y="770" fill="#e6e6f0">  traffic     Show current WAN traffic rates (--watch for live updates)</text>
 <text x="20" y="789" fill="#e6e6f0">  version     Print version</text>
 <text x="20" y="808" fill="#e6e6f0">  wlan        WLAN radios, clients, and guest network</text>
 <text x="20" y="827" fill="#e6e6f0">  wol         Send a Wake-on-LAN packet via the FRITZ!Box</text>
