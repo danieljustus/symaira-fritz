@@ -48,7 +48,7 @@ It speaks the FRITZ!Box's documented interfaces, no reverse-engineering required
 - **Wake-on-LAN** — by host name/IP or explicit MAC.
 - **AHA-HTTP** — DECT device listing, switch on/off, and thermostat temperature control (`symfritz home`).
 - **Credentials** — `auth login/test/store`, resolved from env → symvault → macOS Keychain → config.
-- **Traffic** — real-time WAN traffic monitoring (downstream/upstream by category).
+- **Traffic** — current WAN traffic rates (downstream/upstream by category); use `symfritz traffic --watch` for live monitoring.
 - **DSL** — line statistics: noise margin, attenuation, max bit rate.
 - **Phone** — call list with type filtering, dial, and hangup.
 - **Log** — system event log with category filtering (sys/net/fon/wlan/usb).
@@ -114,7 +114,8 @@ symfritz diagnose macmini                   # end-to-end host reachability check
 symfritz diagnose router                    # detect and diagnose local router
 symfritz hosts list                         # all known network devices
 symfritz wlan radios                        # WLAN SSIDs, channels, state
-symfritz traffic                            # real-time WAN traffic monitoring
+symfritz traffic                            # current WAN traffic rates
+symfritz traffic --watch --interval 5s       # live WAN traffic monitoring
 symfritz dsl                                # DSL line statistics
 symfritz home list                          # DECT smart-home actors
 symfritz home temp <ain> <celsius|on|off>   # set target temperature for thermostat
