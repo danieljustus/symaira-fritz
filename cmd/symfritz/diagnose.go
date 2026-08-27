@@ -17,9 +17,8 @@ func newDiagnoseCmd() *cobra.Command {
 		ports  []int
 	)
 	cmd := &cobra.Command{
-		Use:     "diagnose <host>",
-		Aliases: []string{"doctor"},
-		Short:   "End-to-end reachability check for a host (name, MAC, or IP)",
+		Use:   "diagnose <host>",
+		Short: "End-to-end reachability check for a host (name, MAC, or IP)",
 		Long: `Diagnose resolves a host via the FRITZ!Box host table, then checks it
 end-to-end from this machine: is it known, active, on LAN or WLAN, does its name
 resolve via DNS, and are the relevant TCP ports reachable.
@@ -28,6 +27,10 @@ Default ports probed: 22 (SSH), 5900 (VNC/Screen Sharing), 8001 (Paperless).
 Override with --port (repeatable).`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			format, err := resolveOutputFormat(cmd, asJSON)
+			if err != nil {
+				return err
+			}
 			c, _, err := newClient()
 			if err != nil {
 				return err
@@ -37,8 +40,8 @@ Override with --port (repeatable).`,
 				opts.Ports = append(opts.Ports, fritz.PortProbe{Port: p, Label: "custom"})
 			}
 			d := c.Diagnose(context.Background(), args[0], opts)
-			if asJSON {
-				if err := printJSON(d); err != nil {
+			if format != outputText {
+				if err := printOutput(d, format); err != nil {
 					return err
 				}
 			} else {
@@ -85,8 +88,15 @@ directly.`,
 }
 
 func runDiagnoseRouter(cmd *cobra.Command, asJSON bool, ports []int) error {
+	format, err := resolveOutputFormat(cmd, asJSON)
+	if err != nil {
+		return err
+	}
 	box, _ := boxFromEnv()
-	ctx := context.Background()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	httpClient := newHTTPClient()
 
@@ -113,8 +123,8 @@ func runDiagnoseRouter(cmd *cobra.Command, asJSON bool, ports []int) error {
 		opts.Ports = append(opts.Ports, fritz.PortProbe{Port: p, Label: "custom"})
 	}
 	d := c.Diagnose(ctx, routerHost, opts)
-	if asJSON {
-		if err := printJSON(d); err != nil {
+	if format != outputText {
+		if err := printOutput(d, format); err != nil {
 			return err
 		}
 	} else {

@@ -19,8 +19,15 @@ func newVersionCmd() *cobra.Command {
 		Short: "Print version",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			info := versionkit.New("symfritz", version, 1)
-			if flagJSON {
+			format, err := resolveOutputFormat(cmd, flagJSON)
+			if err != nil {
+				return err
+			}
+			if format == outputJSON {
 				return info.Write(cmd.OutOrStdout())
+			}
+			if format == outputYAML {
+				return writeOutput(cmd.OutOrStdout(), info, format)
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), info.String())
 			if check {

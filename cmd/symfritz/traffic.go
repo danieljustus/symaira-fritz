@@ -27,11 +27,15 @@ Examples:
   symfritz traffic --watch    # live-updating view (exits on Ctrl-C)
   symfritz traffic --watch --interval 5s`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			format, err := resolveOutputFormat(cmd, asJSON)
+			if err != nil {
+				return err
+			}
 			return runWithClient(cmd, "traffic failed", func(ctx context.Context, c *fritz.Client) error {
 				if watch {
-					return runTrafficWatch(ctx, c, asJSON, interval)
+					return runTrafficWatch(ctx, c, format, interval)
 				}
-				return runTrafficOnce(ctx, c, asJSON)
+				return runTrafficOnce(ctx, c, format)
 			})
 		},
 	}
@@ -41,19 +45,19 @@ Examples:
 	return cmd
 }
 
-func runTrafficOnce(ctx context.Context, c *fritz.Client, asJSON bool) error {
+func runTrafficOnce(ctx context.Context, c *fritz.Client, format outputFormat) error {
 	stats, err := c.OnlineMonitor(ctx)
 	if err != nil {
 		return wrapFritzError(err, "traffic failed")
 	}
-	if asJSON {
-		return printJSON(stats)
+	if format != outputText {
+		return printOutput(stats, format)
 	}
 	printTrafficStats(stats)
 	return nil
 }
 
-func runTrafficWatch(ctx context.Context, c *fritz.Client, asJSON bool, interval time.Duration) error {
+func runTrafficWatch(ctx context.Context, c *fritz.Client, format outputFormat, interval time.Duration) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -66,8 +70,8 @@ func runTrafficWatch(ctx context.Context, c *fritz.Client, asJSON bool, interval
 			return wrapFritzError(err, "traffic watch failed")
 		}
 
-		if asJSON {
-			_ = printJSON(stats)
+		if format != outputText {
+			_ = printOutput(stats, format)
 		} else {
 			printTrafficStats(stats)
 		}

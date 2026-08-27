@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -13,14 +12,18 @@ func newServicesCmd() *cobra.Command {
 		Use:   "services",
 		Short: "Discover TR-064 services advertised by the box (tr64desc.xml)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			format, err := resolveOutputFormat(cmd, asJSON)
+			if err != nil {
+				return err
+			}
 			box, _ := boxFromEnv()
 			c := newClientFor(box, "")
-			services, err := c.Discover(context.Background())
+			services, err := c.Discover(cmd.Context())
 			if err != nil {
 				return wrapFritzError(err, "discovery failed")
 			}
-			if asJSON {
-				return printJSON(services)
+			if format != outputText {
+				return printOutput(services, format)
 			}
 			for _, s := range services {
 				fmt.Printf("%-60s %s\n", s.Type, s.ControlURL)

@@ -27,14 +27,18 @@ func newHomeCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List DECT actors with AIN, name, and state",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			format, err := resolveOutputFormat(cmd, listJSON)
+			if err != nil {
+				return err
+			}
 			return runWithClient(cmd, "device list failed", func(ctx context.Context, c *fritz.Client) error {
 				if useTR064 {
 					devs, err := c.HomeautoDevices(ctx)
 					if err != nil {
 						return wrapFritzError(err, "device list failed")
 					}
-					if listJSON {
-						return printJSON(devs)
+					if format != outputText {
+						return printOutput(devs, format)
 					}
 					if len(devs) == 0 {
 						fmt.Println("No TR-064 smart-home devices found.")
@@ -56,12 +60,12 @@ func newHomeCmd() *cobra.Command {
 					groups = nil
 				}
 
-				if listJSON {
+				if format != outputText {
 					type Combined struct {
 						Devices []fritz.Device `json:"devices"`
 						Groups  []fritz.Group  `json:"groups"`
 					}
-					return printJSON(Combined{Devices: devs, Groups: groups})
+					return printOutput(Combined{Devices: devs, Groups: groups}, format)
 				}
 
 				if len(devs) == 0 && len(groups) == 0 {

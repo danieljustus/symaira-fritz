@@ -13,6 +13,10 @@ func newMeshCmd() *cobra.Command {
 		Use:   "mesh",
 		Short: "Show the mesh topology (nodes, repeaters, links)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			format, err := resolveOutputFormat(cmd, asJSON)
+			if err != nil {
+				return err
+			}
 			c, _, err := newClient()
 			if err != nil {
 				return err
@@ -21,8 +25,8 @@ func newMeshCmd() *cobra.Command {
 			if err != nil {
 				return wrapFritzError(err, "mesh failed")
 			}
-			if asJSON {
-				return printJSON(topo)
+			if format != outputText {
+				return printOutput(topo, format)
 			}
 			for _, n := range topo.Nodes {
 				role := n.MeshRole

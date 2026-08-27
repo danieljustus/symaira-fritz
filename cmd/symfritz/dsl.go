@@ -15,13 +15,17 @@ func newDSLCmd() *cobra.Command {
 		Use:   "dsl",
 		Short: "Show DSL line statistics (noise margin, attenuation, max bit rate)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			format, err := resolveOutputFormat(cmd, asJSON)
+			if err != nil {
+				return err
+			}
 			return runWithClient(cmd, "dsl stats failed", func(ctx context.Context, c *fritz.Client) error {
 				stats, err := c.DSLLineStats(ctx)
 				if err != nil {
 					return wrapFritzError(err, "dsl stats failed")
 				}
-				if asJSON {
-					return printJSON(stats)
+				if format != outputText {
+					return printOutput(stats, format)
 				}
 
 				fmt.Println("DSL Line Statistics:")

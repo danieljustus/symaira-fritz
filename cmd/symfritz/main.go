@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -37,9 +36,13 @@ func main() {
 		if errors.Is(err, context.Canceled) {
 			os.Exit(int(ExitCanceled))
 		}
-		asJSON, _ := cmd.Flags().GetBool("json")
-		if asJSON && cmd.Name() != "status" {
-			printJSONError(err)
+		localJSON, _ := cmd.Flags().GetBool("json")
+		format := outputText
+		if resolved, formatErr := resolveOutputFormat(cmd, localJSON); formatErr == nil {
+			format = resolved
+		}
+		if format != outputText && cmd.Name() != "status" && cmd.Name() != "doctor" {
+			printOutputError(err, format)
 		} else {
 			fmt.Fprintln(os.Stderr, "Error:", exitcodes.FormatCLIError(err))
 		}
@@ -66,11 +69,14 @@ func newRootCmd() *cobra.Command {
 Configure the box once with 'symfritz config init', then set the password via
 the SYMFRITZ_PASSWORD environment variable.`,
 	}
+	root.PersistentFlags().String("output", "text", "Output format: text|json|yaml (--json is shorthand for --output json)")
+	root.PersistentFlags().Bool("json", false, "Output as JSON (shorthand for --output json)")
 
 	root.AddCommand(
 		newStatusCmd(),
 		newHostsCmd(),
 		newDiagnoseCmd(),
+		newDoctorCmd(),
 		newMeshCmd(),
 		newWLANCmd(),
 		newWoLCmd(),
@@ -153,15 +159,6 @@ var newClientFor = func(box config.Box, password string) *fritz.Client {
 		opts = append(opts, fritz.WithTLS(box.InsecureTLS))
 	}
 	return fritz.New(box.Host, opts...)
-}
-
-func printJSON(v any) error {
-	b, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return err
-	}
-	fmt.Println(string(b))
-	return nil
 }
 
 func orDash(s string) string {
@@ -259,6 +256,14 @@ func wrapFritzError(err error, msg string) error {
 }
 
 func printJSONError(err error) {
+	printOutputError(err, outputJSON)
+}
+
+func printOutputError(err error, format outputFormat) {
+	_ = writeOutput(os.Stdout, errorPayload(err), format)
+}
+
+func errorPayload(err error) any {
 	type errDetails struct {
 		Kind    string `json:"kind"`
 		Service string `json:"service,omitempty"`
@@ -272,7 +277,7 @@ func printJSONError(err error) {
 
 	var fe *fritz.FritzError
 	if errors.As(err, &fe) {
-		_ = printJSON(jsonErr{
+		return jsonErr{
 			Error: errDetails{
 				Kind:    string(fe.Kind),
 				Service: fe.Service,
@@ -280,26 +285,24 @@ func printJSONError(err error) {
 				Raw:     fe.Raw,
 				Message: err.Error(),
 			},
-		})
-		return
+		}
 	}
 
 	var cliErr *exitcodes.CLIError
 	if errors.As(err, &cliErr) {
-		_ = printJSON(jsonErr{
+		return jsonErr{
 			Error: errDetails{
 				Kind:    string(cliErr.Kind),
 				Message: err.Error(),
 			},
-		})
-		return
+		}
 	}
 
 	// Fallback for non-FritzError/non-CLIError
-	_ = printJSON(jsonErr{
+	return jsonErr{
 		Error: errDetails{
 			Kind:    "unavailable",
 			Message: err.Error(),
 		},
-	})
+	}
 }
