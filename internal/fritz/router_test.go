@@ -2,6 +2,7 @@ package fritz
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -393,4 +394,182 @@ func TestAllPublic(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPublicHostHint_FailureAndFallbackPaths(t *testing.T) {
+	origLookupHost := lookupHost
+	origDefaultGateway := defaultGateway
+	t.Cleanup(func() {
+		lookupHost = origLookupHost
+		defaultGateway = origDefaultGateway
+	})
+
+	tests := []struct {
+		name       string
+		lookup     []string
+		lookupErr  error
+		gateway    net.IP
+		gatewayErr error
+		want       string
+	}{
+		{name: "empty host", want: ""},
+		{name: "DNS failure", lookupErr: errors.New("DNS unavailable"), want: ""},
+		{name: "no addresses", lookup: []string{}, want: ""},
+		{name: "private address", lookup: []string{"192.168.1.1"}, want: ""},
+		{
+			name:    "public address with gateway",
+			lookup:  []string{"8.8.8.8"},
+			gateway: net.ParseIP("192.168.1.1"),
+			want:    "Hint: public.example resolves to a public IP. Try setting SYMFRITZ_HOST=192.168.1.1",
+		},
+		{
+			name:       "public address without gateway",
+			lookup:     []string{"8.8.8.8"},
+			gatewayErr: errors.New("gateway unavailable"),
+			want:       "Hint: public.example resolves to a public IP. Run 'symfritz detect' to find your FRITZ!Box.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lookupHost = func(context.Context, string) ([]string, error) {
+				return tt.lookup, tt.lookupErr
+			}
+			defaultGateway = func() (net.IP, error) {
+				return tt.gateway, tt.gatewayErr
+			}
+
+			got := publicHostHint(context.Background(), func() string {
+				if tt.name == "empty host" {
+					return ""
+				}
+				return "public.example"
+			}())
+			if got != tt.want {
+				t.Errorf("publicHostHint() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckHostDNS_FailureAndFallbackPaths(t *testing.T) {
+	origLookupHost := lookupHost
+	origDefaultGateway := defaultGateway
+	t.Cleanup(func() {
+		lookupHost = origLookupHost
+		defaultGateway = origDefaultGateway
+	})
+
+	t.Run("configured endpoint skips DNS", func(t *testing.T) {
+		called := false
+		lookupHost = func(context.Context, string) ([]string, error) {
+			called = true
+			return nil, errors.New("lookup should be skipped")
+		}
+		c := New("public.example")
+		c.tr064BaseURL = "http://127.0.0.1:1"
+		if err := c.checkHostDNS(context.Background()); err != nil {
+			t.Fatalf("checkHostDNS() = %v, want nil", err)
+		}
+		if called {
+			t.Fatal("checkHostDNS performed DNS lookup for configured endpoint")
+		}
+	})
+
+	t.Run("DNS failure allows HTTP handling", func(t *testing.T) {
+		lookupHost = func(context.Context, string) ([]string, error) {
+			return nil, errors.New("DNS unavailable")
+		}
+		c := New("router.example")
+		if err := c.checkHostDNS(context.Background()); err != nil {
+			t.Fatalf("checkHostDNS() = %v, want nil after DNS failure", err)
+		}
+	})
+
+	t.Run("empty resolution allows HTTP handling", func(t *testing.T) {
+		lookupHost = func(context.Context, string) ([]string, error) { return nil, nil }
+		c := New("router.example")
+		if err := c.checkHostDNS(context.Background()); err != nil {
+			t.Fatalf("checkHostDNS() = %v, want nil for empty resolution", err)
+		}
+	})
+
+	t.Run("private resolution allows HTTP handling", func(t *testing.T) {
+		lookupHost = func(context.Context, string) ([]string, error) {
+			return []string{"192.168.1.1"}, nil
+		}
+		c := New("router.example")
+		if err := c.checkHostDNS(context.Background()); err != nil {
+			t.Fatalf("checkHostDNS() = %v, want nil for private resolution", err)
+		}
+	})
+
+	t.Run("public literal uses gateway fallback", func(t *testing.T) {
+		defaultGateway = func() (net.IP, error) { return net.ParseIP("192.168.1.1"), nil }
+		c := New("8.8.8.8")
+		err := c.checkHostDNS(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "Local FRITZ!Box detected at 192.168.1.1") {
+			t.Fatalf("checkHostDNS() = %v, want gateway detection hint", err)
+		}
+		if !strings.Contains(err.Error(), "SYMFRITZ_HOST=192.168.1.1") {
+			t.Fatalf("checkHostDNS() = %v, want gateway host setting", err)
+		}
+	})
+
+	t.Run("public literal without gateway uses detect fallback", func(t *testing.T) {
+		defaultGateway = func() (net.IP, error) { return nil, errors.New("gateway unavailable") }
+		c := New("8.8.8.8")
+		err := c.checkHostDNS(context.Background())
+		want := "host \"8.8.8.8\" is a public IP. Run 'symfritz detect' to find your FRITZ!Box"
+		if err == nil || err.Error() != want {
+			t.Fatalf("checkHostDNS() = %v, want %q", err, want)
+		}
+	})
+
+	t.Run("public hostname discovery failure uses detect fallback", func(t *testing.T) {
+		lookupHost = func(context.Context, string) ([]string, error) {
+			return []string{"8.8.8.8"}, nil
+		}
+		defaultGateway = func() (net.IP, error) { return net.ParseIP("192.168.1.1"), nil }
+		c := New("router.example")
+		c.http.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("test transport refused connection")
+		})
+
+		err := c.checkHostDNS(context.Background())
+		if err == nil || !strings.Contains(err.Error(), `host "router.example" resolves to a public IP (8.8.8.8)`) {
+			t.Fatalf("checkHostDNS() = %v, want public-host error", err)
+		}
+	})
+
+	t.Run("empty host uses fritz.box", func(t *testing.T) {
+		var gotHost string
+		lookupHost = func(_ context.Context, host string) ([]string, error) {
+			gotHost = host
+			return []string{"192.168.1.1"}, nil
+		}
+		c := New("router.example")
+		c.Host = ""
+		if err := c.checkHostDNS(context.Background()); err != nil {
+			t.Fatalf("checkHostDNS() = %v, want nil for private default host", err)
+		}
+		if gotHost != "fritz.box" {
+			t.Fatalf("lookup host = %q, want fritz.box", gotHost)
+		}
+	})
+
+	t.Run("public hostname builds default transport", func(t *testing.T) {
+		lookupHost = func(context.Context, string) ([]string, error) {
+			return []string{"8.8.8.8"}, nil
+		}
+		defaultGateway = func() (net.IP, error) { return nil, errors.New("gateway unavailable") }
+		c := New("router.example")
+		c.http.Transport = nil
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		err := c.checkHostDNS(ctx)
+		if err == nil || !strings.Contains(err.Error(), "Run 'symfritz detect'") {
+			t.Fatalf("checkHostDNS() = %v, want detect fallback", err)
+		}
+	})
 }
