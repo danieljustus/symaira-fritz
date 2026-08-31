@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"strings"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 func TestHomeList_NoCredentialFailsBeforeLogin(t *testing.T) {
 	origNewClient := newClient
 	t.Cleanup(func() { newClient = origNewClient })
-	newClient = func() (*fritz.Client, *config.Config, error) {
+	newClient = func(_ context.Context) (*fritz.Client, *config.Config, error) {
 		return fritz.New("fritz.box"), config.Defaults(), nil
 	}
 

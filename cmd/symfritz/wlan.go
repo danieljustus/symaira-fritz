@@ -27,7 +27,7 @@ func newWLANCmd() *cobra.Command {
 			return runWithClient(cmd, "wlan radios failed", func(ctx context.Context, c *fritz.Client) error {
 				radios, err := c.Radios(ctx, 3)
 				if err != nil {
-					return wrapFritzError(err, "wlan radios failed")
+					return err
 				}
 				if format != outputText {
 					return printOutput(radios, format)
@@ -52,7 +52,7 @@ func newWLANCmd() *cobra.Command {
 			return runWithClient(cmd, "wlan clients failed", func(ctx context.Context, c *fritz.Client) error {
 				clients, err := c.AllWLANClients(ctx, 3)
 				if err != nil {
-					return wrapFritzError(err, "wlan clients failed")
+					return err
 				}
 				if format != outputText {
 					return printOutput(clients, format)
@@ -78,7 +78,7 @@ func newWLANCmd() *cobra.Command {
 			return runWithClient(cmd, "guest status failed", func(ctx context.Context, c *fritz.Client) error {
 				r, err := c.GuestWLANStatus(ctx, guestIdx)
 				if err != nil {
-					return wrapFritzError(err, "guest status failed")
+					return err
 				}
 				if format != outputText {
 					return printOutput(r, format)
@@ -92,14 +92,18 @@ func newWLANCmd() *cobra.Command {
 		Use:   "on",
 		Short: "Enable guest WLAN",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return setGuest(cmd.Context(), guestIdx, true)
+			return runWithClient(cmd, "guest toggle failed", func(ctx context.Context, c *fritz.Client) error {
+				return setGuest(ctx, c, guestIdx, true)
+			})
 		},
 	}
 	guestOff := &cobra.Command{
 		Use:   "off",
 		Short: "Disable guest WLAN",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return setGuest(cmd.Context(), guestIdx, false)
+			return runWithClient(cmd, "guest toggle failed", func(ctx context.Context, c *fritz.Client) error {
+				return setGuest(ctx, c, guestIdx, false)
+			})
 		},
 	}
 	guestCmd.AddCommand(guestStatus, guestOn, guestOff)
@@ -110,13 +114,9 @@ func newWLANCmd() *cobra.Command {
 	return cmd
 }
 
-func setGuest(ctx context.Context, idx int, enable bool) error {
-	c, _, err := newClient()
-	if err != nil {
-		return err
-	}
+func setGuest(ctx context.Context, c *fritz.Client, idx int, enable bool) error {
 	if err := c.SetGuestWLAN(ctx, idx, enable); err != nil {
-		return wrapFritzError(err, "guest toggle failed")
+		return err
 	}
 	state := "disabled"
 	if enable {

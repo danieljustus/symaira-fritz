@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/danieljustus/symaira-fritz/internal/fritz"
 )
 
 func newMeshCmd() *cobra.Command {
@@ -17,38 +19,36 @@ func newMeshCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c, _, err := newClient()
-			if err != nil {
-				return err
-			}
-			topo, err := c.MeshTopology(context.Background())
-			if err != nil {
-				return wrapFritzError(err, "mesh failed")
-			}
-			if format != outputText {
-				return printOutput(topo, format)
-			}
-			for _, n := range topo.Nodes {
-				role := n.MeshRole
-				if role == "" {
-					role = "client"
+			return runWithClient(cmd, "mesh failed", func(ctx context.Context, c *fritz.Client) error {
+				topo, err := c.MeshTopology(ctx)
+				if err != nil {
+					return err
 				}
-				fmt.Printf("● %s  [%s%s]\n", orDash(n.DeviceName), role, modelSuffix(n.DeviceModel))
-				for _, iface := range n.Interfaces {
-					for _, link := range iface.Links {
-						if link.State == "" {
-							continue
+				if format != outputText {
+					return printOutput(topo, format)
+				}
+				for _, n := range topo.Nodes {
+					role := n.MeshRole
+					if role == "" {
+						role = "client"
+					}
+					fmt.Printf("● %s  [%s%s]\n", orDash(n.DeviceName), role, modelSuffix(n.DeviceModel))
+					for _, iface := range n.Interfaces {
+						for _, link := range iface.Links {
+							if link.State == "" {
+								continue
+							}
+							peer := topo.NodeName(link.Node2)
+							if peer == n.DeviceName || peer == link.Node2 {
+								peer = topo.NodeName(link.Node1)
+							}
+							fmt.Printf("    %-5s %-9s → %-20s %s\n",
+								iface.Type, link.State, peer, dataRate(link))
 						}
-						peer := topo.NodeName(link.Node2)
-						if peer == n.DeviceName || peer == link.Node2 {
-							peer = topo.NodeName(link.Node1)
-						}
-						fmt.Printf("    %-5s %-9s → %-20s %s\n",
-							iface.Type, link.State, peer, dataRate(link))
 					}
 				}
-			}
-			return nil
+				return nil
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")

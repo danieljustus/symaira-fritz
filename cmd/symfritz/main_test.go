@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"strings"
@@ -306,5 +307,26 @@ func TestDataRate(t *testing.T) {
 				t.Errorf("dataRate(%+v) = %q, want %q", tt.link, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRunWithClient_ContextPropagation(t *testing.T) {
+	type ctxKey struct{}
+	var receivedCtx context.Context
+	orig := newClient
+	t.Cleanup(func() { newClient = orig })
+	newClient = func(ctx context.Context) (*fritz.Client, *config.Config, error) {
+		receivedCtx = ctx
+		return fritz.New("fritz.box"), config.Defaults(), nil
+	}
+
+	cmd := newRootCmd()
+	testCtx := context.WithValue(context.Background(), ctxKey{}, "test-value")
+	cmd.SetContext(testCtx)
+	cmd.SetArgs([]string{"mesh"})
+	_, _ = cmd.ExecuteC()
+
+	if receivedCtx == nil || receivedCtx.Value(ctxKey{}) != "test-value" {
+		t.Errorf("newClient did not receive root context, got %v", receivedCtx)
 	}
 }

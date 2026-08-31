@@ -28,7 +28,7 @@ It speaks the FRITZ!Box's documented interfaces, no reverse-engineering required
 
 | Interface | Used for | Endpoint |
 |-----------|----------|----------|
-| **TR-064** (SOAP) | Administration: status, WAN/IP, WLAN, host list, mesh, reboot | `:49000` / `:49443` |
+| **TR-064** (SOAP) | Administration: status, WAN/IP, WLAN, host list, mesh, reboot | `:49443` (TLS default) / `:49000` |
 | **AHA-HTTP** | DECT smart-home actors (switches, thermostats) | `/webservices/homeautoswitch.lua` |
 | **Session login** | Auth for AHA and (later) web-UI scraping | `/login_sid.lua` |
 
@@ -114,6 +114,19 @@ SYMFRITZ_LOG_LEVEL=debug symfritz doctor
 ```
 
 This emits request-level logs (method, redacted URL, and status code) for TR-064, session login, and service discovery requests while keeping credentials, passwords, and session IDs redacted.
+
+### TLS & Certificate Pinning
+
+TLS is enabled by default (`use_tls = true`), connecting to port 49443 (TR-064)
+and port 443 (web login). On first connection, symfritz records the box's
+certificate public key pin (TOFU) in `~/.config/symfritz/pins.json` and verifies
+it on subsequent calls.
+
+- If TLS endpoints do not answer (e.g. TR-064 TLS is disabled on the box), symfritz
+  automatically falls back to plain HTTP and emits a warning naming `use_tls`.
+- Set `use_tls = false` in `~/.config/symfritz/config.toml` to disable TLS entirely.
+- Set `insecure_tls = true` to skip certificate verification without pinning.
+- Use `symfritz auth trust --reset <host>` to reset a recorded certificate pin.
 
 ## Usage
 

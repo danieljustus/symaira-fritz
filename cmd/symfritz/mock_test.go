@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net"
 	"net/http"
@@ -53,7 +54,7 @@ func mockClient(srv *httptest.Server) *fritz.Client {
 func stubNewClient(t *testing.T, srv *httptest.Server) {
 	t.Helper()
 	orig := newClient
-	newClient = func() (*fritz.Client, *config.Config, error) {
+	newClient = func(_ context.Context) (*fritz.Client, *config.Config, error) {
 		return mockClient(srv), config.Defaults(), nil
 	}
 	t.Cleanup(func() { newClient = orig })

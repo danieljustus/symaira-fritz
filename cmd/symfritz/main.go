@@ -48,9 +48,6 @@ func main() {
 		}
 		os.Exit(int(exitcodes.ExitCodeFromError(err)))
 	}
-
-	// Propagate root context cancellation to cobra's RunE via ExecuteContext.
-	_ = rootCtx
 }
 
 func newRootCmd() *cobra.Command {
@@ -135,9 +132,9 @@ func secretOptions(box config.Box) secret.Options {
 
 // newClient builds a fritz.Client, resolving the password via the backend chain
 // (env → symvault → keychain → plaintext).
-var newClient = func() (*fritz.Client, *config.Config, error) {
+var newClient = func(ctx context.Context) (*fritz.Client, *config.Config, error) {
 	box, cfg := boxFromEnv()
-	res, err := secret.Resolve(context.Background(), secretOptions(box))
+	res, err := secret.Resolve(ctx, secretOptions(box))
 	if err != nil {
 		return nil, cfg, fmt.Errorf("could not resolve password: %w", err)
 	}

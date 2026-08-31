@@ -32,7 +32,11 @@ func newVersionCmd() *cobra.Command {
 			fmt.Fprintln(cmd.OutOrStdout(), info.String())
 			if check {
 				checker := updatecheck.NewChecker("danieljustus", "symaira-fritz")
-				release, err := checker.Check(context.Background(), version)
+				ctx := cmd.Context()
+				if ctx == nil {
+					ctx = context.Background()
+				}
+				release, err := checker.Check(ctx, version)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "update check failed: %v\n", err)
 					return nil
