@@ -354,3 +354,102 @@ func soapEnvelope(action string, args map[string]string) string {
 	sb.WriteString(`</soap:Envelope>`)
 	return sb.String()
 }
+
+func TestMCPServerToolsList_Annotations(t *testing.T) {
+	c := fritz.New("fritz.box")
+	s := buildServer(c)
+
+	reqJSON := `{"jsonrpc":"2.0","method":"tools/list","params":{},"id":1}`
+	var rBuf bytes.Buffer
+	var wBuf bytes.Buffer
+	rBuf.WriteString(fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(reqJSON), reqJSON))
+
+	ctx := context.Background()
+	if err := s.ServeIO(ctx, &rBuf, &wBuf); err != nil {
+		t.Fatalf("ServeIO error = %v", err)
+	}
+
+	res := wBuf.String()
+	idx := strings.Index(res, "\r\n\r\n")
+	if idx == -1 {
+		t.Fatalf("malformed response framing: %s", res)
+	}
+	body := res[idx+4:]
+
+	var resp struct {
+		Result struct {
+			Tools []struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+				Annotations *struct {
+					ReadOnlyHint    *bool `json:"readOnlyHint,omitempty"`
+					IdempotentHint  *bool `json:"idempotentHint,omitempty"`
+					OpenWorldHint   *bool `json:"openWorldHint,omitempty"`
+					DestructiveHint *bool `json:"destructiveHint,omitempty"`
+				} `json:"annotations"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		t.Fatalf("failed to unmarshal tools/list response: %v\nbody: %s", err, body)
+	}
+
+	if len(resp.Result.Tools) != 9 {
+		t.Fatalf("expected 9 tools, got %d", len(resp.Result.Tools))
+	}
+
+	expected := map[string]struct {
+		readOnly   bool
+		idempotent bool
+		openWorld  bool
+	}{
+		"status":       {readOnly: true, idempotent: true, openWorld: false},
+		"host_list":    {readOnly: true, idempotent: true, openWorld: false},
+		"host_get":     {readOnly: true, idempotent: true, openWorld: false},
+		"diagnose":     {readOnly: true, idempotent: true, openWorld: false},
+		"mesh":         {readOnly: true, idempotent: true, openWorld: false},
+		"wlan_clients": {readOnly: true, idempotent: true, openWorld: false},
+		"home_list":    {readOnly: true, idempotent: true, openWorld: false},
+		"wake_on_lan":  {readOnly: false, idempotent: false, openWorld: true},
+		"home_switch":  {readOnly: false, idempotent: false, openWorld: true},
+	}
+
+	seen := make(map[string]bool)
+	for _, tool := range resp.Result.Tools {
+		exp, ok := expected[tool.Name]
+		if !ok {
+			t.Errorf("unexpected tool registered: %s", tool.Name)
+			continue
+		}
+		seen[tool.Name] = true
+
+		if tool.Annotations == nil {
+			t.Fatalf("tool %q is missing Annotations", tool.Name)
+		}
+
+		// Verify explicit ReadOnlyHint: must be non-nil when unmarshaled if true, or present.
+		// Note that in JSON omitEmpty, false may omit or serialize.
+		// But let's check exact boolean values matching our expectations:
+		readOnlyVal := tool.Annotations.ReadOnlyHint != nil && *tool.Annotations.ReadOnlyHint
+		if readOnlyVal != exp.readOnly {
+			t.Errorf("tool %q ReadOnlyHint = %v, want %v", tool.Name, readOnlyVal, exp.readOnly)
+		}
+
+		idempotentVal := tool.Annotations.IdempotentHint != nil && *tool.Annotations.IdempotentHint
+		if idempotentVal != exp.idempotent {
+			t.Errorf("tool %q IdempotentHint = %v, want %v", tool.Name, idempotentVal, exp.idempotent)
+		}
+
+		openWorldVal := tool.Annotations.OpenWorldHint != nil && *tool.Annotations.OpenWorldHint
+		if openWorldVal != exp.openWorld {
+			t.Errorf("tool %q OpenWorldHint = %v, want %v", tool.Name, openWorldVal, exp.openWorld)
+		}
+	}
+
+	for name := range expected {
+		if !seen[name] {
+			t.Errorf("expected tool %q was not seen in tools/list response", name)
+		}
+	}
+}
