@@ -14,9 +14,10 @@ import (
 
 // PinStore manages trusted host public key pins (TOFU).
 type PinStore struct {
-	mu   sync.RWMutex
-	path string
-	Pins map[string]string `json:"pins"`
+	mu      sync.RWMutex
+	path    string
+	Pins    map[string]string `json:"pins"`
+	loadErr error
 }
 
 // DefaultPinStorePath returns the path to ~/.config/symfritz/pins.json.
@@ -29,6 +30,8 @@ func DefaultPinStorePath() string {
 }
 
 // NewPinStore initializes a PinStore with the given path (or default path if empty).
+// Any read/parse error other than a missing file (which is a valid first-run state)
+// is captured and returned via LoadError().
 func NewPinStore(path string) *PinStore {
 	if path == "" {
 		path = DefaultPinStorePath()
@@ -41,6 +44,18 @@ func NewPinStore(path string) *PinStore {
 	return ps
 }
 
+// Path returns the path of the pin store file.
+func (ps *PinStore) Path() string {
+	return ps.path
+}
+
+// LoadError returns any error encountered while loading the pin store from disk.
+func (ps *PinStore) LoadError() error {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+	return ps.loadErr
+}
+
 func (ps *PinStore) load() error {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
@@ -49,17 +64,24 @@ func (ps *PinStore) load() error {
 	}
 	data, err := os.ReadFile(ps.path)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			ps.loadErr = nil
+			return nil
+		}
+		ps.loadErr = err
 		return err
 	}
 	var stored struct {
 		Pins map[string]string `json:"pins"`
 	}
 	if err := json.Unmarshal(data, &stored); err != nil {
-		return err
+		ps.loadErr = fmt.Errorf("corrupt pin store JSON: %w", err)
+		return ps.loadErr
 	}
 	if stored.Pins != nil {
 		ps.Pins = stored.Pins
 	}
+	ps.loadErr = nil
 	return nil
 }
 
@@ -90,23 +112,32 @@ func (ps *PinStore) GetPin(hostPort string) string {
 	return ps.Pins[hostPort]
 }
 
-// SetPin records and persists a pin for hostPort.
+// SetPin records and persists a pin for hostPort. If the store failed to load,
+// SetPin refuses to overwrite the corrupt file and returns an error.
 func (ps *PinStore) SetPin(hostPort, pin string) error {
 	ps.mu.Lock()
+	if ps.loadErr != nil {
+		ps.mu.Unlock()
+		return fmt.Errorf("cannot update corrupt pin store %s: %w", ps.path, ps.loadErr)
+	}
 	ps.Pins[hostPort] = pin
 	ps.mu.Unlock()
 	return ps.Save()
 }
 
 // ResetPin removes a pin for hostPort and saves the pin store.
+// If the pin store was in an error state (e.g. corrupt JSON), ResetPin clears
+// the error and writes a clean pin store.
 func (ps *PinStore) ResetPin(hostPort string) (bool, error) {
 	ps.mu.Lock()
+	hadLoadErr := ps.loadErr != nil
+	ps.loadErr = nil
 	_, exists := ps.Pins[hostPort]
 	if exists {
 		delete(ps.Pins, hostPort)
 	}
 	ps.mu.Unlock()
-	if !exists {
+	if !exists && !hadLoadErr {
 		return false, nil
 	}
 	err := ps.Save()

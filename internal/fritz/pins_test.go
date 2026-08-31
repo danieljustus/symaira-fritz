@@ -171,3 +171,123 @@ func TestClient_CertificatePinning(t *testing.T) {
 		t.Errorf("expected new pin stored after reset")
 	}
 }
+
+func TestPinStore_MissingFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	pinPath := filepath.Join(tmpDir, "nonexistent", "pins.json")
+
+	store := NewPinStore(pinPath)
+	if err := store.LoadError(); err != nil {
+		t.Fatalf("expected nil LoadError for missing file, got %v", err)
+	}
+	if pin := store.GetPin("fritz.box"); pin != "" {
+		t.Errorf("expected empty pin, got %q", pin)
+	}
+
+	_, testPin := generateTestCert(t)
+	if err := store.SetPin("fritz.box", testPin); err != nil {
+		t.Fatalf("failed to set pin: %v", err)
+	}
+
+	// Verify file was created
+	data, err := os.ReadFile(pinPath)
+	if err != nil {
+		t.Fatalf("failed to read created pin file: %v", err)
+	}
+	if !strings.Contains(string(data), testPin) {
+		t.Errorf("expected file to contain testPin %q, got %s", testPin, string(data))
+	}
+}
+
+func TestPinStore_CorruptFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	pinPath := filepath.Join(tmpDir, "pins.json")
+	corruptData := []byte("INVALID JSON {[[")
+	if err := os.WriteFile(pinPath, corruptData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewPinStore(pinPath)
+	if err := store.LoadError(); err == nil {
+		t.Fatal("expected non-nil LoadError for corrupt JSON, got nil")
+	}
+
+	// Attempting SetPin on corrupt store must fail and never overwrite the file
+	err := store.SetPin("fritz.box", "newpin")
+	if err == nil {
+		t.Fatal("expected error from SetPin on corrupt store, got nil")
+	}
+
+	// Verify corrupt file was not overwritten
+	data, err := os.ReadFile(pinPath)
+	if err != nil {
+		t.Fatalf("read pin file: %v", err)
+	}
+	if string(data) != string(corruptData) {
+		t.Errorf("corrupt file was modified; got %q, want %q", string(data), string(corruptData))
+	}
+
+	// ResetPin on corrupt store clears the error and recovers the file
+	reset, err := store.ResetPin("fritz.box")
+	if err != nil {
+		t.Fatalf("ResetPin error: %v", err)
+	}
+	if !reset {
+		t.Error("expected ResetPin to return true for corrupt store recovery")
+	}
+
+	// Verify file is now valid JSON
+	reloaded := NewPinStore(pinPath)
+	if err := reloaded.LoadError(); err != nil {
+		t.Errorf("expected valid pin store after reset, got load error %v", err)
+	}
+}
+
+func TestClient_CorruptPinStoreFailsTLS(t *testing.T) {
+	tmpDir := t.TempDir()
+	pinPath := filepath.Join(tmpDir, "pins.json")
+	corruptData := []byte("{ corrupted: true }")
+	if err := os.WriteFile(pinPath, corruptData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	u, err := url.Parse(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pinStore := NewPinStore(pinPath)
+	client := New(u.Host, WithTLS(false), WithPinStore(pinStore))
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = client.http.Do(req)
+	if err == nil {
+		t.Fatal("expected TLS connection to fail due to corrupt pin store, got nil")
+	}
+
+	errStr := err.Error()
+	if !strings.Contains(errStr, pinPath) {
+		t.Errorf("expected error to name pin file %q, got %q", pinPath, errStr)
+	}
+	if !strings.Contains(errStr, "symfritz auth trust --reset") {
+		t.Errorf("expected error to contain reset command hint, got %q", errStr)
+	}
+
+	// Verify corrupt file on disk was NEVER overwritten
+	data, err := os.ReadFile(pinPath)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if string(data) != string(corruptData) {
+		t.Errorf("corrupt file was overwritten; got %q, want %q", string(data), string(corruptData))
+	}
+}

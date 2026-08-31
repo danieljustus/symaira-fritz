@@ -4,12 +4,14 @@
 - #131 Add per-request digest nonces and cache TR-064 challenges
 - #132 Add shared client handling, signal cancellation, and traffic watch mode
 - #144 Add `symfritz doctor` and global `--output text|json|yaml` formats
+- #148 Make TLS with certificate pinning the default with HTTP fallback when TLS is unanswered
 
 ### Fixes and performance
 - #111 Harden release signing and pin govulncheck
 - #130 Redact session identifiers and standardize CLI error handling
 - #133 Remove dead router code and cache service discovery
 - #134 Parallelize TCP port probes in diagnosis
+- #149 Guard certificate pin store against silent reset on corrupt pins.json
 
 ### Maintenance and documentation
 - #135 Update pinned CodeQL actions
