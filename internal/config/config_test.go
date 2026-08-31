@@ -22,8 +22,8 @@ func TestDefaults(t *testing.T) {
 	if cfg.Box.Password != "" {
 		t.Errorf("Password = %q, want empty", cfg.Box.Password)
 	}
-	if cfg.Box.UseTLS {
-		t.Error("UseTLS = true, want false")
+	if !cfg.Box.UseTLS {
+		t.Error("UseTLS = false, want true")
 	}
 	if cfg.Box.InsecureTLS {
 		t.Error("InsecureTLS = true, want false")
@@ -99,9 +99,12 @@ func TestDefaultConfigTOML(t *testing.T) {
 		}
 	}
 
-	// Verify it contains the default host value.
+	// Verify it contains the default host value and use_tls = true.
 	if !strings.Contains(got, "fritz.box") {
 		t.Error("DefaultConfigTOML() missing default host 'fritz.box'")
+	}
+	if !strings.Contains(got, "use_tls = true") {
+		t.Error("DefaultConfigTOML() missing 'use_tls = true'")
 	}
 }
 

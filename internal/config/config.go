@@ -52,7 +52,7 @@ func Defaults() *Config {
 			Host:           "fritz.box",
 			User:           "",
 			Password:       "",
-			UseTLS:         false,
+			UseTLS:         true,
 			InsecureTLS:    false,
 			TimeoutSeconds: 15,
 		},
@@ -121,7 +121,7 @@ keychain_account = ""
 password = ""
 
 # Use the TLS TR-064 endpoint (https, port 49443).
-use_tls = false
+use_tls = true
 
 # Skip TLS certificate verification (disables TOFU certificate pinning;
 # optional opt-out for legacy setups).
