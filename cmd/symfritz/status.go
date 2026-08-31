@@ -12,6 +12,57 @@ import (
 	"github.com/danieljustus/symaira-fritz/internal/fritz"
 )
 
+type statusErrorPayload struct {
+	Service string `json:"service" yaml:"service"`
+	Action  string `json:"action" yaml:"action"`
+	Message string `json:"message" yaml:"message"`
+	Kind    string `json:"kind,omitempty" yaml:"kind,omitempty"`
+	Error   string `json:"error,omitempty" yaml:"error,omitempty"`
+}
+
+type statusPayloadDTO struct {
+	ModelName       string               `json:"model_name" yaml:"model_name"`
+	FirmwareVersion string               `json:"firmware_version" yaml:"firmware_version"`
+	ExternalIP      string               `json:"external_ip" yaml:"external_ip"`
+	ConnectionState string               `json:"connection_state" yaml:"connection_state"`
+	Uptime          string               `json:"uptime" yaml:"uptime"`
+	UpdateAvailable string               `json:"update_available,omitempty" yaml:"update_available,omitempty"`
+	CPUTemperatures []int                `json:"cpu_temperatures,omitempty" yaml:"cpu_temperatures,omitempty"`
+	Partial         bool                 `json:"partial" yaml:"partial"`
+	Errors          []statusErrorPayload `json:"errors,omitempty" yaml:"errors,omitempty"`
+}
+
+func statusPayload(st *fritz.Status, cpuTemps []int) statusPayloadDTO {
+	if st == nil {
+		return statusPayloadDTO{CPUTemperatures: cpuTemps}
+	}
+	var errs []statusErrorPayload
+	for _, e := range st.Errors {
+		errMsg := e.Message
+		if errMsg == "" && e.Err != nil {
+			errMsg = e.Err.Error()
+		}
+		errs = append(errs, statusErrorPayload{
+			Service: e.Service,
+			Action:  e.Action,
+			Message: e.Message,
+			Kind:    string(e.Kind),
+			Error:   errMsg,
+		})
+	}
+	return statusPayloadDTO{
+		ModelName:       st.ModelName,
+		FirmwareVersion: st.FirmwareVersion,
+		ExternalIP:      st.ExternalIP,
+		ConnectionState: st.ConnectionState,
+		Uptime:          st.Uptime,
+		UpdateAvailable: st.UpdateAvailable,
+		CPUTemperatures: cpuTemps,
+		Partial:         st.Partial,
+		Errors:          errs,
+	}
+}
+
 func newStatusCmd() *cobra.Command {
 	var (
 		asJSON  bool
@@ -28,7 +79,7 @@ func newStatusCmd() *cobra.Command {
 			return runWithClient(cmd, "status failed", func(ctx context.Context, c *fritz.Client) error {
 				st, err := c.Status(ctx)
 
-				isEmpty := st.ModelName == "" && st.FirmwareVersion == "" && st.ExternalIP == "" && st.ConnectionState == "" && st.Uptime == ""
+				isEmpty := st == nil || (st.ModelName == "" && st.FirmwareVersion == "" && st.ExternalIP == "" && st.ConnectionState == "" && st.Uptime == "")
 
 				var finalErr error
 				if err != nil {
@@ -42,45 +93,8 @@ func newStatusCmd() *cobra.Command {
 					cpuTemps, _ = c.CPUTemperatures(ctx)
 				}
 				if format != outputText {
-					type jsonError struct {
-						Service string `json:"service"`
-						Action  string `json:"action"`
-						Message string `json:"message"`
-						Kind    string `json:"kind,omitempty"`
-						Error   string `json:"error,omitempty"`
-					}
-					type JSONStatus struct {
-						ModelName       string      `json:"model_name"`
-						FirmwareVersion string      `json:"firmware_version"`
-						ExternalIP      string      `json:"external_ip"`
-						ConnectionState string      `json:"connection_state"`
-						Uptime          string      `json:"uptime"`
-						UpdateAvailable string      `json:"update_available,omitempty"`
-						CPUTemperatures []int       `json:"cpu_temperatures,omitempty"`
-						Partial         bool        `json:"partial"`
-						Errors          []jsonError `json:"errors,omitempty"`
-					}
-					var jsonErrs []jsonError
-					for _, e := range st.Errors {
-						jsonErrs = append(jsonErrs, jsonError{
-							Service: e.Service,
-							Action:  e.Action,
-							Message: e.Message,
-							Kind:    string(e.Kind),
-							Error:   string(e.Kind),
-						})
-					}
-					printErr := printOutput(JSONStatus{
-						ModelName:       st.ModelName,
-						FirmwareVersion: st.FirmwareVersion,
-						ExternalIP:      st.ExternalIP,
-						ConnectionState: st.ConnectionState,
-						Uptime:          st.Uptime,
-						UpdateAvailable: st.UpdateAvailable,
-						CPUTemperatures: cpuTemps,
-						Partial:         st.Partial,
-						Errors:          jsonErrs,
-					}, format)
+					payload := statusPayload(st, cpuTemps)
+					printErr := printOutput(payload, format)
 					if printErr != nil {
 						return printErr
 					}
