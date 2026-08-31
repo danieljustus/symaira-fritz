@@ -31,39 +31,37 @@ Override with --port (repeatable).`,
 			if err != nil {
 				return err
 			}
-			c, _, err := newClient()
-			if err != nil {
-				return err
-			}
-			opts := fritz.DiagnoseOptions{}
-			for _, p := range ports {
-				opts.Ports = append(opts.Ports, fritz.PortProbe{Port: p, Label: "custom"})
-			}
-			d := c.Diagnose(context.Background(), args[0], opts)
-			if format != outputText {
-				if err := printOutput(d, format); err != nil {
-					return err
+			return runWithClient(cmd, "diagnosis failed", func(ctx context.Context, c *fritz.Client) error {
+				opts := fritz.DiagnoseOptions{}
+				for _, p := range ports {
+					opts.Ports = append(opts.Ports, fritz.PortProbe{Port: p, Label: "custom"})
 				}
-			} else {
-				fmt.Printf("Diagnose %s", d.Ref)
-				if d.Target != "" {
-					fmt.Printf("  →  %s", d.Target)
-				}
-				fmt.Println()
-				for _, ch := range d.Checks {
-					fmt.Printf("  %s %-26s %s\n", statusGlyph(ch.Status), ch.Name, ch.Detail)
-				}
-				if d.OK {
-					fmt.Println("\nResult: reachable (no failed checks)")
+				d := c.Diagnose(ctx, args[0], opts)
+				if format != outputText {
+					if err := printOutput(d, format); err != nil {
+						return err
+					}
 				} else {
-					fmt.Println("\nResult: problems detected")
+					fmt.Printf("Diagnose %s", d.Ref)
+					if d.Target != "" {
+						fmt.Printf("  →  %s", d.Target)
+					}
+					fmt.Println()
+					for _, ch := range d.Checks {
+						fmt.Printf("  %s %-26s %s\n", statusGlyph(ch.Status), ch.Name, ch.Detail)
+					}
+					if d.OK {
+						fmt.Println("\nResult: reachable (no failed checks)")
+					} else {
+						fmt.Println("\nResult: problems detected")
+					}
 				}
-			}
-			if !d.OK {
-				return exitcodes.Wrap(fmt.Errorf("diagnosis found failing checks"),
-					exitcodes.ExitGeneric, exitcodes.KindUnavailable, "host not fully reachable")
-			}
-			return nil
+				if !d.OK {
+					return exitcodes.Wrap(fmt.Errorf("diagnosis found failing checks"),
+						exitcodes.ExitGeneric, exitcodes.KindUnavailable, "host not fully reachable")
+				}
+				return nil
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
@@ -93,54 +91,47 @@ func runDiagnoseRouter(cmd *cobra.Command, asJSON bool, ports []int) error {
 		return err
 	}
 	box, _ := boxFromEnv()
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
-	httpClient := newHTTPClient()
+	return runWithClient(cmd, "diagnosis failed", func(ctx context.Context, c *fritz.Client) error {
+		httpClient := newHTTPClient()
 
-	var routerHost string
-	envHost := os.Getenv("SYMFRITZ_HOST")
-	if envHost != "" {
-		routerHost = envHost
-	} else {
-		ip, err := discoverBox(ctx, httpClient, box.Host, true)
-		if err != nil {
-			return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "could not find FRITZ!Box on the network")
-		}
-		routerHost = ip
-	}
-
-	c, _, err := newClient()
-	if err != nil {
-		return err
-	}
-	c.Host = routerHost
-
-	opts := fritz.DiagnoseOptions{}
-	for _, p := range ports {
-		opts.Ports = append(opts.Ports, fritz.PortProbe{Port: p, Label: "custom"})
-	}
-	d := c.Diagnose(ctx, routerHost, opts)
-	if format != outputText {
-		if err := printOutput(d, format); err != nil {
-			return err
-		}
-	} else {
-		fmt.Printf("Diagnose router  →  %s\n", d.Target)
-		for _, ch := range d.Checks {
-			fmt.Printf("  %s %-26s %s\n", statusGlyph(ch.Status), ch.Name, ch.Detail)
-		}
-		if d.OK {
-			fmt.Println("\nResult: reachable (no failed checks)")
+		var routerHost string
+		envHost := os.Getenv("SYMFRITZ_HOST")
+		if envHost != "" {
+			routerHost = envHost
 		} else {
-			fmt.Println("\nResult: problems detected")
+			ip, err := discoverBox(ctx, httpClient, box.Host, true)
+			if err != nil {
+				return exitcodes.Wrap(err, exitcodes.ExitGeneric, exitcodes.KindUnavailable, "could not find FRITZ!Box on the network")
+			}
+			routerHost = ip
 		}
-	}
-	if !d.OK {
-		return exitcodes.Wrap(fmt.Errorf("diagnosis found failing checks"),
-			exitcodes.ExitGeneric, exitcodes.KindUnavailable, "router not fully reachable")
-	}
-	return nil
+		c.Host = routerHost
+
+		opts := fritz.DiagnoseOptions{}
+		for _, p := range ports {
+			opts.Ports = append(opts.Ports, fritz.PortProbe{Port: p, Label: "custom"})
+		}
+		d := c.Diagnose(ctx, routerHost, opts)
+		if format != outputText {
+			if err := printOutput(d, format); err != nil {
+				return err
+			}
+		} else {
+			fmt.Printf("Diagnose router  →  %s\n", d.Target)
+			for _, ch := range d.Checks {
+				fmt.Printf("  %s %-26s %s\n", statusGlyph(ch.Status), ch.Name, ch.Detail)
+			}
+			if d.OK {
+				fmt.Println("\nResult: reachable (no failed checks)")
+			} else {
+				fmt.Println("\nResult: problems detected")
+			}
+		}
+		if !d.OK {
+			return exitcodes.Wrap(fmt.Errorf("diagnosis found failing checks"),
+				exitcodes.ExitGeneric, exitcodes.KindUnavailable, "router not fully reachable")
+		}
+		return nil
+	})
 }

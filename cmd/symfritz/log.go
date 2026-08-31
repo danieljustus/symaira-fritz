@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/danieljustus/symaira-fritz/internal/fritz"
 )
 
 func newLogCmd() *cobra.Command {
@@ -20,30 +22,28 @@ func newLogCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c, _, err := newClient()
-			if err != nil {
-				return err
-			}
-			events, err := c.DeviceLog(context.Background(), filter)
-			if err != nil {
-				return wrapFritzError(err, "log failed")
-			}
-			if format != outputText {
-				return printOutput(events, format)
-			}
-			if len(events) == 0 {
-				fmt.Println("No log events found.")
-				return nil
-			}
+			return runWithClient(cmd, "log failed", func(ctx context.Context, c *fritz.Client) error {
+				events, err := c.DeviceLog(ctx, filter)
+				if err != nil {
+					return err
+				}
+				if format != outputText {
+					return printOutput(events, format)
+				}
+				if len(events) == 0 {
+					fmt.Println("No log events found.")
+					return nil
+				}
 
-			for _, ev := range events {
-				fmt.Printf("%s [%s] %s\n",
-					ev.Time.Format("02.01.06 15:04:05"),
-					ev.Group,
-					ev.Msg,
-				)
-			}
-			return nil
+				for _, ev := range events {
+					fmt.Printf("%s [%s] %s\n",
+						ev.Time.Format("02.01.06 15:04:05"),
+						ev.Group,
+						ev.Msg,
+					)
+				}
+				return nil
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")

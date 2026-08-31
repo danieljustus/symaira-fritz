@@ -27,45 +27,43 @@ func newCallsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c, _, err := newClient()
-			if err != nil {
-				return err
-			}
 			ct, err := parseCallType(typeStr)
 			if err != nil {
 				return exitcodes.Wrap(err, exitcodes.ExitConfig, exitcodes.KindValidation, "invalid call type")
 			}
-			calls, err := c.Calls(context.Background(), ct, limit, days)
-			if err != nil {
-				return wrapFritzError(err, "calls failed")
-			}
-			if format != outputText {
-				return printOutput(calls, format)
-			}
-			if len(calls) == 0 {
-				fmt.Println("No calls found.")
-				return nil
-			}
+			return runWithClient(cmd, "calls failed", func(ctx context.Context, c *fritz.Client) error {
+				calls, err := c.Calls(ctx, ct, limit, days)
+				if err != nil {
+					return err
+				}
+				if format != outputText {
+					return printOutput(calls, format)
+				}
+				if len(calls) == 0 {
+					fmt.Println("No calls found.")
+					return nil
+				}
 
-			fmt.Printf("%-18s  %-8s  %-24s  %-16s  %s\n", "DATE", "TYPE", "NAME", "NUMBER", "DURATION")
-			for _, call := range calls {
-				durStr := "—"
-				if call.Duration > 0 {
-					durStr = call.Duration.Round(time.Second).String()
+				fmt.Printf("%-18s  %-8s  %-24s  %-16s  %s\n", "DATE", "TYPE", "NAME", "NUMBER", "DURATION")
+				for _, call := range calls {
+					durStr := "—"
+					if call.Duration > 0 {
+						durStr = call.Duration.Round(time.Second).String()
+					}
+					numStr := call.CallerNumber
+					if numStr == "" {
+						numStr = call.CalledNumber
+					}
+					fmt.Printf("%-18s  %-8s  %-24s  %-16s  %s\n",
+						call.Date.Format("02.01.06 15:04"),
+						callTypeStr(call.Type),
+						truncate(call.Caller, 24),
+						numStr,
+						durStr,
+					)
 				}
-				numStr := call.CallerNumber
-				if numStr == "" {
-					numStr = call.CalledNumber
-				}
-				fmt.Printf("%-18s  %-8s  %-24s  %-16s  %s\n",
-					call.Date.Format("02.01.06 15:04"),
-					callTypeStr(call.Type),
-					truncate(call.Caller, 24),
-					numStr,
-					durStr,
-				)
-			}
-			return nil
+				return nil
+			})
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
@@ -81,15 +79,13 @@ func newDialCmd() *cobra.Command {
 		Short: "Instruct the FRITZ!Box to dial a phone number",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			c, _, err := newClient()
-			if err != nil {
-				return err
-			}
-			if err := c.Dial(context.Background(), args[0]); err != nil {
-				return wrapFritzError(err, "dial failed")
-			}
-			fmt.Printf("Dialing %s...\n", args[0])
-			return nil
+			return runWithClient(cmd, "dial failed", func(ctx context.Context, c *fritz.Client) error {
+				if err := c.Dial(ctx, args[0]); err != nil {
+					return err
+				}
+				fmt.Printf("Dialing %s...\n", args[0])
+				return nil
+			})
 		},
 	}
 	return cmd
@@ -100,15 +96,13 @@ func newHangupCmd() *cobra.Command {
 		Use:   "hangup",
 		Short: "Hang up any active call initiated by dial",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			c, _, err := newClient()
-			if err != nil {
-				return err
-			}
-			if err := c.Hangup(context.Background()); err != nil {
-				return wrapFritzError(err, "hangup failed")
-			}
-			fmt.Println("Hanging up...")
-			return nil
+			return runWithClient(cmd, "hangup failed", func(ctx context.Context, c *fritz.Client) error {
+				if err := c.Hangup(ctx); err != nil {
+					return err
+				}
+				fmt.Println("Hanging up...")
+				return nil
+			})
 		},
 	}
 	return cmd
