@@ -105,6 +105,16 @@ symfritz auth test                              # show source + verify web login
 > rather than the admin account. TR-064 must be enabled on the box
 > (Home Network → Network → Network Settings → "Allow access for applications").
 
+### Debug logging
+
+For troubleshooting or attaching detailed diagnostics to a bug report, enable debug logging by setting the `SYMFRITZ_LOG_LEVEL=debug` environment variable:
+
+```bash
+SYMFRITZ_LOG_LEVEL=debug symfritz doctor
+```
+
+This emits request-level logs (method, redacted URL, and status code) for TR-064, session login, and service discovery requests while keeping credentials, passwords, and session IDs redacted.
+
 ## Usage
 
 For the complete list of commands, subcommands, and flags, see the [CLI Command Reference](docs/cli.md).

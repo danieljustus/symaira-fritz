@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -75,6 +76,7 @@ func (c *Client) fetchDiscovery(ctx context.Context) ([]Service, error) {
 		return nil, fmt.Errorf("discover: contacting %s: %w", c.Host, err)
 	}
 	defer resp.Body.Close()
+	slog.Debug("discover request", "method", req.Method, "url", safeURLForError(u), "status", resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("discover: tr64desc.xml returned HTTP %d", resp.StatusCode)
 	}

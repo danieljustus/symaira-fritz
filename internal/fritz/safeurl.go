@@ -4,18 +4,25 @@ import (
 	"net/url"
 )
 
-// safeURLForError returns a URL string with the session id (sid) query
-// parameter redacted. It is used when wrapping transport errors so that
-// a live session id never reaches stderr or --json error output.
+// safeURLForError returns a URL string with sensitive query parameters
+// (such as sid, response, password) and user credentials redacted. It is used
+// when wrapping transport errors and logging HTTP requests so that a live
+// session id, challenge response, or credentials never reach logs or stderr.
 func safeURLForError(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return rawURL
 	}
 	q := u.Query()
-	if q.Has("sid") {
-		q.Set("sid", "REDACTED")
+	modified := false
+	for _, param := range []string{"sid", "response", "password", "pass"} {
+		if q.Has(param) {
+			q.Set(param, "REDACTED")
+			modified = true
+		}
+	}
+	if modified {
 		u.RawQuery = q.Encode()
 	}
-	return u.String()
+	return u.Redacted()
 }
