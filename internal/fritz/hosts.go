@@ -2,8 +2,10 @@ package fritz
 
 import (
 	"context"
+	"encoding/xml"
 	"fmt"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -33,11 +35,78 @@ func (h Host) Link() string {
 	}
 }
 
-// Hosts returns the full FRITZ!Box host table by iterating GetGenericHostEntry.
-// This uses an N+1 call pattern: one call for the count, then one per host.
-// TR-064 does not offer a bulk host endpoint, so this is the only available
-// approach. A box with 50+ devices will make 51+ sequential SOAP calls.
+// Hosts returns the full FRITZ!Box host table. It attempts the fast bulk path
+// (X_AVM-DE_GetHostListPath) first and falls back to iterating GetGenericHostEntry
+// (N+1 SOAP calls) when unsupported or on fetch/parse failure.
 func (c *Client) Hosts(ctx context.Context) ([]Host, error) {
+	if hosts, err := c.bulkHosts(ctx); err == nil {
+		return hosts, nil
+	}
+	return c.hostsFromIndex(ctx)
+}
+
+func (c *Client) bulkHosts(ctx context.Context) ([]Host, error) {
+	resp, err := c.Call(ctx, ServiceHosts, "X_AVM-DE_GetHostListPath", nil)
+	if err != nil {
+		return nil, err
+	}
+	path := resp["NewX_AVM-DE_HostListPath"]
+	if path == "" {
+		path = resp["NewHostListPath"]
+	}
+	if path == "" {
+		return nil, fmt.Errorf("tr064: GetHostListPath returned empty path")
+	}
+
+	targetURL := path
+	if u, err := url.Parse(path); err != nil || !u.IsAbs() {
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		targetURL = c.tr064Base() + path
+	}
+
+	xmlData, err := c.fetchAuthenticatedURL(ctx, targetURL)
+	if err != nil {
+		return nil, err
+	}
+
+	type xmlHostItem struct {
+		IPAddress          string `xml:"IPAddress"`
+		MACAddress         string `xml:"MACAddress"`
+		Active             string `xml:"Active"`
+		HostName           string `xml:"HostName"`
+		InterfaceType      string `xml:"InterfaceType"`
+		AddressSource      string `xml:"AddressSource"`
+		LeaseTimeRemaining string `xml:"LeaseTimeRemaining"`
+	}
+	type xmlHostList struct {
+		XMLName xml.Name      `xml:"List"`
+		Items   []xmlHostItem `xml:"Item"`
+	}
+
+	var list xmlHostList
+	if err := xml.Unmarshal(xmlData, &list); err != nil {
+		return nil, err
+	}
+
+	hosts := make([]Host, 0, len(list.Items))
+	for _, item := range list.Items {
+		lease, _ := strconv.Atoi(item.LeaseTimeRemaining)
+		hosts = append(hosts, Host{
+			Name:               item.HostName,
+			IP:                 item.IPAddress,
+			MAC:                strings.ToUpper(item.MACAddress),
+			Active:             item.Active == "1",
+			InterfaceType:      item.InterfaceType,
+			AddressSource:      item.AddressSource,
+			LeaseTimeRemaining: lease,
+		})
+	}
+	return hosts, nil
+}
+
+func (c *Client) hostsFromIndex(ctx context.Context) ([]Host, error) {
 	cnt, err := c.Call(ctx, ServiceHosts, "GetHostNumberOfEntries", nil)
 	if err != nil {
 		return nil, err

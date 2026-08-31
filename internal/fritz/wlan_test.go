@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRadios_ReturnsMultiple(t *testing.T) {
@@ -353,4 +354,245 @@ func TestRadios_ErrorPropagation(t *testing.T) {
 			t.Errorf("expected service unavailable error, got %v", err)
 		}
 	})
+}
+
+func TestAllWLANClients_ConcurrencyAndOrder(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sa := r.Header.Get("SoapAction")
+		bodyBytes, _ := io.ReadAll(r.Body)
+		body := string(bodyBytes)
+		w.Header().Set("Content-Type", `text/xml; charset="utf-8"`)
+
+		isRadio1 := strings.Contains(body, "WLANConfiguration:1") || strings.Contains(sa, "WLANConfiguration:1") || strings.Contains(r.URL.Path, "wlanconfig1")
+		isRadio2 := strings.Contains(body, "WLANConfiguration:2") || strings.Contains(sa, "WLANConfiguration:2") || strings.Contains(r.URL.Path, "wlanconfig2")
+		isRadio3 := strings.Contains(body, "WLANConfiguration:3") || strings.Contains(sa, "WLANConfiguration:3") || strings.Contains(r.URL.Path, "wlanconfig3")
+
+		if strings.Contains(sa, "GetInfo") {
+			switch {
+			case isRadio1:
+				_, _ = io.WriteString(w, soapEnvelope("GetInfo", map[string]string{
+					"NewSSID": "Net-2.4G", "NewEnable": "1", "NewChannel": "1", "NewStatus": "Up",
+				}))
+				return
+			case isRadio2:
+				_, _ = io.WriteString(w, soapEnvelope("GetInfo", map[string]string{
+					"NewSSID": "Net-5G", "NewEnable": "1", "NewChannel": "36", "NewStatus": "Up",
+				}))
+				return
+			case isRadio3:
+				_, _ = io.WriteString(w, soapEnvelope("GetInfo", map[string]string{
+					"NewSSID": "Net-Guest", "NewEnable": "1", "NewChannel": "6", "NewStatus": "Up",
+				}))
+				return
+			}
+		}
+
+		if strings.Contains(sa, "GetTotalAssociations") {
+			// Delay radio 1 more than radio 2 and 3 to ensure reverse arrival without concurrency ordering
+			if isRadio1 {
+				time.Sleep(30 * time.Millisecond)
+			} else if isRadio2 {
+				time.Sleep(10 * time.Millisecond)
+			}
+			_, _ = io.WriteString(w, soapEnvelope("GetTotalAssociations", map[string]string{"NewTotalAssociations": "1"}))
+			return
+		}
+
+		if strings.Contains(sa, "GetGenericAssociatedDeviceInfo") {
+			var mac, ip string
+			switch {
+			case isRadio1:
+				mac = "11:11:11:11:11:11"
+				ip = "192.168.188.11"
+			case isRadio2:
+				mac = "22:22:22:22:22:22"
+				ip = "192.168.188.22"
+			case isRadio3:
+				mac = "33:33:33:33:33:33"
+				ip = "192.168.188.33"
+			}
+			_, _ = io.WriteString(w, soapEnvelope("GetGenericAssociatedDeviceInfo", map[string]string{
+				"NewAssociatedDeviceMACAddress": mac,
+				"NewAssociatedDeviceIPAddress":  ip,
+				"NewAssociatedDeviceAuthState":  "1",
+			}))
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("fritz.box")
+	c.tr064BaseURL = srv.URL
+
+	start := time.Now()
+	all, err := c.AllWLANClients(context.Background(), 3)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("AllWLANClients: %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("want 3 clients, got %d", len(all))
+	}
+
+	// Verify strict radio ordering (Radio 1, then Radio 2, then Radio 3)
+	if all[0].RadioIndex != 1 || all[0].MAC != "11:11:11:11:11:11" {
+		t.Errorf("all[0] = %+v, want RadioIndex 1", all[0])
+	}
+	if all[1].RadioIndex != 2 || all[1].MAC != "22:22:22:22:22:22" {
+		t.Errorf("all[1] = %+v, want RadioIndex 2", all[1])
+	}
+	if all[2].RadioIndex != 3 || all[2].MAC != "33:33:33:33:33:33" {
+		t.Errorf("all[2] = %+v, want RadioIndex 3", all[2])
+	}
+
+	// Under concurrency, total time should be close to max delay (30ms), not sum (40ms+)
+	t.Logf("Concurrent AllWLANClients took %v", elapsed)
+}
+
+func TestAllWLANClients_SkipFailingRadio(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sa := r.Header.Get("SoapAction")
+		bodyBytes, _ := io.ReadAll(r.Body)
+		body := string(bodyBytes)
+		w.Header().Set("Content-Type", `text/xml; charset="utf-8"`)
+
+		isRadio1 := strings.Contains(body, "WLANConfiguration:1") || strings.Contains(sa, "WLANConfiguration:1") || strings.Contains(r.URL.Path, "wlanconfig1")
+		isRadio2 := strings.Contains(body, "WLANConfiguration:2") || strings.Contains(sa, "WLANConfiguration:2") || strings.Contains(r.URL.Path, "wlanconfig2")
+		isRadio3 := strings.Contains(body, "WLANConfiguration:3") || strings.Contains(sa, "WLANConfiguration:3") || strings.Contains(r.URL.Path, "wlanconfig3")
+
+		if strings.Contains(sa, "GetInfo") {
+			switch {
+			case isRadio1:
+				_, _ = io.WriteString(w, soapEnvelope("GetInfo", map[string]string{"NewSSID": "R1", "NewEnable": "1"}))
+				return
+			case isRadio2:
+				_, _ = io.WriteString(w, soapEnvelope("GetInfo", map[string]string{"NewSSID": "R2", "NewEnable": "1"}))
+				return
+			case isRadio3:
+				_, _ = io.WriteString(w, soapEnvelope("GetInfo", map[string]string{"NewSSID": "R3", "NewEnable": "1"}))
+				return
+			}
+		}
+
+		if strings.Contains(sa, "GetTotalAssociations") {
+			if isRadio2 {
+				// Radio 2 fails
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = io.WriteString(w, `<s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError 500</faultstring></s:Fault>`)
+				return
+			}
+			_, _ = io.WriteString(w, soapEnvelope("GetTotalAssociations", map[string]string{"NewTotalAssociations": "1"}))
+			return
+		}
+
+		if strings.Contains(sa, "GetGenericAssociatedDeviceInfo") {
+			var mac string
+			if isRadio1 {
+				mac = "11:11:11:11:11:11"
+			} else if isRadio3 {
+				mac = "33:33:33:33:33:33"
+			}
+			_, _ = io.WriteString(w, soapEnvelope("GetGenericAssociatedDeviceInfo", map[string]string{
+				"NewAssociatedDeviceMACAddress": mac,
+				"NewAssociatedDeviceAuthState":  "1",
+			}))
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("fritz.box")
+	c.tr064BaseURL = srv.URL
+
+	all, err := c.AllWLANClients(context.Background(), 3)
+	if err != nil {
+		t.Fatalf("AllWLANClients: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("want 2 clients (skipping radio 2), got %d", len(all))
+	}
+	if all[0].RadioIndex != 1 || all[0].MAC != "11:11:11:11:11:11" {
+		t.Errorf("all[0] = %+v, want Radio 1", all[0])
+	}
+	if all[1].RadioIndex != 3 || all[1].MAC != "33:33:33:33:33:33" {
+		t.Errorf("all[1] = %+v, want Radio 3", all[1])
+	}
+}
+
+func TestAllWLANClients_ConcurrentDigestAuth_Race(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if auth == "" || !strings.HasPrefix(auth, "Digest ") {
+			w.Header().Set("WWW-Authenticate", `Digest realm="fritz.box", nonce="12345678", qop="auth"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		sa := r.Header.Get("SoapAction")
+		bodyBytes, _ := io.ReadAll(r.Body)
+		body := string(bodyBytes)
+		w.Header().Set("Content-Type", `text/xml; charset="utf-8"`)
+
+		isRadio1 := strings.Contains(body, "WLANConfiguration:1") || strings.Contains(sa, "WLANConfiguration:1") || strings.Contains(r.URL.Path, "wlanconfig1")
+		isRadio2 := strings.Contains(body, "WLANConfiguration:2") || strings.Contains(sa, "WLANConfiguration:2") || strings.Contains(r.URL.Path, "wlanconfig2")
+		isRadio3 := strings.Contains(body, "WLANConfiguration:3") || strings.Contains(sa, "WLANConfiguration:3") || strings.Contains(r.URL.Path, "wlanconfig3")
+
+		if strings.Contains(sa, "GetInfo") {
+			switch {
+			case isRadio1:
+				_, _ = io.WriteString(w, soapEnvelope("GetInfo", map[string]string{"NewSSID": "R1", "NewEnable": "1"}))
+				return
+			case isRadio2:
+				_, _ = io.WriteString(w, soapEnvelope("GetInfo", map[string]string{"NewSSID": "R2", "NewEnable": "1"}))
+				return
+			case isRadio3:
+				_, _ = io.WriteString(w, soapEnvelope("GetInfo", map[string]string{"NewSSID": "R3", "NewEnable": "1"}))
+				return
+			}
+		}
+
+		if strings.Contains(sa, "GetTotalAssociations") {
+			_, _ = io.WriteString(w, soapEnvelope("GetTotalAssociations", map[string]string{"NewTotalAssociations": "1"}))
+			return
+		}
+
+		if strings.Contains(sa, "GetGenericAssociatedDeviceInfo") {
+			var mac string
+			switch {
+			case isRadio1:
+				mac = "11:11:11:11:11:11"
+			case isRadio2:
+				mac = "22:22:22:22:22:22"
+			case isRadio3:
+				mac = "33:33:33:33:33:33"
+			}
+			_, _ = io.WriteString(w, soapEnvelope("GetGenericAssociatedDeviceInfo", map[string]string{
+				"NewAssociatedDeviceMACAddress": mac,
+				"NewAssociatedDeviceAuthState":  "1",
+			}))
+			return
+		}
+
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("fritz.box", WithUser("admin"), WithPassword("secret"))
+	c.tr064BaseURL = srv.URL
+
+	all, err := c.AllWLANClients(context.Background(), 3)
+	if err != nil {
+		t.Fatalf("AllWLANClients with digest: %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("want 3 clients, got %d", len(all))
+	}
+	if all[0].RadioIndex != 1 || all[1].RadioIndex != 2 || all[2].RadioIndex != 3 {
+		t.Errorf("unexpected radio indices: %v, %v, %v", all[0].RadioIndex, all[1].RadioIndex, all[2].RadioIndex)
+	}
 }

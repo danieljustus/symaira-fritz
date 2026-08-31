@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 )
 
 // WLAN lives across several WLANConfiguration services, one per radio:
@@ -103,19 +104,39 @@ func (c *Client) WLANClients(ctx context.Context, n int) ([]WLANClient, error) {
 	return clients, nil
 }
 
-// AllWLANClients aggregates associated devices across radios 1..maxN.
+// AllWLANClients aggregates associated devices across radios 1..maxN concurrently.
 func (c *Client) AllWLANClients(ctx context.Context, maxN int) ([]WLANClient, error) {
 	radios, err := c.Radios(ctx, maxN)
 	if err != nil {
 		return nil, err
 	}
+	if len(radios) == 0 {
+		return nil, nil
+	}
+
+	results := make([][]WLANClient, len(radios))
+	var wg sync.WaitGroup
+	wg.Add(len(radios))
+
+	for i, r := range radios {
+		go func(idx int, radio Radio) {
+			defer wg.Done()
+			cl, err := c.WLANClients(ctx, radio.Index)
+			if err != nil {
+				// Failing radios are skipped while preserving other radios.
+				return
+			}
+			results[idx] = cl
+		}(i, r)
+	}
+
+	wg.Wait()
+
 	var all []WLANClient
-	for _, r := range radios {
-		cl, err := c.WLANClients(ctx, r.Index)
-		if err != nil {
-			continue
+	for _, cl := range results {
+		if len(cl) > 0 {
+			all = append(all, cl...)
 		}
-		all = append(all, cl...)
 	}
 	return all, nil
 }
