@@ -6,6 +6,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/danieljustus/symaira-corekit/exitcodes"
+	"github.com/danieljustus/symaira-fritz/internal/config"
 	"github.com/danieljustus/symaira-fritz/internal/fritz"
 )
 
@@ -23,15 +24,23 @@ import (
 // Commands that do not build a client (config init, version, gendocs) are
 // intentionally excluded.
 func runWithClient(cmd *cobra.Command, msg string, fn func(ctx context.Context, c *fritz.Client) error) error {
-	c, _, err := newClient()
-	if err != nil {
-		return err
-	}
+	return runWithClientAndConfig(cmd, msg, func(ctx context.Context, c *fritz.Client, _ *config.Config) error {
+		return fn(ctx, c)
+	})
+}
+
+// runWithClientAndConfig is like runWithClient but provides both the fritz.Client
+// and the loaded config.Config to commands requiring both.
+func runWithClientAndConfig(cmd *cobra.Command, msg string, fn func(ctx context.Context, c *fritz.Client, cfg *config.Config) error) error {
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := fn(ctx, c); err != nil {
+	c, cfg, err := newClient(ctx)
+	if err != nil {
+		return err
+	}
+	if err := fn(ctx, c, cfg); err != nil {
 		return wrapFritzError(err, msg)
 	}
 	return nil

@@ -63,7 +63,10 @@ func newAuthTestCmd() *cobra.Command {
 		Short: "Resolve the password and verify it against the box",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			box, _ := boxFromEnv()
-			ctx := context.Background()
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
+			}
 			res, err := secret.Resolve(ctx, secretOptions(box))
 			if err != nil {
 				return exitcodes.Wrap(err, exitcodes.ExitConfig, exitcodes.KindConfig, "credential resolution failed")
@@ -102,7 +105,10 @@ func newAuthLoginCmd() *cobra.Command {
 		Short: "Prompt for the password, verify it, and store it securely",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			box, _ := boxFromEnv()
-			ctx := context.Background()
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
+			}
 
 			password, err := promptHidden(fmt.Sprintf("FRITZ!Box password for %s@%s: ", orDash(box.User), box.Host))
 			if err != nil {
@@ -147,7 +153,10 @@ func newAuthStoreCmd() *cobra.Command {
 		Short: "Store a password (from prompt or SYMFRITZ_PASSWORD) without verifying",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			box, _ := boxFromEnv()
-			ctx := context.Background()
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
+			}
 			password := os.Getenv("SYMFRITZ_PASSWORD")
 			if password == "" {
 				var err error

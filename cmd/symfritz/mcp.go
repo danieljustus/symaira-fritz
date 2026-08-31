@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
+
 	"github.com/spf13/cobra"
 
+	"github.com/danieljustus/symaira-fritz/internal/config"
+	"github.com/danieljustus/symaira-fritz/internal/fritz"
 	"github.com/danieljustus/symaira-fritz/internal/mcp"
 )
 
@@ -15,11 +19,9 @@ func newMCPCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			mcp.ServerVersion = version
-			c, _, err := newClient()
-			if err != nil {
-				return err
-			}
-			return mcp.StartServer(cmd.Context(), c)
+			return runWithClientAndConfig(cmd, "mcp server failed", func(ctx context.Context, c *fritz.Client, _ *config.Config) error {
+				return mcp.StartServer(ctx, c)
+			})
 		},
 	}
 }

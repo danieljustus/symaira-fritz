@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -57,8 +56,10 @@ func TestSetGuest(t *testing.T) {
 		srv := wlanMockServer(t)
 		stubNewClient(t, srv)
 		out := captureStdout(t, func() {
-			if err := setGuest(context.Background(), 3, true); err != nil {
-				t.Fatalf("setGuest: %v", err)
+			cmd := newRootCmd()
+			cmd.SetArgs([]string{"wlan", "guest", "on"})
+			if _, err := cmd.ExecuteC(); err != nil {
+				t.Fatalf("wlan guest on: %v", err)
 			}
 		})
 		if !strings.Contains(out, "Guest WLAN (index 3) enabled.") {
@@ -70,8 +71,10 @@ func TestSetGuest(t *testing.T) {
 		srv := wlanMockServer(t)
 		stubNewClient(t, srv)
 		out := captureStdout(t, func() {
-			if err := setGuest(context.Background(), 3, false); err != nil {
-				t.Fatalf("setGuest: %v", err)
+			cmd := newRootCmd()
+			cmd.SetArgs([]string{"wlan", "guest", "off"})
+			if _, err := cmd.ExecuteC(); err != nil {
+				t.Fatalf("wlan guest off: %v", err)
 			}
 		})
 		if !strings.Contains(out, "Guest WLAN (index 3) disabled.") {
@@ -85,7 +88,9 @@ func TestSetGuest(t *testing.T) {
 		}))
 		t.Cleanup(srv.Close)
 		stubNewClient(t, srv)
-		err := setGuest(context.Background(), 3, true)
+		cmd := newRootCmd()
+		cmd.SetArgs([]string{"wlan", "guest", "on"})
+		_, err := cmd.ExecuteC()
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
