@@ -92,7 +92,7 @@ func newHomeCmd() *cobra.Command {
 						if d.Hkr.Tsoll != "" {
 							tsollVal := parseHkrTemp(d.Hkr.Tsoll)
 							tistVal := parseHkrTemp(d.Hkr.Tist)
-							extra = append(extra, fmt.Sprintf("temp: %s°C (soll %s°C)", tistVal, tsollVal))
+							extra = append(extra, fmt.Sprintf("temp: %s°C (target %s°C)", tistVal, tsollVal))
 							if d.Hkr.BatteryCharge != "" {
 								extra = append(extra, fmt.Sprintf("bat: %s%%", d.Hkr.BatteryCharge))
 							}
@@ -102,7 +102,7 @@ func newHomeCmd() *cobra.Command {
 							if d.Hkr.ErrorCode != "0" && d.Hkr.ErrorCode != "" {
 								desc := fritz.HkrErrorDescriptions[d.Hkr.ErrorCode]
 								if desc == "" {
-									desc = "Fehler " + d.Hkr.ErrorCode
+									desc = "error " + d.Hkr.ErrorCode
 								}
 								extra = append(extra, desc)
 							}
