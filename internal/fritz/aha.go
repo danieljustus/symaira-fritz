@@ -76,13 +76,13 @@ type DeviceGroup struct {
 }
 
 var HkrErrorDescriptions = map[string]string{
-	"0": "kein Fehler",
-	"1": "Keine Verbindung zum Stellantrieb möglich",
-	"2": "Ventilhub zu groß",
-	"3": "Ventilhub zu klein",
-	"4": "Installation nicht betriebsbereit / Montage prüfen",
-	"5": "Ventilweg zu kurz (schwergängig?) / Entkalken",
-	"6": "Batterieladung extrem niedrig",
+	"0": "no error",
+	"1": "no connection to actuator",
+	"2": "valve stroke too large",
+	"3": "valve stroke too small",
+	"4": "installation not ready / check mounting",
+	"5": "valve travel too short (sluggish?) / descale",
+	"6": "battery charge extremely low",
 }
 
 // Home performs an AHA-HTTP switchcmd and returns the raw response text.
