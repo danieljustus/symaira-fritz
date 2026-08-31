@@ -125,6 +125,17 @@ func New(host string, opts ...Option) *Client {
 		o(c)
 	}
 
+	// Load pin store once per client when TLS is active and not bypassed.
+	var pinStoreErr error
+	if c.UseTLS && !c.InsecureTLS {
+		if c.pinStore == nil {
+			c.pinStore = NewPinStore("")
+		}
+		if err := c.pinStore.LoadError(); err != nil {
+			pinStoreErr = err
+		}
+	}
+
 	// Build a transport that honours the InsecureTLS choice once options applied.
 	var tlsConfig *tls.Config
 	if c.InsecureTLS {
@@ -133,6 +144,9 @@ func New(host string, opts ...Option) *Client {
 		tlsConfig = &tls.Config{
 			InsecureSkipVerify: true, //nolint:gosec // manual verification in VerifyPeerCertificate
 			VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+				if pinStoreErr != nil {
+					return fmt.Errorf("failed to read certificate pin file %s: %w. To reset, run: symfritz auth trust --reset %s", c.pinStore.Path(), pinStoreErr, c.Host)
+				}
 				if len(rawCerts) == 0 {
 					return fmt.Errorf("no server certificate presented")
 				}
@@ -141,13 +155,10 @@ func New(host string, opts ...Option) *Client {
 					return fmt.Errorf("invalid server certificate: %w", err)
 				}
 				store := c.pinStore
-				if store == nil {
-					store = NewPinStore("")
-				}
 				storedPin := store.GetPin(c.Host)
 				if storedPin == "" {
 					if err := store.SetPin(c.Host, pin); err != nil {
-						return fmt.Errorf("failed to record certificate pin: %w", err)
+						return fmt.Errorf("failed to record certificate pin in %s: %w. To reset, run: symfritz auth trust --reset %s", store.Path(), err, c.Host)
 					}
 					return nil
 				}

@@ -11,6 +11,7 @@
 - #130 Redact session identifiers and standardize CLI error handling
 - #133 Remove dead router code and cache service discovery
 - #134 Parallelize TCP port probes in diagnosis
+- #149 Guard certificate pin store against silent reset on corrupt pins.json
 
 ### Maintenance and documentation
 - #135 Update pinned CodeQL actions
