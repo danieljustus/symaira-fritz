@@ -64,6 +64,10 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 	s.RegisterTool(&mcpserver.Tool{
 		Name:        "status",
 		Description: "FRITZ!Box overview: model, firmware, connection state, external IP.",
+		Annotations: &mcpserver.ToolAnnotations{
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+		},
 		InputSchema: json.RawMessage(emptyObjectSchema),
 		Handler: func(ctx context.Context, _ json.RawMessage) (any, error) {
 			st, err := c.Status(ctx)
@@ -77,6 +81,10 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 	s.RegisterTool(&mcpserver.Tool{
 		Name:        "host_list",
 		Description: "List devices in the FRITZ!Box host table (name, IP, MAC, active, LAN/WLAN).",
+		Annotations: &mcpserver.ToolAnnotations{
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+		},
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"active_only":{"type":"boolean","description":"Only return currently active hosts"}}}`),
 		Handler: func(ctx context.Context, in json.RawMessage) (any, error) {
 			var args struct {
@@ -101,6 +109,10 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 	s.RegisterTool(&mcpserver.Tool{
 		Name:        "host_get",
 		Description: "Look up one host by name, MAC, or IP. Provide exactly one of name/mac/ip.",
+		Annotations: &mcpserver.ToolAnnotations{
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+		},
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"mac":{"type":"string"},"ip":{"type":"string"}}}`),
 		Handler: func(ctx context.Context, in json.RawMessage) (any, error) {
 			var args struct{ Name, MAC, IP string }
@@ -131,6 +143,10 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 	s.RegisterTool(&mcpserver.Tool{
 		Name:        "diagnose",
 		Description: "End-to-end reachability check for a host (name/MAC/IP): known to box, active, LAN/WLAN, DNS, and TCP ports (default 22/5900/8001).",
+		Annotations: &mcpserver.ToolAnnotations{
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+		},
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"host":{"type":"string"},"ports":{"type":"array","items":{"type":"integer"}}},"required":["host"]}`),
 		Handler: func(ctx context.Context, in json.RawMessage) (any, error) {
 			var args struct {
@@ -154,6 +170,10 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 	s.RegisterTool(&mcpserver.Tool{
 		Name:        "mesh",
 		Description: "Mesh topology: nodes (box, repeaters, clients) and the links between them.",
+		Annotations: &mcpserver.ToolAnnotations{
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+		},
 		InputSchema: json.RawMessage(emptyObjectSchema),
 		Handler: func(ctx context.Context, _ json.RawMessage) (any, error) {
 			topo, err := c.MeshTopology(ctx)
@@ -167,6 +187,10 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 	s.RegisterTool(&mcpserver.Tool{
 		Name:        "wlan_clients",
 		Description: "List devices associated with the WLAN radios (MAC, IP, signal, speed).",
+		Annotations: &mcpserver.ToolAnnotations{
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+		},
 		InputSchema: json.RawMessage(emptyObjectSchema),
 		Handler: func(ctx context.Context, _ json.RawMessage) (any, error) {
 			clients, err := c.AllWLANClients(ctx, 3)
@@ -180,6 +204,10 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 	s.RegisterTool(&mcpserver.Tool{
 		Name:        "wake_on_lan",
 		Description: "Send a Wake-on-LAN packet via the box. Provide host (name/IP, resolved via host table) or mac.",
+		Annotations: &mcpserver.ToolAnnotations{
+			ReadOnlyHint:  false,
+			OpenWorldHint: true,
+		},
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"host":{"type":"string"},"mac":{"type":"string"}}}`),
 		Handler: func(ctx context.Context, in json.RawMessage) (any, error) {
 			var args struct{ Host, MAC string }
@@ -207,6 +235,10 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 	s.RegisterTool(&mcpserver.Tool{
 		Name:        "home_list",
 		Description: "List DECT smart-home actors (switches, thermostats) with AIN, name, and state.",
+		Annotations: &mcpserver.ToolAnnotations{
+			ReadOnlyHint:   true,
+			IdempotentHint: true,
+		},
 		InputSchema: json.RawMessage(emptyObjectSchema),
 		Handler: func(ctx context.Context, _ json.RawMessage) (any, error) {
 			devices, err := c.Devices(ctx)
@@ -220,6 +252,10 @@ func buildServer(c *fritz.Client) *mcpserver.Server {
 	s.RegisterTool(&mcpserver.Tool{
 		Name:        "home_switch",
 		Description: "Turn a DECT switch actor on or off by its AIN.",
+		Annotations: &mcpserver.ToolAnnotations{
+			ReadOnlyHint:  false,
+			OpenWorldHint: true,
+		},
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"ain":{"type":"string"},"on":{"type":"boolean"}},"required":["ain","on"]}`),
 		Handler: func(ctx context.Context, in json.RawMessage) (any, error) {
 			var args struct {
