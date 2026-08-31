@@ -9,6 +9,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -93,6 +94,7 @@ func (c *Client) fetchSession(ctx context.Context, params url.Values) (*sessionI
 		return nil, fmt.Errorf("contacting %s: %w", c.Host, err)
 	}
 	defer resp.Body.Close()
+	slog.Debug("session request", "method", req.Method, "url", safeURLForError(u), "status", resp.StatusCode)
 
 	// The box reports failed logins (wrong password, rate limit) with HTTP 200
 	// and an invalid SID, so any non-200 status is a genuine error and not a

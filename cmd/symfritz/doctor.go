@@ -70,7 +70,7 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 		addCheck("config file", "fail", "not found; run 'symfritz config init'")
 	case statErr != nil:
 		fileOK = false
-		addCheck("config file", "fail", "cannot inspect configuration file")
+		addCheck("config file", "fail", fmt.Sprintf("cannot inspect configuration file: %v", statErr))
 	case info.IsDir():
 		fileOK = false
 		addCheck("config file", "fail", "path is a directory")
@@ -80,7 +80,7 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 
 	cfg, configErr := config.Reload()
 	if configErr != nil {
-		addCheck("config parse", "fail", "configuration is not parseable")
+		addCheck("config parse", "fail", fmt.Sprintf("configuration is not parseable: %v", configErr))
 		cfg = config.Defaults()
 	} else if fileOK {
 		addCheck("config parse", "ok", "configuration is valid")
@@ -101,7 +101,7 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	credentialOK := credentialErr == nil && credential.Source != secret.SourceNone && credential.Password != ""
 	switch {
 	case credentialErr != nil:
-		addCheck("credentials", "fail", "credential resolution failed")
+		addCheck("credentials", "fail", fmt.Sprintf("credential resolution failed: %v", credentialErr))
 	case !credentialOK:
 		addCheck("credentials", "fail", "no credential resolved; run 'symfritz auth login'")
 	default:
@@ -122,8 +122,8 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	} else {
 		services, discoverErr := client.Discover(ctx)
 		if discoverErr != nil {
-			addCheck("box reachable", "fail", "TR-064 discovery request failed")
-			addCheck("TR-064 enabled", "fail", "service description unavailable")
+			addCheck("box reachable", "fail", fmt.Sprintf("TR-064 discovery request failed: %v", discoverErr))
+			addCheck("TR-064 enabled", "fail", fmt.Sprintf("service description unavailable: %v", discoverErr))
 		} else {
 			discoveryOK = true
 			addCheck("box reachable", "ok", "TR-064 service description responded")
@@ -135,7 +135,7 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 		}
 
 		if _, sessionErr := client.SID(ctx); sessionErr != nil {
-			addCheck("session login", "fail", "FRITZ!Box session login failed")
+			addCheck("session login", "fail", fmt.Sprintf("FRITZ!Box session login failed: %v", sessionErr))
 		} else {
 			sessionOK = true
 			addCheck("session login", "ok", "session established")

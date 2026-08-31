@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -122,6 +123,7 @@ func (c *Client) doSOAP(ctx context.Context, url, controlPath, soapAction string
 		return nil, nil, fmt.Errorf("tr064: contacting %s: %w", c.Host, err)
 	}
 	defer resp.Body.Close()
+	slog.Debug("tr064 request", "method", req.Method, "url", safeURLForError(url), "status", resp.StatusCode)
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, nil, err
@@ -254,6 +256,7 @@ func (c *Client) fetchAuthenticatedURL(ctx context.Context, rawURL string) ([]by
 		return nil, fmt.Errorf("fetch: contacting %s: %w", safeURLForError(rawURL), err)
 	}
 	defer resp.Body.Close()
+	slog.Debug("tr064 fetch", "method", req.Method, "url", safeURLForError(rawURL), "status", resp.StatusCode)
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		parsedURL, err := url.Parse(rawURL)
@@ -276,6 +279,7 @@ func (c *Client) fetchAuthenticatedURL(ctx context.Context, rawURL string) ([]by
 			return nil, fmt.Errorf("fetch: contacting %s: %w", safeURLForError(rawURL), err)
 		}
 		defer resp2.Body.Close()
+		slog.Debug("tr064 fetch", "method", req2.Method, "url", safeURLForError(rawURL), "status", resp2.StatusCode)
 		if resp2.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("fetch: HTTP %d", resp2.StatusCode)
 		}
