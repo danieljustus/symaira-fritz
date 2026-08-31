@@ -32,13 +32,13 @@ func runWithClient(cmd *cobra.Command, msg string, fn func(ctx context.Context, 
 // runWithClientAndConfig is like runWithClient but provides both the fritz.Client
 // and the loaded config.Config to commands requiring both.
 func runWithClientAndConfig(cmd *cobra.Command, msg string, fn func(ctx context.Context, c *fritz.Client, cfg *config.Config) error) error {
-	c, cfg, err := newClient()
-	if err != nil {
-		return err
-	}
 	ctx := cmd.Context()
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	c, cfg, err := newClient(ctx)
+	if err != nil {
+		return err
 	}
 	if err := fn(ctx, c, cfg); err != nil {
 		return wrapFritzError(err, msg)

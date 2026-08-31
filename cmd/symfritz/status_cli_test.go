@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -46,7 +47,7 @@ func TestStatusCmd_Integration(t *testing.T) {
 
 		origNewClient := newClient
 		t.Cleanup(func() { newClient = origNewClient })
-		newClient = func() (*fritz.Client, *config.Config, error) {
+		newClient = func(_ context.Context) (*fritz.Client, *config.Config, error) {
 			c := fritz.New("fritz.box")
 			c.SetMockURLs(srv.URL)
 			return c, &config.Config{}, nil
@@ -80,7 +81,7 @@ func TestStatusCmd_Integration(t *testing.T) {
 
 		origNewClient := newClient
 		t.Cleanup(func() { newClient = origNewClient })
-		newClient = func() (*fritz.Client, *config.Config, error) {
+		newClient = func(_ context.Context) (*fritz.Client, *config.Config, error) {
 			c := fritz.New("fritz.box")
 			c.SetMockURLs(srv.URL)
 			return c, &config.Config{}, nil
@@ -105,7 +106,7 @@ func TestStatusCmd_Integration(t *testing.T) {
 
 		origNewClient := newClient
 		t.Cleanup(func() { newClient = origNewClient })
-		newClient = func() (*fritz.Client, *config.Config, error) {
+		newClient = func(_ context.Context) (*fritz.Client, *config.Config, error) {
 			c := fritz.New("fritz.box")
 			c.SetMockURLs(srv.URL)
 			return c, &config.Config{}, nil
