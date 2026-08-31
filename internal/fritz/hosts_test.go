@@ -286,3 +286,280 @@ func TestWakeOnLAN_Success(t *testing.T) {
 		t.Errorf("sent MAC = %q, want upper-cased", gotMAC)
 	}
 }
+
+func TestHosts_BulkPath(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/devicehostlist.lua" {
+			w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+			_, _ = io.WriteString(w, `<?xml version="1.0" encoding="utf-8"?>
+<List>
+	<Item>
+		<Index>1</Index>
+		<IPAddress>192.168.188.65</IPAddress>
+		<MACAddress>f0:18:98:f3:64:b5</MACAddress>
+		<Active>1</Active>
+		<HostName>macmini</HostName>
+		<InterfaceType>Ethernet</InterfaceType>
+		<AddressSource>DHCP</AddressSource>
+		<LeaseTimeRemaining>3600</LeaseTimeRemaining>
+	</Item>
+	<Item>
+		<Index>2</Index>
+		<IPAddress>192.168.188.40</IPAddress>
+		<MACAddress>aa:bb:cc:dd:ee:ff</MACAddress>
+		<Active>0</Active>
+		<HostName>macbook</HostName>
+		<InterfaceType>802.11</InterfaceType>
+		<AddressSource>DHCP</AddressSource>
+		<LeaseTimeRemaining>0</LeaseTimeRemaining>
+	</Item>
+</List>`)
+			return
+		}
+
+		action := r.Header.Get("SoapAction")
+		if strings.Contains(action, "X_AVM-DE_GetHostListPath") {
+			w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+			_, _ = io.WriteString(w, soapEnvelope("X_AVM-DE_GetHostListPath", map[string]string{
+				"NewX_AVM-DE_HostListPath": "/devicehostlist.lua",
+			}))
+			return
+		}
+
+		http.Error(w, "unexpected request", http.StatusBadRequest)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("fritz.box")
+	c.tr064BaseURL = srv.URL
+	c.httpBaseURL = srv.URL
+
+	hosts, err := c.Hosts(context.Background())
+	if err != nil {
+		t.Fatalf("Hosts bulk: %v", err)
+	}
+	if len(hosts) != 2 {
+		t.Fatalf("want 2 hosts, got %d", len(hosts))
+	}
+	if hosts[0].Name != "macmini" || hosts[0].IP != "192.168.188.65" || hosts[0].MAC != "F0:18:98:F3:64:B5" {
+		t.Errorf("host0 = %+v", hosts[0])
+	}
+	if !hosts[0].Active || hosts[0].Link() != "LAN" || hosts[0].LeaseTimeRemaining != 3600 {
+		t.Errorf("host0 fields wrong: %+v", hosts[0])
+	}
+	if hosts[1].Name != "macbook" || hosts[1].IP != "192.168.188.40" || hosts[1].MAC != "AA:BB:CC:DD:EE:FF" {
+		t.Errorf("host1 = %+v", hosts[1])
+	}
+	if hosts[1].Active || hosts[1].Link() != "WLAN" {
+		t.Errorf("host1 fields wrong: %+v", hosts[1])
+	}
+}
+
+func TestHosts_UnsupportedFallback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		action := r.Header.Get("SoapAction")
+		body, _ := io.ReadAll(r.Body)
+
+		if strings.Contains(action, "X_AVM-DE_GetHostListPath") {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `<s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError 401</faultstring></s:Fault>`)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+		if strings.Contains(action, "GetHostNumberOfEntries") {
+			_, _ = io.WriteString(w, soapEnvelope("GetHostNumberOfEntries", map[string]string{"NewHostNumberOfEntries": "1"}))
+			return
+		}
+		if strings.Contains(action, "GetGenericHostEntry") && strings.Contains(string(body), "<NewIndex>0</NewIndex>") {
+			_, _ = io.WriteString(w, soapEnvelope("GetGenericHostEntry", map[string]string{
+				"NewHostName": "fallback-box", "NewIPAddress": "192.168.188.99",
+				"NewMACAddress": "11:22:33:44:55:66", "NewActive": "1",
+				"NewInterfaceType": "Ethernet", "NewAddressSource": "DHCP",
+				"NewLeaseTimeRemaining": "1800",
+			}))
+			return
+		}
+
+		http.Error(w, "unexpected", http.StatusBadRequest)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("fritz.box")
+	c.tr064BaseURL = srv.URL
+	c.httpBaseURL = srv.URL
+
+	hosts, err := c.Hosts(context.Background())
+	if err != nil {
+		t.Fatalf("Hosts fallback: %v", err)
+	}
+	if len(hosts) != 1 {
+		t.Fatalf("want 1 host from fallback, got %d", len(hosts))
+	}
+	if hosts[0].Name != "fallback-box" || hosts[0].IP != "192.168.188.99" || hosts[0].MAC != "11:22:33:44:55:66" {
+		t.Errorf("host0 = %+v", hosts[0])
+	}
+	if !hosts[0].Active || hosts[0].Link() != "LAN" || hosts[0].LeaseTimeRemaining != 1800 {
+		t.Errorf("host0 fields = %+v", hosts[0])
+	}
+}
+
+func TestHosts_MalformedBulkDocument(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/devicehostlist.lua" {
+			w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+			_, _ = io.WriteString(w, `<?xml version="1.0"?><List><Item><unclosed-xml>`)
+			return
+		}
+
+		action := r.Header.Get("SoapAction")
+		body, _ := io.ReadAll(r.Body)
+
+		if strings.Contains(action, "X_AVM-DE_GetHostListPath") {
+			w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+			_, _ = io.WriteString(w, soapEnvelope("X_AVM-DE_GetHostListPath", map[string]string{
+				"NewX_AVM-DE_HostListPath": "/devicehostlist.lua",
+			}))
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+		if strings.Contains(action, "GetHostNumberOfEntries") {
+			_, _ = io.WriteString(w, soapEnvelope("GetHostNumberOfEntries", map[string]string{"NewHostNumberOfEntries": "1"}))
+			return
+		}
+		if strings.Contains(action, "GetGenericHostEntry") && strings.Contains(string(body), "<NewIndex>0</NewIndex>") {
+			_, _ = io.WriteString(w, soapEnvelope("GetGenericHostEntry", map[string]string{
+				"NewHostName": "recovered-box", "NewIPAddress": "192.168.188.100",
+				"NewMACAddress": "22:33:44:55:66:77", "NewActive": "1",
+				"NewInterfaceType": "802.11", "NewAddressSource": "Static",
+				"NewLeaseTimeRemaining": "0",
+			}))
+			return
+		}
+
+		http.Error(w, "unexpected", http.StatusBadRequest)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("fritz.box")
+	c.tr064BaseURL = srv.URL
+	c.httpBaseURL = srv.URL
+
+	hosts, err := c.Hosts(context.Background())
+	if err != nil {
+		t.Fatalf("Hosts malformed fallback: %v", err)
+	}
+	if len(hosts) != 1 {
+		t.Fatalf("want 1 host from fallback after malformed XML, got %d", len(hosts))
+	}
+	if hosts[0].Name != "recovered-box" || hosts[0].IP != "192.168.188.100" || hosts[0].MAC != "22:33:44:55:66:77" {
+		t.Errorf("host0 = %+v", hosts[0])
+	}
+	if !hosts[0].Active || hosts[0].Link() != "WLAN" {
+		t.Errorf("host0 fields = %+v", hosts[0])
+	}
+}
+
+func TestHosts_FieldParity(t *testing.T) {
+	// 1. Bulk server
+	bulkSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/devicehostlist.lua" {
+			w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+			_, _ = io.WriteString(w, `<?xml version="1.0" encoding="utf-8"?>
+<List>
+	<Item>
+		<IPAddress>192.168.188.20</IPAddress>
+		<MACAddress>aa:bb:cc:11:22:33</MACAddress>
+		<Active>1</Active>
+		<HostName>my-printer</HostName>
+		<InterfaceType>Ethernet</InterfaceType>
+		<AddressSource>DHCP</AddressSource>
+		<LeaseTimeRemaining>7200</LeaseTimeRemaining>
+	</Item>
+</List>`)
+			return
+		}
+		action := r.Header.Get("SoapAction")
+		if strings.Contains(action, "X_AVM-DE_GetHostListPath") {
+			w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+			_, _ = io.WriteString(w, soapEnvelope("X_AVM-DE_GetHostListPath", map[string]string{
+				"NewX_AVM-DE_HostListPath": "/devicehostlist.lua",
+			}))
+			return
+		}
+		http.Error(w, "unexpected", http.StatusBadRequest)
+	}))
+	t.Cleanup(bulkSrv.Close)
+
+	// 2. Index server
+	indexSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		action := r.Header.Get("SoapAction")
+		w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+		if strings.Contains(action, "GetHostNumberOfEntries") {
+			_, _ = io.WriteString(w, soapEnvelope("GetHostNumberOfEntries", map[string]string{"NewHostNumberOfEntries": "1"}))
+			return
+		}
+		if strings.Contains(action, "GetGenericHostEntry") {
+			_, _ = io.WriteString(w, soapEnvelope("GetGenericHostEntry", map[string]string{
+				"NewHostName": "my-printer", "NewIPAddress": "192.168.188.20",
+				"NewMACAddress": "aa:bb:cc:11:22:33", "NewActive": "1",
+				"NewInterfaceType": "Ethernet", "NewAddressSource": "DHCP",
+				"NewLeaseTimeRemaining": "7200",
+			}))
+			return
+		}
+		http.Error(w, "unexpected", http.StatusBadRequest)
+	}))
+	t.Cleanup(indexSrv.Close)
+
+	bulkClient := New("fritz.box")
+	bulkClient.tr064BaseURL = bulkSrv.URL
+	bulkClient.httpBaseURL = bulkSrv.URL
+
+	indexClient := New("fritz.box")
+	indexClient.tr064BaseURL = indexSrv.URL
+	indexClient.httpBaseURL = indexSrv.URL
+
+	bulkHostsList, err := bulkClient.bulkHosts(context.Background())
+	if err != nil {
+		t.Fatalf("bulkHosts: %v", err)
+	}
+
+	indexHostsList, err := indexClient.hostsFromIndex(context.Background())
+	if err != nil {
+		t.Fatalf("hostsFromIndex: %v", err)
+	}
+
+	if len(bulkHostsList) != len(indexHostsList) {
+		t.Fatalf("length mismatch: bulk=%d, index=%d", len(bulkHostsList), len(indexHostsList))
+	}
+
+	bh := bulkHostsList[0]
+	ih := indexHostsList[0]
+
+	if bh.Name != ih.Name {
+		t.Errorf("Name parity mismatch: bulk=%q, index=%q", bh.Name, ih.Name)
+	}
+	if bh.IP != ih.IP {
+		t.Errorf("IP parity mismatch: bulk=%q, index=%q", bh.IP, ih.IP)
+	}
+	if bh.MAC != ih.MAC {
+		t.Errorf("MAC parity mismatch: bulk=%q, index=%q", bh.MAC, ih.MAC)
+	}
+	if bh.Active != ih.Active {
+		t.Errorf("Active parity mismatch: bulk=%v, index=%v", bh.Active, ih.Active)
+	}
+	if bh.InterfaceType != ih.InterfaceType {
+		t.Errorf("InterfaceType parity mismatch: bulk=%q, index=%q", bh.InterfaceType, ih.InterfaceType)
+	}
+	if bh.AddressSource != ih.AddressSource {
+		t.Errorf("AddressSource parity mismatch: bulk=%q, index=%q", bh.AddressSource, ih.AddressSource)
+	}
+	if bh.LeaseTimeRemaining != ih.LeaseTimeRemaining {
+		t.Errorf("LeaseTimeRemaining parity mismatch: bulk=%d, index=%d", bh.LeaseTimeRemaining, ih.LeaseTimeRemaining)
+	}
+	if bh.Link() != ih.Link() {
+		t.Errorf("Link() parity mismatch: bulk=%q, index=%q", bh.Link(), ih.Link())
+	}
+}
