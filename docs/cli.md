@@ -1379,11 +1379,14 @@ Show WAN traffic statistics
 ### Synopsis
 
 Show downstream/upstream traffic by category. When --watch is set,
-re-poll and redraw at the configured --interval until Ctrl-C.
+re-poll and append snapshots at the configured --interval until Ctrl-C.
+In JSON mode (--json or --output json), --watch streams one compact JSON object
+per line (NDJSON).
 
 Examples:
-  symfritz traffic            # one-shot snapshot
-  symfritz traffic --watch    # live-updating view (exits on Ctrl-C)
+  symfritz traffic                     # one-shot snapshot
+  symfritz traffic --watch             # append snapshots periodically (exits on Ctrl-C)
+  symfritz traffic --watch --json      # stream NDJSON objects (one per line)
   symfritz traffic --watch --interval 5s
 
 ```
@@ -1396,7 +1399,7 @@ symfritz traffic [flags]
   -h, --help                help for traffic
       --interval duration   Polling interval for --watch mode (default 2s)
       --json                Output as JSON
-      --watch               Continuously re-poll and redraw until Ctrl-C
+      --watch               Continuously re-poll and append snapshots until Ctrl-C
 ```
 
 ### Options inherited from parent commands

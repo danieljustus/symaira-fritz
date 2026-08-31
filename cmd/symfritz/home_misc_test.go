@@ -105,10 +105,55 @@ func TestHomeListCmd(t *testing.T) {
 		}
 	})
 
-	for _, want := range []string{"Lampe", "12345 678901", "on", "online", "temp:", "bat: 80%", "window: open", "Keine Verbindung zum Stellantrieb möglich", "power: 2.50W", "Alt", "off", "offline", "Groups:", "Wohnzimmer"} {
+	for _, want := range []string{"Lampe", "12345 678901", "on", "online", "temp: 105.0°C (target 100.0°C)", "bat: 80%", "window: open", "no connection to actuator", "power: 2.50W", "Alt", "off", "offline", "Groups:", "Wohnzimmer"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "soll") {
+		t.Errorf("output unexpectedly contains 'soll':\n%s", out)
+	}
+	if strings.Contains(out, "Fehler") {
+		t.Errorf("output unexpectedly contains 'Fehler':\n%s", out)
+	}
+}
+
+func TestHomeListCmd_UnknownErrorCode(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/login_sid.lua":
+			_, _ = io.WriteString(w, loginSIDXML)
+		case r.URL.Path == "/webservices/homeautoswitch.lua":
+			_, _ = io.WriteString(w, `<?xml version="1.0"?><devicelist>
+<device identifier="999" id="1" functionbitmask="0" fwversion="05.23" manufacturer="AVM" productname="FRITZ!DECT 301">
+<present>1</present><name>Heizung</name>
+<switch><state>1</state></switch>
+<hkr><tist>42</tist><tsoll>40</tsoll><errorcode>99</errorcode></hkr>
+</device></devicelist>`)
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	stubNewClient(t, srv)
+
+	out := captureStdout(t, func() {
+		cmd := newRootCmd()
+		cmd.SetArgs([]string{"home", "list"})
+		if _, err := cmd.ExecuteC(); err != nil {
+			t.Fatalf("home list: %v", err)
+		}
+	})
+
+	if !strings.Contains(out, "error 99") {
+		t.Errorf("output missing 'error 99':\n%s", out)
+	}
+	if !strings.Contains(out, "temp: 21.0°C (target 20.0°C)") {
+		t.Errorf("output missing target temp: %s", out)
+	}
+	if strings.Contains(out, "soll") || strings.Contains(out, "Fehler") {
+		t.Errorf("output contains German strings: %s", out)
 	}
 }
 

@@ -303,3 +303,25 @@ func TestSetHkrTemp_RoundTemperature(t *testing.T) {
 		t.Errorf("param = %q, want 44 (22.0*2)", gotParam)
 	}
 }
+
+func TestHkrErrorDescriptions(t *testing.T) {
+	expected := map[string]string{
+		"0": "no error",
+		"1": "no connection to actuator",
+		"2": "valve stroke too large",
+		"3": "valve stroke too small",
+		"4": "installation not ready / check mounting",
+		"5": "valve travel too short (sluggish?) / descale",
+		"6": "battery charge extremely low",
+	}
+
+	if len(HkrErrorDescriptions) != len(expected) {
+		t.Fatalf("HkrErrorDescriptions length = %d, want %d", len(HkrErrorDescriptions), len(expected))
+	}
+
+	for k, want := range expected {
+		if got, ok := HkrErrorDescriptions[k]; !ok || got != want {
+			t.Errorf("HkrErrorDescriptions[%q] = %q (exists: %v), want %q", k, got, ok, want)
+		}
+	}
+}
