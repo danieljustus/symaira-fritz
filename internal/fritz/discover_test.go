@@ -3,6 +3,8 @@ package fritz
 import (
 	"context"
 	_ "embed"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -193,5 +195,139 @@ func TestServiceByName(t *testing.T) {
 				t.Errorf("ServiceByName(%q) control URL = %q, want %q", tt.name, svc.ControlURL, tt.wantURL)
 			}
 		})
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type failingResponseBody struct{}
+
+func (failingResponseBody) Read([]byte) (int, error) {
+	return 0, errors.New("response body unavailable")
+}
+func (failingResponseBody) Close() error { return nil }
+
+func TestDiscover_FailurePaths(t *testing.T) {
+	t.Run("HTTP failure", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusBadGateway)
+		}))
+		t.Cleanup(srv.Close)
+
+		c := New("fritz.box")
+		c.tr064BaseURL = srv.URL
+		_, err := c.Discover(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "tr64desc.xml returned HTTP 502") {
+			t.Fatalf("Discover error = %v, want HTTP 502 failure", err)
+		}
+	})
+
+	t.Run("response read failure", func(t *testing.T) {
+		c := New("fritz.box")
+		c.tr064BaseURL = "http://discovery.test"
+		c.http.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       failingResponseBody{},
+				Request:    req,
+				Header:     make(http.Header),
+			}, nil
+		})
+
+		_, err := c.Discover(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "response body unavailable") {
+			t.Fatalf("Discover error = %v, want response-read failure", err)
+		}
+	})
+
+	t.Run("malformed XML", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("<root><device>"))
+		}))
+		t.Cleanup(srv.Close)
+
+		c := New("fritz.box")
+		c.tr064BaseURL = srv.URL
+		_, err := c.Discover(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "parsing tr64desc.xml") {
+			t.Fatalf("Discover error = %v, want malformed XML failure", err)
+		}
+	})
+}
+
+func TestDiscover_TransportFailureUsesPublicHostHint(t *testing.T) {
+	origLookupHost := lookupHost
+	origDefaultGateway := defaultGateway
+	t.Cleanup(func() {
+		lookupHost = origLookupHost
+		defaultGateway = origDefaultGateway
+	})
+	lookupHost = func(context.Context, string) ([]string, error) {
+		return []string{"8.8.8.8"}, nil
+	}
+	defaultGateway = func() (net.IP, error) { return net.ParseIP("192.168.1.1"), nil }
+
+	c := New("public.example")
+	c.tr064BaseURL = "http://discovery.test"
+	c.http.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("test transport refused connection")
+	})
+	_, err := c.Discover(context.Background())
+	if err == nil {
+		t.Fatal("Discover succeeded, want transport failure")
+	}
+	want := "Hint: public.example resolves to a public IP. Try setting SYMFRITZ_HOST=192.168.1.1"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("Discover error = %q, want public-host hint %q", err, want)
+	}
+}
+
+func TestDiscover_CheckHostDNSFailure(t *testing.T) {
+	origDefaultGateway := defaultGateway
+	t.Cleanup(func() { defaultGateway = origDefaultGateway })
+	defaultGateway = func() (net.IP, error) { return net.ParseIP("192.168.1.1"), nil }
+
+	c := New("8.8.8.8")
+	_, err := c.Discover(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "Local FRITZ!Box detected at 192.168.1.1") {
+		t.Fatalf("Discover error = %v, want checkHostDNS failure", err)
+	}
+}
+
+func TestDiscover_InvalidDescriptionURL(t *testing.T) {
+	c := New("fritz.box")
+	c.tr064BaseURL = "://invalid"
+	_, err := c.Discover(context.Background())
+	if err == nil {
+		t.Fatal("Discover succeeded, want invalid URL error")
+	}
+	if !strings.Contains(err.Error(), "missing protocol scheme") {
+		t.Fatalf("Discover error = %q, want invalid URL error", err)
+	}
+}
+
+func TestDiscover_TransportFailureWithoutPublicHint(t *testing.T) {
+	origLookupHost := lookupHost
+	t.Cleanup(func() { lookupHost = origLookupHost })
+	lookupHost = func(context.Context, string) ([]string, error) {
+		return []string{"192.168.1.1"}, nil
+	}
+
+	c := New("router.example")
+	c.tr064BaseURL = "http://discovery.test"
+	c.http.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("test transport refused connection")
+	})
+	_, err := c.Discover(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "discover: contacting router.example") {
+		t.Fatalf("Discover error = %v, want transport error", err)
+	}
+	if strings.Contains(err.Error(), "Hint:") {
+		t.Fatalf("Discover error = %q, did not expect public-host hint", err)
 	}
 }
