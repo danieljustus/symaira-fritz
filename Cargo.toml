@@ -11,6 +11,7 @@ repository = "https://github.com/danieljustus/symaira-fritz"
 [workspace.dependencies]
 base64 = "0.22.1"
 clap = { version = "4.6.6", features = ["derive"] }
+clap_complete = "4.6.9"
 hex = "0.4.3"
 getrandom = "0.2.17"
 md-5 = "0.11.0"

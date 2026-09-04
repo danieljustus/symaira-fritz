@@ -48,15 +48,19 @@ fixtures; **FROZEN** is covered by the Go oracle but has no Rust implementation;
 
 ## Read-only handler slice
 
-Issue #190 subtask 2a wires the production Rust handlers for `status`, `hosts`,
-`wlan` read-only subcommands, one-shot `traffic`, `calls`, `dsl`, `log`,
-`services`, and raw `call`. The `rust-readonly` Make target runs the focused
-CLI contract/output checks and Clippy. CLI-008 remains **PENDING** until the
-black-box fake-box suite compares handler requests and streams against the Go
-oracle; protocol-level fake-transport coverage is recorded in CAP-001–003.
-The intentionally unimplemented gaps remain mutation commands (`wlan guest on|off`,
-plus other mutating top-level commands), `traffic --watch`, and the separate
-`detect`, `doctor`, `diagnose`, `mesh`, `home`, completion, MCP, and signal slices.
+Issue #190 subtask 2b wires the production Rust handlers for detection (`detect`
+and `config detect`), diagnostic reports (`diagnose` and `diagnose router`),
+`doctor`, mesh topology, both AHA and TR-064 `home list` paths, best-effort
+`scrape`, version update checking, and bash/fish/PowerShell/zsh completion
+scripts. Detection uses an injected runtime seam and preserves configured-host,
+gateway, and common-address probe order; mesh uses separate TR-064 and web
+origins with the existing SID flow. The focused CLI tests cover handler dispatch
+and completion generation. CLI-008 remains **PENDING** for a full CLI-level
+fake-box differential suite; protocol-level service and session fixtures remain
+in CAP-001–003 and SCRAPE-001. Real-router checks, live GitHub update responses,
+signal handling, and MCP remain intentionally out of this slice. Mutation
+commands (`dial`, `hangup`, WOL, guest on/off, home switch/temp, reboot), config
+init/auth writes, and `traffic --watch` remain unimplemented.
 
 ## Rules
 

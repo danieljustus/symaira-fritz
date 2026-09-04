@@ -242,6 +242,7 @@ pub struct DiagnoseArgs {
         value_name = "port",
         value_delimiter = ',',
         num_args = 1..,
+        value_parser = clap::value_parser!(u16).range(1..=65535),
         help = "TCP port to probe (repeatable; replaces default ports 22, 5900, 8001)"
     )]
     pub ports: Vec<u16>,
@@ -265,6 +266,7 @@ pub struct RouterDiagnoseArgs {
         value_name = "port",
         value_delimiter = ',',
         num_args = 1..,
+        value_parser = clap::value_parser!(u16).range(1..=65535),
         help = "TCP port to probe (repeatable; replaces router defaults 49000, 49443, 80, 443)"
     )]
     pub ports: Vec<u16>,

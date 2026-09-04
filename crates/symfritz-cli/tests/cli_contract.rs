@@ -200,3 +200,40 @@ fn generated_argument_cases_keep_parse_exit_two() {
         );
     }
 }
+
+#[test]
+fn completion_handlers_generate_all_shells() {
+    let binary = env!("CARGO_BIN_EXE_symfritz-rust");
+    for shell in ["bash", "fish", "powershell", "zsh"] {
+        let output = ProcessCommand::new(binary)
+            .args(["completion", shell, "--no-descriptions"])
+            .output()
+            .unwrap_or_else(|error| panic!("run completion {shell}: {error}"));
+        assert_eq!(output.status.code(), Some(0), "completion failed: {shell}");
+        assert!(
+            !output.stdout.is_empty(),
+            "completion emitted no script: {shell}"
+        );
+        assert!(
+            !String::from_utf8_lossy(&output.stdout).contains("internal handler"),
+            "completion fell through to the placeholder: {shell}"
+        );
+    }
+}
+
+#[test]
+fn diagnostic_and_detection_commands_are_wired_to_the_rust_tree() {
+    let root = cli::command();
+    for path in [
+        "symfritz detect",
+        "symfritz config detect",
+        "symfritz diagnose",
+        "symfritz diagnose router",
+        "symfritz doctor",
+        "symfritz mesh",
+        "symfritz home list",
+        "symfritz scrape",
+    ] {
+        assert!(lookup(&root, path).is_some(), "missing command: {path}");
+    }
+}

@@ -1,15 +1,23 @@
 #![deny(unsafe_code)]
 
-use std::{collections::BTreeMap, fmt::Display, process::ExitCode};
+use std::{
+    collections::BTreeMap,
+    fmt::Display,
+    io::Read,
+    net::{IpAddr, ToSocketAddrs},
+    process::{Command as ProcessCommand, ExitCode},
+};
 
 use clap::{CommandFactory, Parser};
-use serde::Serialize;
-use symfritz_aha::{Client as AhaClient, SystemClock};
+use clap_complete::{generate, shells};
+use serde::{Deserialize, Serialize};
+use symfritz_aha::{Client as AhaClient, Device as AhaDevice, Group as AhaGroup, SystemClock};
 use symfritz_cli::{
     OutputFormat, TOOL,
     cli::{
-        CallArgs, CallsArgs, Cli, Command, HostGetArgs, LogArgs, StatusArgs, TrafficArgs,
-        WlanSubcommand,
+        CallArgs, CallsArgs, Cli, Command, CompletionCommand, DiagnoseArgs, DiagnoseSubcommand,
+        HomeCommand, HomeListArgs, HostGetArgs, LogArgs, ScrapeArgs, StatusArgs, TrafficArgs,
+        VersionArgs, WlanSubcommand,
     },
     output, render_version, resolve_output_format,
 };
@@ -19,9 +27,9 @@ use symfritz_core::{
     secret::{CredentialSource, SecretError, SecretOptions, resolve},
 };
 use symfritz_tr064::{
-    BlockingHttpTransport, Call as TrCall, Client as Tr064Client, CnonceSource, DslLineStats,
-    ErrorKind, Host, HttpTransportConfig, LogEvent, Radio, Service, Status, StatusFailure,
-    TrafficData, WlanClient,
+    BlockingHttpTransport, Call as TrCall, Client as Tr064Client, CnonceSource, Diagnosis,
+    DslLineStats, ErrorKind, Host, HttpTransportConfig, LogEvent, Radio, Service, Status,
+    StatusFailure, TrafficData, WlanClient,
 };
 use url::Url;
 
@@ -174,10 +182,7 @@ fn execute(cli: Cli, format: OutputFormat) -> Result<(), HandlerError> {
             println!();
             Ok(())
         }
-        Some(Command::Version(_)) => {
-            print!("{}", render_version(format, VERSION));
-            Ok(())
-        }
+        Some(Command::Version(args)) => execute_version(args, format),
         Some(Command::Help(args)) => print_help(&args.command),
         Some(Command::Status(args)) => execute_status(args, format),
         Some(Command::Hosts(command)) => execute_hosts(command, format),
@@ -188,6 +193,16 @@ fn execute(cli: Cli, format: OutputFormat) -> Result<(), HandlerError> {
         Some(Command::Log(args)) => execute_log(args, format),
         Some(Command::Services(_)) => execute_services(format),
         Some(Command::Call(args)) => execute_call(args, format),
+        Some(Command::Detect(_)) => execute_detect(format),
+        Some(Command::Config(symfritz_cli::cli::ConfigCommand::Detect(_))) => {
+            execute_detect(format)
+        }
+        Some(Command::Diagnose(args)) => execute_diagnose(args, format),
+        Some(Command::Doctor) => execute_doctor(format),
+        Some(Command::Mesh(_)) => execute_mesh(format),
+        Some(Command::Home(command)) => execute_home(command, format),
+        Some(Command::Scrape(args)) => execute_scrape(args),
+        Some(Command::Completion(command)) => execute_completion(command),
         Some(command) => Err(HandlerError::operation(format!(
             "internal handler for '{}' is not implemented",
             command_name(&command)
@@ -1015,5 +1030,1081 @@ mod tests {
             assert!(service_by_shortcut(&shortcut.to_ascii_uppercase()).is_some());
         }
         assert!(service_by_shortcut("unknown").is_none());
+    }
+}
+
+fn execute_diagnose(args: DiagnoseArgs, format: OutputFormat) -> Result<(), HandlerError> {
+    match args.command {
+        Some(DiagnoseSubcommand::Router(router)) => execute_diagnose_router(router.ports, format),
+        None => {
+            let reference = args.host.ok_or_else(|| {
+                HandlerError::config("diagnose requires a host or the router subcommand")
+            })?;
+            let mut client = {
+                let (config, password) = load_connection()?;
+                make_tr064(&config.box_config, &password)?
+            };
+            let diagnosis = client.diagnose(
+                &reference,
+                symfritz_tr064::DiagnoseOptions {
+                    ports: custom_probes(args.ports, false),
+                    dial_timeout_ms: 2_000,
+                },
+            );
+            render_diagnosis(
+                &diagnosis,
+                format,
+                &format!("Diagnose {}", diagnosis.reference),
+            )?;
+            if diagnosis.ok {
+                Ok(())
+            } else {
+                Err(HandlerError::operation("host not fully reachable"))
+            }
+        }
+    }
+}
+
+fn execute_diagnose_router(ports: Vec<u16>, format: OutputFormat) -> Result<(), HandlerError> {
+    let mut config = symfritz_core::config::load_config().map_err(config_error)?;
+    let password = resolve(&SecretOptions::from(&config.box_config))
+        .map_err(secret_error)?
+        .password;
+    let configured_host = config.box_config.host.clone();
+    let mut detector = SystemDetectionRuntime::new()?;
+    let router_host = match std::env::var("SYMFRITZ_HOST") {
+        Ok(value) if !value.is_empty() => value,
+        _ => discover_box_with(&mut detector, &configured_host)?,
+    };
+    config.box_config.host = router_host.clone();
+    let mut client = make_tr064(&config.box_config, &password)?;
+    let diagnosis = client.diagnose(
+        &router_host,
+        symfritz_tr064::DiagnoseOptions {
+            ports: if ports.is_empty() {
+                router_probes()
+            } else {
+                custom_probes(ports, true)
+            },
+            dial_timeout_ms: 2_000,
+        },
+    );
+    render_diagnosis(
+        &diagnosis,
+        format,
+        &format!("Diagnose router  →  {router_host}"),
+    )?;
+    if diagnosis.ok {
+        Ok(())
+    } else {
+        Err(HandlerError::operation("router not fully reachable"))
+    }
+}
+
+fn render_diagnosis(
+    diagnosis: &Diagnosis,
+    format: OutputFormat,
+    title: &str,
+) -> Result<(), HandlerError> {
+    if format != OutputFormat::Text {
+        output::write(&mut std::io::stdout(), diagnosis, format)
+            .map_err(|error| HandlerError::operation(error.to_string()))?;
+    } else {
+        println!("{title}");
+        for check in &diagnosis.checks {
+            println!(
+                "  {} {:<26} {}",
+                check_glyph(check.status),
+                check.name,
+                check.detail
+            );
+        }
+        println!(
+            "\nResult: {}",
+            if diagnosis.ok {
+                "reachable (no failed checks)"
+            } else {
+                "problems detected"
+            }
+        );
+    }
+    Ok(())
+}
+
+fn check_glyph(status: symfritz_tr064::CheckStatus) -> &'static str {
+    match status {
+        symfritz_tr064::CheckStatus::Ok => "✓",
+        symfritz_tr064::CheckStatus::Fail => "✗",
+        symfritz_tr064::CheckStatus::Warn => "!",
+        symfritz_tr064::CheckStatus::Skip => "·",
+    }
+}
+
+fn custom_probes(ports: Vec<u16>, router: bool) -> Vec<symfritz_tr064::PortProbe> {
+    if ports.is_empty() {
+        return if router { router_probes() } else { Vec::new() };
+    }
+    ports
+        .into_iter()
+        .map(|port| symfritz_tr064::PortProbe {
+            port,
+            label: String::from("custom"),
+            probe_type: String::from("tcp"),
+            optional: router,
+        })
+        .collect()
+}
+
+fn router_probes() -> Vec<symfritz_tr064::PortProbe> {
+    [
+        (49_000, "TR-064 HTTP"),
+        (49_443, "TR-064 HTTPS"),
+        (80, "web UI HTTP"),
+        (443, "web UI HTTPS"),
+    ]
+    .into_iter()
+    .map(|(port, label)| symfritz_tr064::PortProbe {
+        port,
+        label: label.to_owned(),
+        probe_type: String::from("tcp"),
+        optional: true,
+    })
+    .collect()
+}
+
+trait DetectionRuntime {
+    fn resolve(&mut self, host: &str) -> Vec<IpAddr>;
+    fn gateway(&mut self) -> Option<IpAddr>;
+    fn probe(&mut self, ip: IpAddr, port: u16) -> bool;
+}
+
+struct SystemDetectionRuntime {
+    client: reqwest::blocking::Client,
+}
+impl SystemDetectionRuntime {
+    fn new() -> Result<Self, HandlerError> {
+        let client = reqwest::blocking::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .timeout(std::time::Duration::from_secs(3))
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|error| {
+                HandlerError::from_operation("failed to create discovery client", error)
+            })?;
+        Ok(Self { client })
+    }
+}
+impl DetectionRuntime for SystemDetectionRuntime {
+    fn resolve(&mut self, host: &str) -> Vec<IpAddr> {
+        if let Ok(ip) = host.parse() {
+            return vec![ip];
+        }
+        (host, 0)
+            .to_socket_addrs()
+            .map(|addresses| addresses.map(|address| address.ip()).collect())
+            .unwrap_or_default()
+    }
+    fn gateway(&mut self) -> Option<IpAddr> {
+        let output = if cfg!(target_os = "macos") {
+            ProcessCommand::new("route")
+                .args(["-n", "get", "default"])
+                .output()
+                .ok()
+        } else if cfg!(target_os = "windows") {
+            ProcessCommand::new("route")
+                .args(["print", "-4"])
+                .output()
+                .ok()
+        } else {
+            ProcessCommand::new("ip")
+                .args(["route", "show", "default"])
+                .output()
+                .ok()
+        }?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        if cfg!(target_os = "macos") {
+            text.lines().find_map(|line| {
+                line.trim()
+                    .strip_prefix("gateway:")
+                    .and_then(|value| value.trim().parse().ok())
+            })
+        } else if cfg!(target_os = "windows") {
+            symfritz_tr064::parse_windows_default_gateway(&text)
+        } else {
+            symfritz_tr064::parse_linux_default_gateway(&text)
+        }
+    }
+    fn probe(&mut self, ip: IpAddr, port: u16) -> bool {
+        let host = match ip {
+            IpAddr::V4(ip) => ip.to_string(),
+            IpAddr::V6(ip) => format!("[{ip}]"),
+        };
+        let url = format!(
+            "{}://{host}:{port}/tr64desc.xml",
+            if port == 49_443 { "https" } else { "http" }
+        );
+        let Ok(response) = self.client.get(url).send() else {
+            return false;
+        };
+        if response.status() != reqwest::StatusCode::OK {
+            return false;
+        }
+        let mut body = Vec::with_capacity(4096);
+        if response.take(4096).read_to_end(&mut body).is_err() {
+            return false;
+        }
+        body.windows(b"urn:schemas-upnp-org:device-1-0".len())
+            .any(|window| window == b"urn:schemas-upnp-org:device-1-0")
+            || body
+                .windows(b"urn:dslforum-org:device-1-0".len())
+                .any(|window| window == b"urn:dslforum-org:device-1-0")
+    }
+}
+
+fn discover_box_with<R: DetectionRuntime>(
+    runtime: &mut R,
+    configured_host: &str,
+) -> Result<String, HandlerError> {
+    if !configured_host.is_empty() {
+        for ip in runtime.resolve(configured_host) {
+            if symfritz_tr064::is_private_ip(ip)
+                && (runtime.probe(ip, 49_000) || runtime.probe(ip, 49_443))
+            {
+                return Ok(ip.to_string());
+            }
+        }
+    }
+    let gateway = runtime.gateway();
+    if let Some(ip) = gateway
+        && (runtime.probe(ip, 49_000) || runtime.probe(ip, 49_443))
+    {
+        return Ok(ip.to_string());
+    }
+    for candidate in [
+        "192.168.178.1",
+        "192.168.1.1",
+        "192.168.0.1",
+        "192.168.188.1",
+    ] {
+        let ip: IpAddr = candidate.parse().expect("static discovery candidate");
+        if Some(ip) != gateway && (runtime.probe(ip, 49_000) || runtime.probe(ip, 49_443)) {
+            return Ok(candidate.to_owned());
+        }
+    }
+    let hint = gateway.map_or_else(String::new, |ip| {
+        format!(" or set SYMFRITZ_HOST={ip} (your default gateway)")
+    });
+    Err(HandlerError::operation(format!(
+        "discover: could not find a FRITZ!Box on the local network; run 'symfritz detect' to troubleshoot{hint}"
+    )))
+}
+
+#[derive(Serialize)]
+struct DetectOutput {
+    host: String,
+    ip: String,
+    ready: bool,
+    #[serde(skip_serializing_if = "is_zero_i32")]
+    downstream_max_bit_rate: i32,
+    #[serde(skip_serializing_if = "is_zero_i32")]
+    upstream_max_bit_rate: i32,
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    current_downstream_bps: f64,
+    #[serde(skip_serializing_if = "is_zero_f64")]
+    current_upstream_bps: f64,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    is_reduced_dataset: bool,
+}
+fn is_zero_i32(value: &i32) -> bool {
+    *value == 0
+}
+fn is_zero_f64(value: &f64) -> bool {
+    *value == 0.0
+}
+
+fn execute_detect(format: OutputFormat) -> Result<(), HandlerError> {
+    let config = match symfritz_core::config::load_config() {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("warning: config error: {error}");
+            Config::default()
+        }
+    };
+    let configured_host = config.box_config.host;
+    let mut runtime = SystemDetectionRuntime::new()?;
+    let ip = discover_box_with(&mut runtime, &configured_host)?;
+    if format != OutputFormat::Text {
+        output::write(
+            &mut std::io::stdout(),
+            &DetectOutput {
+                host: configured_host,
+                ip,
+                ready: true,
+                downstream_max_bit_rate: 0,
+                upstream_max_bit_rate: 0,
+                current_downstream_bps: 0.0,
+                current_upstream_bps: 0.0,
+                is_reduced_dataset: false,
+            },
+            format,
+        )
+        .map_err(|error| HandlerError::operation(error.to_string()))?;
+    } else {
+        println!("Detected FRITZ!Box at: {ip}");
+        if ip != configured_host {
+            println!(
+                "Configured host: {configured_host}\n\nSuggested config snippet:\n  [box]\n  host = \"{ip}\""
+            );
+        }
+        println!("\nVerifying connection... ok");
+    }
+    Ok(())
+}
+
+fn execute_mesh(format: OutputFormat) -> Result<(), HandlerError> {
+    let (config, password) = load_connection()?;
+    let mut tr064 = make_tr064(&config.box_config, &password)?;
+    let mut web = make_web(&config.box_config, &password)?;
+    let topology = web
+        .mesh_topology(&mut tr064)
+        .map_err(|error| HandlerError::from_operation("mesh failed", error))?;
+    if format != OutputFormat::Text {
+        output::write(&mut std::io::stdout(), &topology, format)
+            .map_err(|error| HandlerError::operation(error.to_string()))?;
+        return Ok(());
+    }
+    for node in &topology.nodes {
+        let role = if node.mesh_role.is_empty() {
+            "client"
+        } else {
+            &node.mesh_role
+        };
+        println!(
+            "● {}  [{}{}]",
+            or_dash(&node.device_name),
+            role,
+            model_suffix(&node.device_model)
+        );
+        for interface in &node.node_interfaces {
+            for link in &interface.node_links {
+                if link.state.is_empty() {
+                    continue;
+                }
+                let mut peer = topology.node_name(&link.node_2);
+                if peer == node.device_name || peer == link.node_2 {
+                    peer = topology.node_name(&link.node_1);
+                }
+                println!(
+                    "    {:<5} {:<9} → {:<20} {}",
+                    interface.interface_type,
+                    link.state,
+                    peer,
+                    mesh_data_rate(link)
+                );
+            }
+        }
+    }
+    Ok(())
+}
+fn mesh_data_rate(link: &symfritz_tr064::MeshLink) -> String {
+    if link.cur_data_rate_rx == 0 && link.cur_data_rate_tx == 0 {
+        String::new()
+    } else {
+        format!(
+            "({}/{}) Mbit/s",
+            link.cur_data_rate_rx, link.cur_data_rate_tx
+        )
+    }
+}
+fn model_suffix(model: &str) -> String {
+    if model.trim().is_empty() {
+        String::new()
+    } else {
+        format!(" {model}")
+    }
+}
+
+fn execute_home(command: HomeCommand, format: OutputFormat) -> Result<(), HandlerError> {
+    match command {
+        HomeCommand::List(args) => execute_home_list(args, format),
+        HomeCommand::Switch(_) | HomeCommand::Temp(_) => Err(HandlerError::operation(
+            "internal handler for home mutation is not implemented",
+        )),
+    }
+}
+fn execute_home_list(args: HomeListArgs, format: OutputFormat) -> Result<(), HandlerError> {
+    let (config, password) = load_connection()?;
+    if args.tr064 {
+        let mut client = make_tr064(&config.box_config, &password)?;
+        let devices = client
+            .homeauto_devices()
+            .map_err(|error| HandlerError::from_client("device list failed", &error))?;
+        if format != OutputFormat::Text {
+            let values: Vec<_> = devices.iter().map(HomeautoOutput::from).collect();
+            output::write(&mut std::io::stdout(), &values, format)
+                .map_err(|error| HandlerError::operation(error.to_string()))?;
+        } else if devices.is_empty() {
+            println!("No TR-064 smart-home devices found.");
+        } else {
+            println!(
+                "{:<16}  {:<24}  {:<16}  VERSION",
+                "AIN", "PRODUCT NAME", "MANUFACTURER"
+            );
+            for device in devices {
+                println!(
+                    "{:<16}  {:<24}  {:<16}  {}",
+                    device.ain,
+                    truncate(&device.product_name, 24),
+                    truncate(&device.manufacturer, 16),
+                    device.firmware_version
+                );
+            }
+        }
+        return Ok(());
+    }
+    let mut web = make_web(&config.box_config, &password)?;
+    let devices = web
+        .devices()
+        .map_err(|error| HandlerError::operation(format!("device list failed: {error}")))?;
+    let groups = web.groups().unwrap_or_default();
+    if format != OutputFormat::Text {
+        let payload = AhaCombinedOutput {
+            devices: devices.iter().map(AhaDeviceOutput::from).collect(),
+            groups: groups.iter().map(AhaGroupOutput::from).collect(),
+        };
+        output::write(&mut std::io::stdout(), &payload, format)
+            .map_err(|error| HandlerError::operation(error.to_string()))?;
+        return Ok(());
+    }
+    if devices.is_empty() && groups.is_empty() {
+        println!("No DECT smart-home actors found.");
+        return Ok(());
+    }
+    if !devices.is_empty() {
+        println!(
+            "Devices:\n{:<16}  {:<20}  {:<8}  {:<8}  INFO",
+            "AIN", "NAME", "STATE", "PRESENT"
+        );
+        for device in &devices {
+            let state = match device.switch.state.as_str() {
+                "1" => "on",
+                "0" => "off",
+                _ => "n/a",
+            };
+            let present = if device.present == 1 {
+                "online"
+            } else {
+                "offline"
+            };
+            let mut extra = Vec::new();
+            if !device.hkr.tsoll.is_empty() {
+                extra.push(format!(
+                    "temp: {}°C (target {}°C)",
+                    parse_hkr_temp(&device.hkr.tist),
+                    parse_hkr_temp(&device.hkr.tsoll)
+                ));
+                if !device.hkr.battery.is_empty() {
+                    extra.push(format!("bat: {}%", device.hkr.battery));
+                }
+                if device.hkr.windowopenactiv == "1" {
+                    extra.push(String::from("window: open"));
+                }
+                if device.hkr.errorcode != "0" && !device.hkr.errorcode.is_empty() {
+                    extra.push(
+                        symfritz_aha::hkr_error_description(&device.hkr.errorcode)
+                            .unwrap_or("unknown error")
+                            .to_owned(),
+                    );
+                }
+            }
+            if !device.powermeter.power.is_empty() {
+                let power = device.powermeter.power.parse::<f64>().unwrap_or(0.0) / 1000.0;
+                let energy = device.powermeter.energy.parse::<f64>().unwrap_or(0.0);
+                extra.push(format!("power: {power:.2}W (total {energy:.1}Wh)"));
+            }
+            let info = if extra.is_empty() {
+                String::new()
+            } else {
+                format!("({})", extra.join(", "))
+            };
+            println!(
+                "{:<16}  {:<20}  {:<8}  {:<8}  {}",
+                device.identifier,
+                truncate(&device.name, 20),
+                state,
+                present,
+                info
+            );
+        }
+    }
+    if !groups.is_empty() {
+        println!("\nGroups:\n{:<16}  {:<20}  MEMBERS", "AIN", "NAME");
+        for group in groups {
+            println!(
+                "{:<16}  {:<20}  {}",
+                group.identifier,
+                truncate(&group.name, 20),
+                group.members.join(", ")
+            );
+        }
+    }
+    Ok(())
+}
+fn parse_hkr_temp(value: &str) -> String {
+    let Ok(value) = value.parse::<i32>() else {
+        return String::from("—");
+    };
+    match value {
+        254 => String::from("ON"),
+        253 => String::from("OFF"),
+        value => format!("{:.1}", value as f64 / 2.0),
+    }
+}
+
+#[derive(Serialize)]
+struct HomeautoOutput<'a> {
+    #[serde(rename = "AIN")]
+    ain: &'a str,
+    #[serde(rename = "FunctionBitMask")]
+    function_bit_mask: i32,
+    #[serde(rename = "Manufacturer")]
+    manufacturer: &'a str,
+    #[serde(rename = "ProductName")]
+    product_name: &'a str,
+    #[serde(rename = "FirmwareVersion")]
+    firmware_version: &'a str,
+}
+impl<'a> From<&'a symfritz_tr064::HomeautoDevice> for HomeautoOutput<'a> {
+    fn from(value: &'a symfritz_tr064::HomeautoDevice) -> Self {
+        Self {
+            ain: &value.ain,
+            function_bit_mask: value.function_bit_mask,
+            manufacturer: &value.manufacturer,
+            product_name: &value.product_name,
+            firmware_version: &value.firmware_version,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct AhaCombinedOutput {
+    devices: Vec<AhaDeviceOutput>,
+    groups: Vec<AhaGroupOutput>,
+}
+#[derive(Serialize)]
+struct AhaDeviceOutput {
+    #[serde(rename = "Identifier")]
+    identifier: String,
+    #[serde(rename = "ID")]
+    id: String,
+    #[serde(rename = "Name")]
+    name: String,
+    #[serde(rename = "Present")]
+    present: i32,
+    #[serde(rename = "Switch")]
+    switch: AhaSwitchOutput,
+    #[serde(rename = "Temperature")]
+    temperature: AhaTemperatureOutput,
+    #[serde(rename = "Hkr")]
+    hkr: AhaHkrOutput,
+    #[serde(rename = "PowerMeter")]
+    power_meter: AhaPowerOutput,
+}
+#[derive(Serialize)]
+struct AhaSwitchOutput {
+    #[serde(rename = "State")]
+    state: String,
+}
+#[derive(Serialize)]
+struct AhaTemperatureOutput {
+    #[serde(rename = "Celsius")]
+    celsius: String,
+}
+#[derive(Serialize)]
+struct AhaHkrOutput {
+    #[serde(rename = "Tist")]
+    tist: String,
+    #[serde(rename = "Tsoll")]
+    tsoll: String,
+    #[serde(rename = "BatteryLow")]
+    battery_low: String,
+    #[serde(rename = "BatteryCharge")]
+    battery_charge: String,
+    #[serde(rename = "WindowOpen")]
+    window_open: String,
+    #[serde(rename = "ErrorCode")]
+    error_code: String,
+    #[serde(rename = "NextChange")]
+    next_change: AhaNextChangeOutput,
+}
+#[derive(Serialize)]
+struct AhaNextChangeOutput {
+    #[serde(rename = "End")]
+    end: String,
+    #[serde(rename = "Start")]
+    start: String,
+    #[serde(rename = "TChange")]
+    t_change: i32,
+}
+#[derive(Serialize)]
+struct AhaPowerOutput {
+    #[serde(rename = "Power")]
+    power: String,
+    #[serde(rename = "Energy")]
+    energy: String,
+}
+impl From<&AhaDevice> for AhaDeviceOutput {
+    fn from(value: &AhaDevice) -> Self {
+        Self {
+            identifier: value.identifier.clone(),
+            id: value.id.clone(),
+            name: value.name.clone(),
+            present: value.present,
+            switch: AhaSwitchOutput {
+                state: value.switch.state.clone(),
+            },
+            temperature: AhaTemperatureOutput {
+                celsius: value.temperature.celsius.clone(),
+            },
+            hkr: AhaHkrOutput {
+                tist: value.hkr.tist.clone(),
+                tsoll: value.hkr.tsoll.clone(),
+                battery_low: value.hkr.batterylow.clone(),
+                battery_charge: value.hkr.battery.clone(),
+                window_open: value.hkr.windowopenactiv.clone(),
+                error_code: value.hkr.errorcode.clone(),
+                next_change: AhaNextChangeOutput {
+                    end: value.hkr.nextchange.end.clone(),
+                    start: value.hkr.nextchange.start.clone(),
+                    t_change: value.hkr.nextchange.tchange,
+                },
+            },
+            power_meter: AhaPowerOutput {
+                power: value.powermeter.power.clone(),
+                energy: value.powermeter.energy.clone(),
+            },
+        }
+    }
+}
+#[derive(Serialize)]
+struct AhaGroupOutput {
+    #[serde(rename = "Identifier")]
+    identifier: String,
+    #[serde(rename = "ID")]
+    id: String,
+    #[serde(rename = "Name")]
+    name: String,
+    #[serde(rename = "Members")]
+    members: Vec<String>,
+    #[serde(rename = "GroupInfo")]
+    group_info: AhaGroupInfoOutput,
+}
+#[derive(Serialize)]
+struct AhaGroupInfoOutput {
+    #[serde(rename = "MasterDeviceID")]
+    master_device_id: String,
+    #[serde(rename = "MembersStr")]
+    members_str: String,
+}
+impl From<&AhaGroup> for AhaGroupOutput {
+    fn from(value: &AhaGroup) -> Self {
+        Self {
+            identifier: value.identifier.clone(),
+            id: value.id.clone(),
+            name: value.name.clone(),
+            members: value.members.clone(),
+            group_info: AhaGroupInfoOutput {
+                master_device_id: value.master_device_id.clone(),
+                members_str: value.members.join(","),
+            },
+        }
+    }
+}
+
+fn execute_scrape(args: ScrapeArgs) -> Result<(), HandlerError> {
+    let mut params = BTreeMap::new();
+    for argument in args.arguments {
+        let Some((key, value)) = argument.split_once('=') else {
+            return Err(HandlerError::config(format!(
+                "bad argument: argument {argument:?} is not Key=Value"
+            )));
+        };
+        params
+            .entry(key.to_owned())
+            .or_insert_with(Vec::new)
+            .push(value.to_owned());
+    }
+    let (config, password) = load_connection()?;
+    let mut client = make_web(&config.box_config, &password)?;
+    let raw = client
+        .scrape_data_lua(&args.page, &params)
+        .map_err(|error| HandlerError::operation(format!("scrape failed: {error}")))?;
+    println!("{raw}");
+    Ok(())
+}
+
+#[derive(Default, Serialize)]
+struct DoctorReport {
+    config_path: String,
+    host: String,
+    checks: Vec<DoctorCheck>,
+    healthy: bool,
+}
+#[derive(Serialize)]
+struct DoctorCheck {
+    name: String,
+    status: String,
+    detail: String,
+}
+fn execute_doctor(format: OutputFormat) -> Result<(), HandlerError> {
+    let config_path = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .map(|home| symfritz_core::config::default_config_path(&home))
+        .unwrap_or_else(|| std::path::PathBuf::from(".config/symfritz/config.toml"));
+    let mut report = DoctorReport {
+        config_path: config_path.display().to_string(),
+        healthy: true,
+        ..DoctorReport::default()
+    };
+    let config_missing = matches!(
+        std::fs::metadata(&config_path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound
+    );
+    let mut add = |name: &str, status: &str, detail: String| {
+        if status == "fail" {
+            report.healthy = false;
+        }
+        report.checks.push(DoctorCheck {
+            name: name.to_owned(),
+            status: status.to_owned(),
+            detail,
+        });
+    };
+    match std::fs::metadata(&config_path) {
+        Ok(metadata) if metadata.is_dir() => {
+            add("config file", "fail", String::from("path is a directory"))
+        }
+        Ok(_) => add("config file", "ok", report.config_path.clone()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => add(
+            "config file",
+            "fail",
+            String::from("not found; run 'symfritz config init'"),
+        ),
+        Err(error) => add(
+            "config file",
+            "fail",
+            format!("cannot inspect configuration file: {error}"),
+        ),
+    }
+    let mut config = match symfritz_core::config::load_config() {
+        Ok(config) => {
+            if config_missing {
+                add(
+                    "config parse",
+                    "skip",
+                    String::from("not checked because the config file is missing"),
+                );
+            } else {
+                add("config parse", "ok", String::from("configuration is valid"));
+            }
+            config
+        }
+        Err(error) => {
+            add(
+                "config parse",
+                "fail",
+                format!("configuration is not parseable: {error}"),
+            );
+            Config::default()
+        }
+    };
+    if let Ok(host) = std::env::var("SYMFRITZ_HOST")
+        && !host.is_empty()
+    {
+        config.box_config.host = host;
+    }
+    if let Ok(user) = std::env::var("SYMFRITZ_USER")
+        && !user.is_empty()
+    {
+        config.box_config.user = user;
+    }
+    report.host = config.box_config.host.clone();
+    let credential = match resolve(&SecretOptions::from(&config.box_config)) {
+        Ok(result) if result.source != CredentialSource::None && !result.password.is_empty() => {
+            add(
+                "credentials",
+                "ok",
+                format!("resolved from {}", result.source),
+            );
+            Some(result.password)
+        }
+        Ok(_) => {
+            add(
+                "credentials",
+                "fail",
+                String::from("no credential resolved; run 'symfritz auth login'"),
+            );
+            None
+        }
+        Err(error) => {
+            add(
+                "credentials",
+                "fail",
+                format!("credential resolution failed: {error}"),
+            );
+            None
+        }
+    };
+    let (mut discovery_ok, mut session_ok) = (false, false);
+    if let Some(password) = credential {
+        let mut tr064 = make_tr064(&config.box_config, &password)?;
+        match tr064.discover() {
+            Ok(services) => {
+                discovery_ok = true;
+                add(
+                    "box reachable",
+                    "ok",
+                    String::from("TR-064 service description responded"),
+                );
+                if services.is_empty() {
+                    add(
+                        "TR-064 enabled",
+                        "fail",
+                        String::from("no services advertised"),
+                    );
+                } else {
+                    add(
+                        "TR-064 enabled",
+                        "ok",
+                        format!("{} service(s) advertised", services.len()),
+                    );
+                }
+            }
+            Err(error) => {
+                add(
+                    "box reachable",
+                    "fail",
+                    format!("TR-064 discovery request failed: {error}"),
+                );
+                add(
+                    "TR-064 enabled",
+                    "fail",
+                    format!("service description unavailable: {error}"),
+                );
+            }
+        }
+        let mut web = make_web(&config.box_config, &password)?;
+        match web.sid() {
+            Ok(_) => {
+                session_ok = true;
+                add("session login", "ok", String::from("session established"));
+            }
+            Err(error) => add(
+                "session login",
+                "fail",
+                format!("FRITZ!Box session login failed: {error}"),
+            ),
+        }
+        if discovery_ok && session_ok {
+            match web.devices() {
+                Ok(devices) if !devices.is_empty() => add(
+                    "AHA endpoint",
+                    "ok",
+                    format!("{} actor(s) reachable", devices.len()),
+                ),
+                Ok(_) => add(
+                    "AHA endpoint",
+                    "skip",
+                    String::from("no smart-home actors reported"),
+                ),
+                Err(_) => add(
+                    "AHA endpoint",
+                    "skip",
+                    String::from("no smart-home actors configured or endpoint unavailable"),
+                ),
+            }
+        } else {
+            add(
+                "AHA endpoint",
+                "skip",
+                String::from("requires a reachable box and successful session login"),
+            );
+        }
+    } else {
+        add(
+            "box reachable",
+            "skip",
+            String::from("requires resolved credentials"),
+        );
+        add(
+            "TR-064 enabled",
+            "skip",
+            String::from("requires a reachable box"),
+        );
+        add(
+            "session login",
+            "skip",
+            String::from("requires resolved credentials"),
+        );
+        add(
+            "AHA endpoint",
+            "skip",
+            String::from("requires a reachable box and successful session login"),
+        );
+    }
+    if format == OutputFormat::Text {
+        println!("symfritz doctor ({})", report.host);
+        for check in &report.checks {
+            let glyph = match check.status.as_str() {
+                "ok" => "✓",
+                "fail" => "✗",
+                _ => "·",
+            };
+            println!("  {glyph} {:<18} {}", check.name, check.detail);
+        }
+        println!(
+            "\nResult: {}",
+            if report.healthy {
+                "healthy"
+            } else {
+                "problems detected"
+            }
+        );
+    } else {
+        output::write(&mut std::io::stdout(), &report, format)
+            .map_err(|error| HandlerError::operation(error.to_string()))?;
+    }
+    if report.healthy {
+        Ok(())
+    } else {
+        let mut error = HandlerError::operation("doctor found failing checks");
+        error.status = true;
+        Err(error)
+    }
+}
+
+fn execute_version(args: VersionArgs, format: OutputFormat) -> Result<(), HandlerError> {
+    print!("{}", render_version(format, VERSION));
+    if format == OutputFormat::Text && args.check {
+        match check_for_update(VERSION) {
+            Ok(Some(release)) => println!(
+                "Update available: {}\nDownload: {}",
+                release.tag_name, release.html_url
+            ),
+            Ok(None) => println!("Already up to date."),
+            Err(error) => eprintln!("update check failed: {error}"),
+        }
+    }
+    Ok(())
+}
+#[derive(Deserialize)]
+struct LatestRelease {
+    tag_name: String,
+    html_url: String,
+    draft: bool,
+    prerelease: bool,
+}
+fn check_for_update(current: &str) -> Result<Option<LatestRelease>, String> {
+    let Some(current) = parse_stable_version(current) else {
+        return Ok(None);
+    };
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| error.to_string())?;
+    let response = client
+        .get("https://api.github.com/repos/danieljustus/symaira-fritz/releases/latest")
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", format!("symfritz-updatecheck/{VERSION}"))
+        .send()
+        .map_err(|error| error.to_string())?;
+    if response.status() != reqwest::StatusCode::OK {
+        return Err(format!("GitHub API returned HTTP {}", response.status()));
+    }
+    let mut body = Vec::new();
+    response
+        .take(1 << 20)
+        .read_to_end(&mut body)
+        .map_err(|error| error.to_string())?;
+    let release: LatestRelease = serde_json::from_slice(&body)
+        .map_err(|error| format!("decode latest release response: {error}"))?;
+    if release.draft {
+        return Err(String::from(
+            "latest release response returned a draft release",
+        ));
+    }
+    if release.prerelease {
+        return Err(String::from(
+            "latest release response returned a prerelease",
+        ));
+    }
+    let latest = parse_stable_version(&release.tag_name).ok_or_else(|| {
+        format!(
+            "latest release tag {:?} is not a stable semantic version",
+            release.tag_name
+        )
+    })?;
+    if latest > current && !(current.0 == 0 && latest.0 > 0) {
+        Ok(Some(release))
+    } else {
+        Ok(None)
+    }
+}
+fn parse_stable_version(raw: &str) -> Option<(u64, u64, u64)> {
+    let raw = raw.trim();
+    if raw.is_empty() || raw.contains(['-', '+']) {
+        return None;
+    }
+    let raw = raw.strip_prefix('v').unwrap_or(raw);
+    let mut parts = raw.split('.');
+    Some((
+        parts.next()?.parse().ok()?,
+        parts.next()?.parse().ok()?,
+        parts.next()?.parse().ok()?,
+    ))
+}
+
+fn execute_completion(command: CompletionCommand) -> Result<(), HandlerError> {
+    let mut root = Cli::command();
+    match command {
+        CompletionCommand::Bash(args) => {
+            if args.no_descriptions {
+                strip_command_descriptions(&mut root);
+            }
+            generate(shells::Bash, &mut root, "symfritz", &mut std::io::stdout());
+        }
+        CompletionCommand::Fish(args) => {
+            if args.no_descriptions {
+                strip_command_descriptions(&mut root);
+            }
+            generate(shells::Fish, &mut root, "symfritz", &mut std::io::stdout());
+        }
+        CompletionCommand::Powershell(args) => {
+            if args.no_descriptions {
+                strip_command_descriptions(&mut root);
+            }
+            generate(
+                shells::PowerShell,
+                &mut root,
+                "symfritz",
+                &mut std::io::stdout(),
+            );
+        }
+        CompletionCommand::Zsh(args) => {
+            if args.no_descriptions {
+                strip_command_descriptions(&mut root);
+            }
+            generate(shells::Zsh, &mut root, "symfritz", &mut std::io::stdout());
+        }
+    }
+    Ok(())
+}
+fn strip_command_descriptions(command: &mut clap::Command) {
+    *command = std::mem::take(command)
+        .about(Option::<&str>::None)
+        .long_about(Option::<&str>::None);
+    for child in command.get_subcommands_mut() {
+        strip_command_descriptions(child);
     }
 }

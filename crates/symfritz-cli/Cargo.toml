@@ -13,10 +13,12 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
+clap_complete.workspace = true
 getrandom.workspace = true
 hex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+reqwest.workspace = true
 symfritz-aha = { path = "../symfritz-aha", version = "=0.0.0" }
 symfritz-core.workspace = true
 symfritz-tr064 = { path = "../symfritz-tr064", version = "=0.0.0" }
