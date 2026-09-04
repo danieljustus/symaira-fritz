@@ -1,10 +1,11 @@
 #![deny(unsafe_code)]
 
-//! Session-id and best-effort `data.lua` clients for FRITZ!OS.
+//! Session-id and bounded web-origin clients for FRITZ!OS.
 //!
-//! `data.lua` is an internal web-UI endpoint. AVM changes its request and
-//! response shape between FRITZ!OS releases, so this crate deliberately exposes
-//! only the bounded raw JSON response and does not model its contents.
+//! The crate owns the session-authenticated web origin: AHA/Homeauto commands,
+//! the experimental `query.lua` CPU endpoint, and the raw `data.lua` scraper.
+//! AVM changes the web-UI request and response shape between FRITZ!OS releases,
+//! so `data.lua` deliberately exposes only its bounded raw JSON response.
 
 use std::{
     collections::BTreeMap,
@@ -23,6 +24,8 @@ pub const INVALID_SID: &str = "0000000000000000";
 pub const LOGIN_RESPONSE_LIMIT: usize = 1 << 16;
 /// Maximum response body prefix retained and parsed from `data.lua` (5 MiB).
 pub const DATA_LUA_RESPONSE_LIMIT: usize = 5 << 20;
+/// Maximum response body prefix retained and parsed from `query.lua` (1 MiB).
+pub const QUERY_RESPONSE_LIMIT: usize = 1 << 20;
 /// Default local cache lifetime for a SID.
 pub const DEFAULT_SID_TTL: Duration = Duration::from_secs(15 * 60);
 
@@ -138,6 +141,7 @@ pub enum ClientError {
     RateLimited(i64),
     AhaForbiddenAfterRelogin,
     AhaHttpStatus { switchcmd: String, status: u16 },
+    CpuHttpStatus(u16),
     DataLuaHttpStatus(u16),
     HtmlLoginPage,
     NonJsonResponse { content_type: String },
@@ -166,6 +170,7 @@ impl fmt::Display for ClientError {
             Self::AhaHttpStatus { switchcmd, status } => {
                 write!(formatter, "aha: {switchcmd} returned HTTP {status}")
             }
+            Self::CpuHttpStatus(status) => write!(formatter, "query.lua returned HTTP {status}"),
             Self::DataLuaHttpStatus(status) => {
                 write!(formatter, "scrape: data.lua returned HTTP {status}")
             }
@@ -415,6 +420,47 @@ impl<T: Transport, C: Clock> Client<T, C> {
             return Err(ClientError::HtmlLoginPage);
         }
         Err(ClientError::NonJsonResponse { content_type })
+    }
+
+    /// Query CPU temperatures through the experimental `query.lua` endpoint.
+    ///
+    /// CPU data is served by the web origin and therefore uses this client's
+    /// own cached SID, not the TR-064 digest client.
+    pub fn cpu_temperatures(&mut self) -> Result<Vec<i64>, ClientError> {
+        let response = self.cpu_once()?;
+        if response.status == 403 {
+            self.invalidate_sid();
+            let response = self.cpu_once()?;
+            return self.validate_cpu_response(response);
+        }
+        self.validate_cpu_response(response)
+    }
+
+    fn cpu_once(&mut self) -> Result<Response, ClientError> {
+        let sid = self.sid()?;
+        let request = Request {
+            method: Method::Post,
+            url: format!(
+                "{}/query.lua?sid={}",
+                self.base_url,
+                encode_query_value(&sid)
+            ),
+            headers: BTreeMap::from([("Content-Type".to_owned(), "application/json".to_owned())]),
+            body: br#"{"CPUTEMP":"cpu:status/StatTemperature"}"#.to_vec(),
+            response_limit: QUERY_RESPONSE_LIMIT,
+        };
+        let mut response = self.transport.send(request).map_err(|error| {
+            ClientError::Transport(format!("status: contacting FRITZ!Box: {error}"))
+        })?;
+        response.body.truncate(QUERY_RESPONSE_LIMIT);
+        Ok(response)
+    }
+
+    fn validate_cpu_response(&self, response: Response) -> Result<Vec<i64>, ClientError> {
+        if response.status != 200 {
+            return Err(ClientError::CpuHttpStatus(response.status));
+        }
+        parse_cpu_response(&response.body)
     }
 
     /// Perform one AHA-HTTP `switchcmd`, retrying exactly once after HTTP 403.
@@ -870,6 +916,26 @@ pub fn parse_session_info(body: &[u8]) -> Result<SessionInfo, ClientError> {
 
 fn is_valid_sid(sid: &str) -> bool {
     !sid.is_empty() && sid != INVALID_SID
+}
+
+fn parse_cpu_response(body: &[u8]) -> Result<Vec<i64>, ClientError> {
+    let values: serde_json::Value = serde_json::from_slice(body).map_err(|error| {
+        ClientError::Transport(format!("status: parsing query.lua response: {error}"))
+    })?;
+    let raw = values
+        .get("CPUTEMP")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            ClientError::Transport("query.lua response missing CPUTEMP key".to_owned())
+        })?;
+    Ok(raw
+        .split(',')
+        .filter_map(|value| value.parse().ok())
+        .collect())
+}
+
+fn encode_query_value(value: &str) -> String {
+    url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
 }
 
 fn encode_pairs<I, K, V>(pairs: I) -> String

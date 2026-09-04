@@ -273,41 +273,7 @@ fn dial_hangup_reboot_and_log_filter_have_exact_raw_calls() {
 }
 
 #[test]
-fn cpu_query_uses_json_and_refreshes_exactly_once_after_forbidden() {
-    let mut client = client([
-        Response {
-            status: 403,
-            ..Response::default()
-        },
-        get(r#"{"CPUTEMP":"41,broken,42,43"}"#),
-    ]);
-    let temps = client
-        .cpu_temperatures_with_refresh("mock-sid", || Ok("fresh-sid".to_owned()))
-        .unwrap();
-    assert_eq!(temps, [41, 42, 43]);
-    let transport = client.into_transport();
-    assert_eq!(transport.requests.len(), 2);
-    assert_eq!(
-        transport.requests[0].url,
-        "http://fritz.box:49000/query.lua?sid=mock-sid"
-    );
-    assert_eq!(
-        transport.requests[1].url,
-        "http://fritz.box:49000/query.lua?sid=fresh-sid"
-    );
-    assert_eq!(transport.requests[0].method, Method::Post);
-    assert_eq!(
-        transport.requests[0].headers["Content-Type"],
-        "application/json"
-    );
-    assert_eq!(
-        transport.requests[0].body,
-        br#"{"CPUTEMP":"cpu:status/StatTemperature"}"#
-    );
-}
-
-#[test]
-fn negative_empty_paths_missing_cpu_key_and_malformed_xml_are_errors() {
+fn negative_empty_paths_and_malformed_xml_are_errors() {
     let mut calls = client([soap("GetCallList", &[("NewCallListURL", "")])]);
     assert_eq!(
         calls.calls(CALL_ALL, 0, 0).unwrap_err().to_string(),
@@ -320,11 +286,6 @@ fn negative_empty_paths_missing_cpu_key_and_malformed_xml_are_errors() {
     assert_eq!(
         log.device_log("sys").unwrap_err().to_string(),
         "tr064: GetDeviceLogPath returned empty path"
-    );
-    let mut cpu = client([get("{}")]);
-    assert_eq!(
-        cpu.cpu_temperatures("sid").unwrap_err().to_string(),
-        "query.lua response missing CPUTEMP key"
     );
     let mut malformed = client([
         soap("GetCallList", &[("NewCallListURL", "/calls")]),

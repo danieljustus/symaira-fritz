@@ -104,14 +104,14 @@ func TestPortRemainingCapabilitiesFixture(t *testing.T) {
 			{ID: "phone-hangup", ServiceType: ServiceVoIP.Type, ControlURL: ServiceVoIP.ControlURL, Action: "X_AVM-DE_DialHangup"},
 			{ID: "log-path", ServiceType: ServiceDeviceInfo.Type, ControlURL: ServiceDeviceInfo.ControlURL, Action: "X_AVM-DE_GetDeviceLogPath"},
 			{ID: "reboot", ServiceType: "urn:dslforum-org:service:DeviceConfig:1", ControlURL: "/upnp/control/deviceconfig", Action: "Reboot"},
-			{ID: "cpu-query", Method: "POST", URL: "/query.lua?sid=mock-sid", Body: `{"CPUTEMP":"cpu:status/StatTemperature"}`},
+			{ID: "cpu-query", Method: "POST", URL: "http://fritz.box/query.lua?sid=mock-sid", Body: `{"CPUTEMP":"cpu:status/StatTemperature"}`},
 		},
 		Fallbacks: []portRemainingFallback{
 			{ID: "dsl-unauthorized-to-igd", Trigger: "unauthorized", Reduced: true, ExpectedRequest: []portRemainingRequest{{ID: "dsl-igd-common", ServiceType: ServiceIGDWANCommonIFC.Type, ControlURL: ServiceIGDWANCommonIFC.ControlURL, Action: "GetCommonLinkProperties"}}},
 			{ID: "traffic-unauthorized-to-igd", Trigger: "unauthorized", Reduced: true, ExpectedRequest: []portRemainingRequest{{ID: "traffic-igd-addon", ServiceType: ServiceIGDWANCommonIFC.Type, ControlURL: ServiceIGDWANCommonIFC.ControlURL, Action: "GetAddonInfos"}}},
 			{ID: "calls-filter-order", Trigger: "days=7,max=2,type=missed", Reduced: false, ExpectedRequest: []portRemainingRequest{{ID: "phone-list", ServiceType: ServiceOnTel.Type, ControlURL: ServiceOnTel.ControlURL, Action: "GetCallList"}}},
 			{ID: "log-filter-all-omitted", Trigger: "filter=all", Reduced: false, ExpectedRequest: []portRemainingRequest{{ID: "log-path", ServiceType: ServiceDeviceInfo.Type, ControlURL: ServiceDeviceInfo.ControlURL, Action: "X_AVM-DE_GetDeviceLogPath"}}},
-			{ID: "cpu-403-refresh-once", Trigger: "HTTP 403", Reduced: false, ExpectedRequest: []portRemainingRequest{{ID: "cpu-query", Method: "POST", URL: "/query.lua?sid=mock-sid", Body: `{"CPUTEMP":"cpu:status/StatTemperature"}`}, {ID: "cpu-query-refresh", Method: "POST", URL: "/query.lua?sid=fresh-sid", Body: `{"CPUTEMP":"cpu:status/StatTemperature"}`}}},
+			{ID: "cpu-403-refresh-once", Trigger: "HTTP 403", Reduced: false, ExpectedRequest: []portRemainingRequest{{ID: "cpu-query", Method: "POST", URL: "http://fritz.box/query.lua?sid=mock-sid", Body: `{"CPUTEMP":"cpu:status/StatTemperature"}`}, {ID: "cpu-query-refresh", Method: "POST", URL: "http://fritz.box/query.lua?sid=fresh-sid", Body: `{"CPUTEMP":"cpu:status/StatTemperature"}`}}},
 		},
 		Negative: []portCapabilityNegative{
 			{ID: "empty-call-list-url", Input: "", Message: "tr064: GetCallList returned empty NewCallListURL"},

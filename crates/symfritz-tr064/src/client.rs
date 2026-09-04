@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use symfritz_core::auth::{DigestChallenge, digest_authorization_header, parse_digest_challenge};
 
+use crate::safeurl::{redact_error_message, redact_raw_url, redact_url};
 use crate::{
     DiscoveryError, Service, SoapParseError, build_request, find_service_by_name,
     parse_description, parse_fault, parse_response,
@@ -239,10 +240,6 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
         self.transport
     }
 
-    pub(crate) fn transport_mut(&mut self) -> &mut T {
-        &mut self.transport
-    }
-
     pub(crate) fn authenticated_get(&mut self, url: &str) -> Result<Response, ClientError> {
         self.authenticated_get_with_limit(url, 1 << 20)
     }
@@ -252,8 +249,9 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
         url: &str,
         response_limit: usize,
     ) -> Result<Response, ClientError> {
-        let parsed = url::Url::parse(url)
-            .map_err(|error| ClientError::Transport(format!("invalid GET URL {url}: {error}")))?;
+        let parsed = url::Url::parse(url).map_err(|error| {
+            ClientError::Transport(format!("invalid GET URL {}: {error}", redact_raw_url(url)))
+        })?;
         let mut uri = parsed.path().to_owned();
         if let Some(query) = parsed.query() {
             uri.push('?');
@@ -273,7 +271,7 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
         let mut response = self
             .transport
             .send(request)
-            .map_err(|error| ClientError::Transport(error.0))?;
+            .map_err(|error| ClientError::Transport(redact_error_message(&error.0, &parsed)))?;
         response.body.truncate(response_limit);
         if response.status == 401 {
             let (challenge, valid) = response
@@ -295,17 +293,18 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
                 url: url.to_owned(),
                 headers: BTreeMap::from([(String::from("Authorization"), authorization)]),
                 body: Vec::new(),
-                response_limit: SOAP_RESPONSE_LIMIT,
+                response_limit,
             };
             response = self
                 .transport
                 .send(request)
-                .map_err(|error| ClientError::Transport(error.0))?;
+                .map_err(|error| ClientError::Transport(redact_error_message(&error.0, &parsed)))?;
             response.body.truncate(response_limit);
         }
         if response.status != 200 {
             return Err(ClientError::Transport(format!(
-                "GET {url} returned HTTP {}",
+                "GET {} returned HTTP {}",
+                redact_url(&parsed),
                 response.status
             )));
         }

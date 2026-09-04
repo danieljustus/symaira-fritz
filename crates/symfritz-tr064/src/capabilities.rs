@@ -6,14 +6,12 @@ use std::{
     time::Duration,
 };
 
-use crate::{Client, ClientError, CnonceSource, Method, Request, Response, Service, Transport};
+use crate::{Client, ClientError, CnonceSource, Method, Request, Service, Transport};
 use roxmltree::Document;
 use serde::{Deserialize, Serialize};
 
 const MAX_DIAGNOSIS_WORKERS: usize = 8;
 const MESH_RESPONSE_LIMIT: usize = 8 << 20;
-const QUERY_RESPONSE_LIMIT: usize = 1 << 20;
-const QUERY_CPU_BODY: &str = r#"{"CPUTEMP":"cpu:status/StatTemperature"}"#;
 
 /// Error categories shared by typed capability reports.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -112,6 +110,7 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
     pub fn status(&mut self) -> Result<Status, ClientError> {
         let mut status = Status::default();
         let mut errors = Vec::new();
+        let mut original_errors = Vec::new();
 
         match self.call(&Service::device_info(), "GetInfo", &BTreeMap::new()) {
             Ok(values) => {
@@ -122,7 +121,10 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
                     .unwrap_or_default();
                 status.uptime = values.get("NewUpTime").cloned().unwrap_or_default();
             }
-            Err(error) => errors.push(StatusError::from_error("DeviceInfo", "GetInfo", &error)),
+            Err(error) => {
+                original_errors.push(error.clone());
+                errors.push(StatusError::from_error("DeviceInfo", "GetInfo", &error));
+            }
         }
 
         match self.wan_connection_call("GetInfo") {
@@ -132,7 +134,10 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
                     .cloned()
                     .unwrap_or_default();
             }
-            Err(error) => errors.push(StatusError::from_error("WANConnection", "GetInfo", &error)),
+            Err(error) => {
+                original_errors.push(error.clone());
+                errors.push(StatusError::from_error("WANConnection", "GetInfo", &error));
+            }
         }
         match self.wan_connection_call("GetExternalIPAddress") {
             Ok(values) => {
@@ -141,15 +146,21 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
                     .cloned()
                     .unwrap_or_default();
             }
-            Err(error) => errors.push(StatusError::from_error(
-                "WANConnection",
-                "GetExternalIPAddress",
-                &error,
-            )),
+            Err(error) => {
+                original_errors.push(error.clone());
+                errors.push(StatusError::from_error(
+                    "WANConnection",
+                    "GetExternalIPAddress",
+                    &error,
+                ));
+            }
         }
         match self.update_available() {
             Ok(version) => status.update_available = version,
-            Err(error) => errors.push(StatusError::from_error("UserInterface", "GetInfo", &error)),
+            Err(error) => {
+                original_errors.push(error.clone());
+                errors.push(StatusError::from_error("UserInterface", "GetInfo", &error));
+            }
         }
 
         status.partial = !errors.is_empty();
@@ -160,17 +171,15 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
             && status.connection_state.is_empty()
             && status.uptime.is_empty();
         if status.errors.len() == 4 || (no_primary_data && status.partial) {
-            if let Some(error) = status
-                .errors
-                .iter()
-                .find(|error| error.kind == ErrorKind::Unauthorized)
-            {
-                return Err(ClientError::Transport(error.message.clone()));
+            if let Some(error) = original_errors.iter().find(|error| is_unauthorized(error)) {
+                return Err(error.clone());
             }
-            return Err(ClientError::Transport(status.errors.first().map_or_else(
-                || "all status sub-queries failed".to_owned(),
-                |error| error.message.clone(),
-            )));
+            if let Some(error) = original_errors.first() {
+                return Err(error.clone());
+            }
+            return Err(ClientError::Transport(
+                "all status sub-queries failed".to_owned(),
+            ));
         }
         Ok(status)
     }
@@ -520,60 +529,6 @@ fn is_false(value: &bool) -> bool {
 }
 
 impl<T: Transport, C: CnonceSource> Client<T, C> {
-    /// Query CPU temperatures through the experimental `query.lua` endpoint.
-    /// The SID is supplied by the session client because TR-064 and session
-    /// authentication intentionally remain separate adapters.
-    pub fn cpu_temperatures(&mut self, sid: &str) -> Result<Vec<i64>, ClientError> {
-        let response = self.query_lua(sid)?;
-        parse_cpu_response(&response.body)
-    }
-
-    /// Same query with one caller-owned SID refresh after HTTP 403. This is
-    /// the exact bounded retry shape of Go's CPUTemperatures method.
-    pub fn cpu_temperatures_with_refresh<F>(
-        &mut self,
-        sid: &str,
-        mut refresh: F,
-    ) -> Result<Vec<i64>, ClientError>
-    where
-        F: FnMut() -> Result<String, ClientError>,
-    {
-        match self.query_lua(sid) {
-            Ok(response) => parse_cpu_response(&response.body),
-            Err(ClientError::Transport(message)) if message == "query.lua returned HTTP 403" => {
-                let fresh_sid = refresh()?;
-                let response = self.query_lua(&fresh_sid)?;
-                parse_cpu_response(&response.body)
-            }
-            Err(error) => Err(error),
-        }
-    }
-
-    fn query_lua(&mut self, sid: &str) -> Result<Response, ClientError> {
-        let encoded_sid: String = url::form_urlencoded::byte_serialize(sid.as_bytes()).collect();
-        let request = Request {
-            method: Method::Post,
-            url: format!("{}/query.lua?sid={encoded_sid}", self.base_url()),
-            headers: BTreeMap::from([(
-                String::from("Content-Type"),
-                String::from("application/json"),
-            )]),
-            body: QUERY_CPU_BODY.as_bytes().to_vec(),
-            response_limit: QUERY_RESPONSE_LIMIT,
-        };
-        let mut response = self.transport_mut().send(request).map_err(|error| {
-            ClientError::Transport(format!("status: contacting FRITZ!Box: {error}"))
-        })?;
-        response.body.truncate(QUERY_RESPONSE_LIMIT);
-        if response.status != 200 {
-            return Err(ClientError::Transport(format!(
-                "query.lua returned HTTP {}",
-                response.status
-            )));
-        }
-        Ok(response)
-    }
-
     /// Fetch DSL statistics, falling back to the unauthenticated IGD service
     /// only for an authentication failure.
     pub fn dsl_line_stats(&mut self) -> Result<DslLineStats, ClientError> {
@@ -735,22 +690,6 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
         self.call(&Service::device_config(), "Reboot", &BTreeMap::new())
             .map(|_| ())
     }
-}
-
-fn parse_cpu_response(body: &[u8]) -> Result<Vec<i64>, ClientError> {
-    let values: serde_json::Value = serde_json::from_slice(body).map_err(|error| {
-        ClientError::Transport(format!("status: parsing query.lua response: {error}"))
-    })?;
-    let raw = values
-        .get("CPUTEMP")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| {
-            ClientError::Transport("query.lua response missing CPUTEMP key".to_owned())
-        })?;
-    Ok(raw
-        .split(',')
-        .filter_map(|value| value.parse().ok())
-        .collect())
 }
 
 fn parse_i64(value: Option<&String>) -> i64 {

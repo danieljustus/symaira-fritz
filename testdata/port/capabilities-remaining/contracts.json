@@ -149,7 +149,7 @@
     {
       "id": "cpu-query",
       "method": "POST",
-      "url": "/query.lua?sid=mock-sid",
+      "url": "http://fritz.box/query.lua?sid=mock-sid",
       "body": "{\"CPUTEMP\":\"cpu:status/StatTemperature\"}"
     }
   ],
@@ -214,13 +214,13 @@
         {
           "id": "cpu-query",
           "method": "POST",
-          "url": "/query.lua?sid=mock-sid",
+          "url": "http://fritz.box/query.lua?sid=mock-sid",
           "body": "{\"CPUTEMP\":\"cpu:status/StatTemperature\"}"
         },
         {
           "id": "cpu-query-refresh",
           "method": "POST",
-          "url": "/query.lua?sid=fresh-sid",
+          "url": "http://fritz.box/query.lua?sid=fresh-sid",
           "body": "{\"CPUTEMP\":\"cpu:status/StatTemperature\"}"
         }
       ]

@@ -45,6 +45,16 @@ impl CnonceSource for NoCnonce {
     }
 }
 
+struct SequenceCnonce(VecDeque<String>);
+
+impl CnonceSource for SequenceCnonce {
+    fn next_cnonce(&mut self) -> Result<String, String> {
+        self.0
+            .pop_front()
+            .ok_or_else(|| "cnonce not queued".to_owned())
+    }
+}
+
 fn soap(action: &str, values: &[(&str, &str)]) -> Response {
     let mut body = format!(
         "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><u:{action}Response>"
@@ -56,6 +66,14 @@ fn soap(action: &str, values: &[(&str, &str)]) -> Response {
     Response {
         status: 200,
         body: body.into_bytes(),
+        ..Response::default()
+    }
+}
+
+fn unauthorized() -> Response {
+    Response {
+        status: 500,
+        body: b"<s:Fault><detail><UPnPError><errorCode>606</errorCode><errorDescription>unauthorized</errorDescription></UPnPError></detail></s:Fault>".to_vec(),
         ..Response::default()
     }
 }
@@ -314,4 +332,110 @@ fn diagnosis_keeps_port_order_and_optional_failures_are_warnings() {
 #[allow(dead_code)]
 fn _service_type_is_stable(service: &Service) -> (&str, &str) {
     (&service.service_type, &service.control_url)
+}
+
+#[test]
+fn status_returns_original_prioritized_unauthorized_error() {
+    let mut client = make_client([
+        Response {
+            status: 500,
+            body: b"not a SOAP fault".to_vec(),
+            ..Response::default()
+        },
+        unauthorized(),
+        Response {
+            status: 500,
+            body: b"not a SOAP fault".to_vec(),
+            ..Response::default()
+        },
+        Response {
+            status: 500,
+            body: b"not a SOAP fault".to_vec(),
+            ..Response::default()
+        },
+    ]);
+    let error = client.status().unwrap_err();
+    assert_eq!(
+        error,
+        symfritz_tr064::ClientError::SoapFault {
+            status: 500,
+            code: 606,
+            description: "unauthorized".to_owned(),
+        }
+    );
+    assert_eq!(
+        symfritz_tr064::error_kind(&error),
+        symfritz_tr064::ErrorKind::Unauthorized
+    );
+}
+
+#[test]
+fn status_keeps_partial_report_when_returning_original_error() {
+    let mut client = make_client([
+        unauthorized(),
+        unauthorized(),
+        unauthorized(),
+        unauthorized(),
+    ]);
+    let error = client.status().unwrap_err();
+    assert_eq!(
+        error,
+        symfritz_tr064::ClientError::SoapFault {
+            status: 500,
+            code: 606,
+            description: "unauthorized".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn mesh_digest_retry_preserves_requested_response_limit() {
+    let mut body = br#"{"schema_version":"1.0","nodes":[]}"#.to_vec();
+    body.resize((1 << 20) + 1, b' ');
+    let mut client = Client::new(
+        FakeTransport::new([
+            soap(
+                "X_AVM-DE_GetMeshListPath",
+                &[("NewX_AVM-DE_MeshListPath", "/mesh.json")],
+            ),
+            Response {
+                status: 401,
+                headers: BTreeMap::from([(
+                    "WWW-Authenticate".to_owned(),
+                    "Digest realm=\"F!Box\", nonce=\"abc123\", qop=\"auth\"".to_owned(),
+                )]),
+                ..Response::default()
+            },
+            Response {
+                status: 200,
+                body,
+                ..Response::default()
+            },
+        ]),
+        SequenceCnonce(VecDeque::from(["0011223344556677".to_owned()])),
+        "http://fritz.box:49000",
+        "user",
+        "pass",
+    );
+    client.mesh_topology().unwrap();
+    let transport = client.into_transport();
+    assert_eq!(transport.requests[1].response_limit, 8 << 20);
+    assert_eq!(transport.requests[2].response_limit, 8 << 20);
+}
+
+#[test]
+fn authenticated_get_status_errors_redact_query_values() {
+    let mut client = make_client([
+        soap(
+            "X_AVM-DE_GetMeshListPath",
+            &[("NewX_AVM-DE_MeshListPath", "/mesh.json?sid=secret-sid")],
+        ),
+        Response {
+            status: 500,
+            ..Response::default()
+        },
+    ]);
+    let error = client.mesh_topology().unwrap_err().to_string();
+    assert!(!error.contains("secret-sid"));
+    assert!(error.contains("sid=REDACTED"));
 }

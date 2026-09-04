@@ -23,7 +23,9 @@ pub use client::{
 };
 pub use discovery::{DiscoveryError, Service, find_service_by_name, parse_description};
 pub use homeauto::{HomeautoDevice, homeauto_service};
-pub use safeurl::{SafeUrlError, redact_url, validate_request_url};
+pub use safeurl::{
+    SafeUrlError, redact_error_message, redact_raw_url, redact_url, validate_request_url,
+};
 pub use soap::{SoapParseError, build_request, parse_fault, parse_response};
 pub use transport::{
     BlockingHttpTransport, DEFAULT_RESPONSE_LIMIT, HttpTransportConfig, HttpTransportError,

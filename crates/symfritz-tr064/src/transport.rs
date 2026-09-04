@@ -22,7 +22,7 @@ use rustls::{
 use symfritz_core::pins::{PinStore, calculate_spki_pin};
 use url::Url;
 
-use crate::safeurl::{SafeUrlError, redact_url, validate_request_url};
+use crate::safeurl::{SafeUrlError, redact_raw_url, redact_url, validate_request_url};
 use crate::{Method, Request, Response, Transport, TransportError};
 
 /// Default maximum response size for a concrete transport.
@@ -274,7 +274,7 @@ impl Transport for BlockingHttpTransport {
         let requested = Url::parse(&request.url).map_err(|error| {
             TransportError(
                 HttpTransportError::Request {
-                    url: safe_raw_url(&request.url),
+                    url: redact_raw_url(&request.url),
                     message: error.to_string(),
                 }
                 .to_string(),
@@ -310,12 +310,6 @@ impl Transport for BlockingHttpTransport {
             Err(error) => Err(TransportError(error.to_string())),
         }
     }
-}
-
-fn safe_raw_url(raw: &str) -> String {
-    Url::parse(raw)
-        .map(|url| redact_url(&url))
-        .unwrap_or_else(|_| "<invalid URL>".to_owned())
 }
 
 fn error_chain(error: &dyn std::error::Error) -> String {
