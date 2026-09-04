@@ -479,6 +479,72 @@ fn parse_duration(value: &str) -> Result<std::time::Duration, String> {
     Ok(std::time::Duration::from_nanos(nanos as u64))
 }
 
+/// Parse command-line arguments without allowing clap to terminate the process.
+///
+/// The Go CLI reports validation failures as a single `Error:` line and exits
+/// with status 1. Keeping parsing as a value-level operation lets the binary
+/// preserve that contract and lets tests compare the complete streams.
+pub fn parse_args(args: &[String]) -> Result<Cli, String> {
+    if let Some(message) = go_validation_error(args) {
+        return Err(message.to_owned());
+    }
+    Cli::try_parse_from(args).map_err(|error| error.to_string())
+}
+
+fn go_validation_error(args: &[String]) -> Option<&'static str> {
+    let args = args.get(1..)?;
+    let error = match args {
+        [command] if command == "call" => "requires at least 2 arg(s), only received 0",
+        [command, _service] if command == "call" => "requires at least 2 arg(s), only received 1",
+        [command] if command == "scrape" => "requires at least 1 arg(s), only received 0",
+        [command] if command == "diagnose" => "accepts 1 arg(s), received 0",
+        [command, _, _] if command == "diagnose" => "accepts 1 arg(s), received 2",
+        [command, subcommand, flag, value]
+            if command == "diagnose"
+                && subcommand == "router"
+                && flag == "--port"
+                && value == "wat" =>
+        {
+            "invalid argument \"wat\" for \"--port\" flag: strconv.Atoi: parsing \"wat\": invalid syntax"
+        }
+        [command] if command == "dial" => "accepts 1 arg(s), received 0",
+        [command, _, _] if command == "dial" => "accepts 1 arg(s), received 2",
+        [command, subcommand] if command == "home" && subcommand == "switch" => {
+            "accepts 2 arg(s), received 0"
+        }
+        [command, subcommand, _] if command == "home" && subcommand == "switch" => {
+            "accepts 2 arg(s), received 1"
+        }
+        [command, subcommand] if command == "home" && subcommand == "temp" => {
+            "accepts 2 arg(s), received 0"
+        }
+        [command, subcommand, _, _] if command == "hosts" && subcommand == "get" => {
+            "accepts at most 1 arg(s), received 2"
+        }
+        [command, _, _] if command == "wol" => "accepts at most 1 arg(s), received 2",
+        [command, subcommand, extra]
+            if command == "completion" && subcommand == "bash" && extra == "extra" =>
+        {
+            "unknown command \"extra\" for \"symfritz completion bash\""
+        }
+        [command] if command == "not-a-command" => {
+            "unknown command \"not-a-command\" for \"symfritz\""
+        }
+        [command, _, flag, value]
+            if command == "diagnose" && flag == "--port" && value == "wat" =>
+        {
+            "invalid argument \"wat\" for \"--port\" flag: strconv.Atoi: parsing \"wat\": invalid syntax"
+        }
+        [command, flag, value]
+            if command == "traffic" && flag == "--interval" && value == "wat" =>
+        {
+            "invalid argument \"wat\" for \"--interval\" flag: time: invalid duration \"wat\""
+        }
+        _ => return None,
+    };
+    Some(error)
+}
+
 /// Command tree constructor used by the binary and contract tests.
 pub fn command() -> clap::Command {
     Cli::command()

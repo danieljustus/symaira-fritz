@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Black-box Go/Rust CLI parity checks with a local fake TR-064 endpoint.
+"""Evidence-gated black-box parity checks for the Go and Rust CLIs.
 
-The runner deliberately imports neither implementation. Each invocation gets a
-fresh HOME/XDG tree, a fixed locale/timezone, and only the documented test
-configuration. Stable text/help/error contracts use byte comparison; structured
-traffic output uses decoded JSON comparison because Go and Rust represent
-integral rates differently on the wire.
+The fake box is deliberately strict: an unexpected method, route, SOAP action,
+argument, or authentication sequence is a test failure, never a generic 200.
+All subprocesses use isolated HOME/XDG trees and a PATH containing no backend
+binaries, so these checks cannot contact a real router, Keychain, or SymVault.
 """
 from __future__ import annotations
 
@@ -13,6 +12,7 @@ import argparse
 import http.server
 import json
 import os
+import re
 import signal
 import socketserver
 import subprocess
@@ -22,48 +22,130 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 PORT = 49000
-TRAFFIC_XML = """<?xml version="1.0"?>
+REALM = "symfritz-test"
+NONCE = "fixed-test-nonce"
+TRAFFIC_XML = b'''<?xml version="1.0"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>
 <u:X_AVM-DE_GetOnlineMonitorResponse xmlns:u="urn:dslforum-org:service:WANCommonInterfaceConfig:1">
 <Newds_current_bps>1500000,1200000</Newds_current_bps><Newmc_current_bps>500000</Newmc_current_bps><Newds_guest_bps>0</Newds_guest_bps>
 <Newprio_realtime_bps>100000</Newprio_realtime_bps><Newprio_high_bps>200000</Newprio_high_bps><Newprio_default_bps>800000</Newprio_default_bps><Newprio_low_bps>50000</Newprio_low_bps><Newus_guest_bps>0</Newus_guest_bps>
-</u:X_AVM-DE_GetOnlineMonitorResponse></s:Body></s:Envelope>""".encode()
-GENERIC_XML = """<?xml version="1.0"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>
-<u:Response xmlns:u="urn:dslforum-org:service:DeviceInfo:1">
-<NewModelName>FRITZ!Box Test</NewModelName><NewSoftwareVersion>7.50</NewSoftwareVersion><NewExternalIPAddress>192.0.2.1</NewExternalIPAddress><NewConnectionStatus>Connected</NewConnectionStatus><NewUpTime>42</NewUpTime>
-<NewLayer1DownstreamMaxBitRate>100000000</NewLayer1DownstreamMaxBitRate><NewLayer1UpstreamMaxBitRate>20000000</NewLayer1UpstreamMaxBitRate>
-<NewHostNumberOfEntries>0</NewHostNumberOfEntries><NewCallListURL>/calllist.json</NewCallListURL><NewX_AVM-DE_HostListPath>/hosts.xml</NewX_AVM-DE_HostListPath>
-</u:Response></s:Body></s:Envelope>""".encode()
-DESC_XML = b'''<?xml version="1.0"?><root xmlns="urn:dslforum-org:device-1-0"><device><serviceList><service><serviceType>urn:dslforum-org:service:WANCommonInterfaceConfig:1</serviceType><controlURL>/upnp/control/wancommonifconfig1</controlURL></service><service><serviceType>urn:dslforum-org:service:DeviceInfo:1</serviceType><controlURL>/upnp/control/deviceinfo</controlURL></service></serviceList></device></root>'''
+</u:X_AVM-DE_GetOnlineMonitorResponse></s:Body></s:Envelope>'''
+DESC_XML = b'''<?xml version="1.0"?><root xmlns="urn:dslforum-org:device-1-0"><device><serviceList>
+<service><serviceType>urn:dslforum-org:service:WANCommonInterfaceConfig:1</serviceType><controlURL>/upnp/control/wancommonifconfig1</controlURL></service>
+<service><serviceType>urn:dslforum-org:service:DeviceInfo:1</serviceType><controlURL>/upnp/control/deviceinfo</controlURL></service>
+</serviceList></device></root>'''
+
+# This is the allow-list, not a response fall-through. Adding a command requires
+# adding its exact route/action here and a fixture response for that action.
+EXPECTED_ACTIONS = {
+    "/upnp/control/deviceinfo": {"GetInfo"},
+    "/upnp/control/userif": {"GetInfo"},
+    "/upnp/control/wanipconnection1": {"GetInfo", "GetExternalIPAddress"},
+    "/upnp/control/wanpppconn1": {"GetInfo", "GetExternalIPAddress"},
+    "/upnp/control/wancommonifconfig1": {"X_AVM-DE_GetOnlineMonitor"},
+    "/upnp/control/hosts": {
+        "X_AVM-DE_GetHostListPath", "GetHostNumberOfEntries", "GetGenericHostEntry",
+        "GetSpecificHostEntry", "X_AVM-DE_GetSpecificHostEntryByIP",
+        "X_AVM-DE_WakeOnLANByMACAddress",
+    },
+    "/upnp/control/wandslifconfig1": {"X_AVM-DE_GetDSLLinkInfo"},
+    "/upnp/control/x_voip": {
+        "X_AVM-DE_Dial", "X_AVM-DE_DialHangup",
+    },
+    "/upnp/control/x_contact": {"X_AVM-DE_GetCallList"},
+    "/upnp/control/deviceconfig": {"Reboot"},
+}
 
 
-class ReusableServer(socketserver.ThreadingTCPServer):
+class StrictFakeBox(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
-    request_count = 0
+
+    def __init__(self, address: tuple[str, int]) -> None:
+        super().__init__(address, StrictHandler)
+        self.requests: list[tuple[str, str, str, bytes]] = []
+        self.failures: list[str] = []
+        self.authenticated: set[tuple[str, str]] = set()
 
 
-class FakeBox(http.server.BaseHTTPRequestHandler):
+class StrictHandler(http.server.BaseHTTPRequestHandler):
+    server: StrictFakeBox  # type: ignore[reportIncompatibleVariableOverride]
+
     def do_GET(self) -> None:
-        if self.path == "/tr64desc.xml":
-            self.reply(DESC_XML, "text/xml")
-        else:
+        if self.path != "/tr64desc.xml":
+            self.server.failures.append(f"GET unexpected path {self.path!r}")
             self.send_error(404)
+            return
+        self.server.requests.append(("GET", self.path, "", b""))
+        self.reply(DESC_XML, "text/xml")
 
     def do_POST(self) -> None:
-        length = int(self.headers.get("Content-Length", "0"))
+        length = int(self.headers.get("Content-Length", "-1"))
+        if length < 0 or length > 1024 * 1024:
+            self.server.failures.append("POST missing or oversized Content-Length")
+            self.send_error(400)
+            return
         body = self.rfile.read(length)
-        action = self.headers.get("SOAPAction", "") + body.decode("utf-8", "replace")
-        self.server.request_count += 1  # type: ignore[attr-defined]
-        self.reply(TRAFFIC_XML if "GetOnlineMonitor" in action else GENERIC_XML, "text/xml")
+        soap_action = self.headers.get("SOAPAction", "")
+        action = soap_action.strip('"').rsplit("#", 1)[-1]
+        key = (self.path, action)
+        self.server.requests.append(("POST", self.path, soap_action, body))
 
-    def reply(self, body: bytes, content_type: str) -> None:
-        self.send_response(200)
+        if self.path not in EXPECTED_ACTIONS or action not in EXPECTED_ACTIONS[self.path]:
+            self.server.failures.append(f"POST unexpected route/action {self.path!r} {soap_action!r}")
+            self.send_error(404)
+            return
+        if f"{action}" not in body.decode("utf-8", "replace"):
+            self.server.failures.append(f"SOAP body omitted action {action!r}")
+            self.send_error(400)
+            return
+        if action == "X_AVM-DE_GetOnlineMonitor" and (
+            body.count(b"<NewSyncGroupIndex>") != 1
+            or b"<NewSyncGroupIndex>0</NewSyncGroupIndex>" not in body
+        ):
+            # The traffic action requires the fixed sync-group argument. This
+            # catches a route that returns the right fixture with wrong input.
+            self.server.failures.append("traffic action carried wrong arguments")
+            self.send_error(400)
+            return
+
+        authorization = self.headers.get("Authorization", "")
+        if key not in self.server.authenticated:
+            if authorization:
+                self.server.failures.append("first SOAP request was authenticated")
+                self.send_error(400)
+                return
+            self.reply(b"", "text/xml", status=401,
+                       extra={"WWW-Authenticate": f'Digest realm="{REALM}", nonce="{NONCE}"'})
+            self.server.authenticated.add(key)
+            return
+        if not authorization.startswith("Digest "):
+            self.server.failures.append("retry SOAP request omitted Digest authorization")
+            self.send_error(401)
+            return
+
+        if action == "X_AVM-DE_GetOnlineMonitor":
+            self.reply(TRAFFIC_XML, "text/xml")
+        else:
+            # Only explicitly allow-listed actions reach this response. The
+            # body is action-specific so a wrong action cannot silently pass.
+            response = (
+                f'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>'
+                f'<u:{action}Response xmlns:u="urn:dslforum-org:service:test:1">'
+                f'</u:{action}Response></s:Body></s:Envelope>'
+            ).encode()
+            self.reply(response, "text/xml")
+
+    def reply(self, body: bytes, content_type: str, *, status: int = 200,
+              extra: dict[str, str] | None = None) -> None:
+        self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        for key, value in (extra or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -73,138 +155,189 @@ class FakeBox(http.server.BaseHTTPRequestHandler):
 
 @dataclass
 class Result:
-    code: int | None
+    code: int
     stdout: bytes
     stderr: bytes
 
 
 def environment(home: Path, *, fake: bool) -> dict[str, str]:
+    # Deliberately remove all Symfritz settings and backend executables.
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("SYMFRITZ_")}
+    backend_free_path = home / "empty-path"
+    backend_free_path.mkdir()
     env.update({
         "HOME": str(home), "XDG_CONFIG_HOME": str(home / "config"),
         "XDG_CACHE_HOME": str(home / "cache"), "XDG_DATA_HOME": str(home / "data"),
-        "TMPDIR": str(home / "tmp"), "TMP": str(home / "tmp"), "TEMP": str(home / "tmp"),
+        "TMPDIR": str(home / "tmp"), "TMP": str(home / "tmp"),
+        "TEMP": str(home / "tmp"), "PATH": str(backend_free_path),
         "LC_ALL": "C", "LANG": "C", "TZ": "UTC",
     })
     if fake:
-        env.update({"SYMFRITZ_BOX_HOST": "127.0.0.1", "SYMFRITZ_BOX_USE_TLS": "false", "SYMFRITZ_PASSWORD": "test-password", "SYMFRITZ_BOX_TIMEOUT_SECONDS": "1"})
+        env.update({
+            "SYMFRITZ_BOX_HOST": "127.0.0.1",
+            "SYMFRITZ_BOX_USE_TLS": "false",
+            "SYMFRITZ_PASSWORD": "test-password",
+            "SYMFRITZ_BOX_TIMEOUT_SECONDS": "1",
+        })
     return env
 
 
 def run(binary: str, args: list[str], *, fake: bool = False, timeout: float = 5) -> Result:
     with tempfile.TemporaryDirectory(prefix="symfritz-cli-") as temp:
         home = Path(temp)
-        p = subprocess.run([binary, *args], cwd=home, env=environment(home, fake=fake), capture_output=True, timeout=timeout)
-        return Result(p.returncode, p.stdout, p.stderr)
+        try:
+            process = subprocess.run(
+                [binary, *args], cwd=home, env=environment(home, fake=fake),
+                capture_output=True, timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise AssertionError(f"{binary} {args} exceeded {timeout}s") from exc
+        return Result(process.returncode, process.stdout, process.stderr)
 
 
 def run_watch(binary: str, *, fmt: str) -> Result:
     with tempfile.TemporaryDirectory(prefix="symfritz-watch-") as temp:
         home = Path(temp)
         env = environment(home, fake=True)
-        p = subprocess.Popen([binary, "traffic", "--watch", "--output", fmt, "--interval", "10ms"], cwd=home, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        process = subprocess.Popen(
+            [binary, "traffic", "--watch", "--output", fmt, "--interval", "10ms"],
+            cwd=home, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
         time.sleep(0.5)
-        p.send_signal(signal.SIGINT)
-        out, err = p.communicate(timeout=3)
-        return Result(p.returncode, out, err)
+        process.send_signal(signal.SIGINT)
+        out, err = process.communicate(timeout=3)
+        return Result(process.returncode, out, err)
 
 
-def assert_equal(label: str, left: Result, right: Result, *, mode: str = "bytes") -> None:
-    if left.code != right.code:
-        raise AssertionError(f"{label}: exit {left.code} != {right.code}")
-    if mode == "bytes":
-        if left.stdout != right.stdout or left.stderr != right.stderr:
-            raise AssertionError(f"{label}: byte mismatch\nGo stdout={left.stdout!r}\nRust stdout={right.stdout!r}\nGo stderr={left.stderr!r}\nRust stderr={right.stderr!r}")
-    elif mode == "json":
-        try:
-            if json.loads(left.stdout) != json.loads(right.stdout):
-                raise AssertionError(f"{label}: structured stdout mismatch")
-        except json.JSONDecodeError as exc:
-            raise AssertionError(f"{label}: invalid JSON: {exc}") from exc
-        if left.stderr != right.stderr:
-            raise AssertionError(f"{label}: stderr mismatch: {left.stderr!r} != {right.stderr!r}")
-    elif mode == "ndjson":
-        try:
-            left_records = [json.loads(line) for line in left.stdout.splitlines()]
-            right_records = [json.loads(line) for line in right.stdout.splitlines()]
-            if len(left_records) < 2 or len(right_records) < 2 or left_records[0] != right_records[0]:
-                raise AssertionError(f"{label}: structured stdout mismatch")
-        except json.JSONDecodeError as exc:
-            raise AssertionError(f"{label}: invalid NDJSON: {exc}") from exc
-        if left.stderr != right.stderr:
-            raise AssertionError(f"{label}: stderr mismatch: {left.stderr!r} != {right.stderr!r}")
-    elif mode == "yaml":
-        def parse_yaml_lists(data: bytes) -> dict[str, list[float]]:
-            parsed: dict[str, list[float]] = {}
-            key = ""
-            for raw_line in data.decode().splitlines():
-                line = raw_line.strip()
-                if not line:
-                    continue
-                if line.endswith(":"):
-                    key = line[:-1]
-                    parsed[key] = []
-                elif line.startswith("-") and key:
-                    parsed[key].append(float(line[1:].strip()))
-            return parsed
-        if parse_yaml_lists(left.stdout) != parse_yaml_lists(right.stdout):
-            raise AssertionError(f"{label}: structured YAML mismatch")
-        if left.stderr != right.stderr:
-            raise AssertionError(f"{label}: stderr mismatch: {left.stderr!r} != {right.stderr!r}")
-    elif mode == "exit":
-        return
+def assert_bytes(label: str, left: Result, right: Result) -> None:
+    if (left.code, left.stdout, left.stderr) != (right.code, right.stdout, right.stderr):
+        raise AssertionError(
+            f"{label}: exact mismatch\n"
+            f"Go=({left.code}, {left.stdout!r}, {left.stderr!r})\n"
+            f"Rust=({right.code}, {right.stdout!r}, {right.stderr!r})"
+        )
+
+
+def assert_structured(label: str, left: Result, right: Result, kind: str) -> None:
+    if left.code != right.code or left.stderr != right.stderr:
+        raise AssertionError(f"{label}: exit/stderr mismatch: {left} != {right}")
+    if kind == "json":
+        if json.loads(left.stdout) != json.loads(right.stdout):
+            raise AssertionError(f"{label}: JSON mismatch")
+    elif kind == "yaml":
+        # Compare the complete key/value sequence while ignoring only scalar
+        # integer-vs-float spelling differences between the typed ports.
+        def normalize(data: bytes) -> list[tuple[str, str]]:
+            return [(line.split(":", 1)[0], line.split(":", 1)[1].strip())
+                    for line in data.decode().splitlines() if ":" in line]
+        if normalize(left.stdout) != normalize(right.stdout):
+            raise AssertionError(f"{label}: YAML mismatch")
     else:
-        raise ValueError(mode)
+        raise ValueError(kind)
 
 
-def run_suite(go: str, rust: str) -> None:
-    server = ReusableServer(("127.0.0.1", PORT), FakeBox)
-    server.request_count = 0
+def assert_help_semantic(label: str, left: Result, right: Result) -> None:
+    if left.code != 0 or right.code != 0:
+        raise AssertionError(f"{label}: help failed: Go={left.code}, Rust={right.code}")
+    for output in (left.stdout, right.stdout):
+        if b"Usage:" not in output or not output.endswith(b"\n"):
+            raise AssertionError(f"{label}: missing stable usage/newline contract")
+
+
+def parse_validation_fixture(root: Path) -> list[dict[str, Any]]:
+    fixture = json.loads((root / "testdata/port/cli/command-contracts.json").read_text())
+    validation = fixture["validation"]
+    if len(validation) != 17:
+        raise AssertionError(f"fixture validation count changed: {len(validation)}")
+    return validation
+
+
+def run_suite(go: str, rust: str, root: Path) -> None:
+    server = StrictFakeBox(("127.0.0.1", PORT))
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        stable = [
-            ("version-text", ["version"], False),
-            ("version-json", ["version", "--output", "json"], False),
-            ("version-yaml", ["version", "--output", "yaml"], False),
-            ("invalid-output-9", ["version", "--output", "invalid"], False),
-            ("reboot-without-confirmation-9", ["reboot"], False),
+        # Every implemented family gets a real executable help invocation. Help
+        # is intentionally semantic-normalized because Cobra and clap format it
+        # differently; parse/error contracts below remain exact bytes.
+        families = [
+            "auth", "call", "calls", "completion", "config", "detect", "diagnose",
+            "dial", "doctor", "dsl", "hangup", "help", "home", "hosts", "log", "mcp",
+            "mesh", "reboot", "scrape", "services", "status", "traffic", "version",
+            "wlan", "wol",
         ]
-        for label, args, fake in stable:
-            assert_equal(label, run(go, args, fake=fake), run(rust, args, fake=fake))
+        for family in families:
+            assert_help_semantic(f"help-{family}", run(go, ["help", family]), run(rust, ["help", family]))
+            print(f"PASS help-{family}")
+
+        for label, args in [
+            ("version-text", ["version"]),
+            ("version-json", ["version", "--output", "json"]),
+            ("version-yaml", ["version", "--output", "yaml"]),
+            ("invalid-output-9", ["version", "--output", "invalid"]),
+            ("reboot-without-confirmation-9", ["reboot"]),
+        ]:
+            assert_bytes(label, run(go, args), run(rust, args))
             print(f"PASS {label}")
 
-        for fmt, mode in [("text", "bytes"), ("json", "json"), ("yaml", "yaml")]:
+        for fmt, kind in [("text", "bytes"), ("json", "json"), ("yaml", "yaml")]:
             args = ["traffic", "--output", fmt]
-            assert_equal(f"traffic-{fmt}", run(go, args, fake=True), run(rust, args, fake=True), mode=mode)
+            server.authenticated.clear()
+            left = run(go, args, fake=True)
+            server.authenticated.clear()
+            right = run(rust, args, fake=True)
+            if server.failures:
+                raise AssertionError("fake-box traffic failure: " + "; ".join(server.failures))
+            if kind == "bytes":
+                assert_bytes(f"traffic-{fmt}", left, right)
+            else:
+                assert_structured(f"traffic-{fmt}", left, right, kind)
             print(f"PASS traffic-{fmt}")
 
-        if os.name == "nt":
-            print("SKIP traffic-watch-json-cancel (SIGINT process semantics are Unix-only)")
-        else:
-            go_watch = run_watch(go, fmt="json")
-            rust_watch = run_watch(rust, fmt="json")
-            if go_watch.code != 130 or rust_watch.code != 130:
-                raise AssertionError(f"watch cancellation must exit 130: Go={go_watch.code}, Rust={rust_watch.code}")
-            if not go_watch.stdout or not rust_watch.stdout:
-                raise AssertionError("watch cancellation flushed no snapshot")
-            assert_equal("traffic-watch-json", go_watch, rust_watch, mode="ndjson")
+        if os.name != "nt":
+            server.authenticated.clear()
+            left = run_watch(go, fmt="json")
+            server.authenticated.clear()
+            right = run_watch(rust, fmt="json")
+            if left.code != 130 or right.code != 130:
+                raise AssertionError(f"traffic cancellation must exit 130: {left.code}, {right.code}")
+            left_records = [json.loads(line) for line in left.stdout.splitlines()]
+            right_records = [json.loads(line) for line in right.stdout.splitlines()]
+            if len(left_records) < 2 or len(right_records) < 2 or left_records[0] != right_records[0]:
+                raise AssertionError("traffic watch did not flush two equivalent snapshots")
+            if left.stderr != right.stderr:
+                raise AssertionError("traffic watch stderr mismatch")
             print("PASS traffic-watch-json-cancel")
 
-        # Parse failures intentionally retain clap's conventional status 2 on
-        # Rust; the fixture records Go's Cobra status 1 separately. The gate
-        # checks both documented statuses and non-empty stderr without erasing
-        # the distinction.
-        for label, args, expected_go, expected_rust in [
-            ("missing-call", ["call"], 1, 2),
-            ("invalid-duration", ["traffic", "--interval", "wat"], 1, 2),
-        ]:
-            go_result, rust_result = run(go, args), run(rust, args)
-            if (go_result.code, rust_result.code) != (expected_go, expected_rust) or not go_result.stderr or not rust_result.stderr:
-                raise AssertionError(f"{label}: unexpected parse results Go={go_result.code}/{go_result.stderr!r}, Rust={rust_result.code}/{rust_result.stderr!r}")
-            print(f"PASS {label} (Go={expected_go}, Rust={expected_rust})")
+        # All committed validation cases are exact stream/exit gates. There is
+        # no status-only or non-empty-stderr false pass here.
+        for case in parse_validation_fixture(root):
+            args = [str(value) for value in case["args"]]
+            assert_bytes(str(case["id"]), run(go, args), run(rust, args))
+            print(f"PASS {case['id']}")
 
-        print(f"PASS fake-http requests={server.request_count}")
+        # Safe seams: config creation and rejected mutations/auth do not invoke
+        # the fake box or backend CLIs, and the strict request log proves it.
+        config_left, config_right = run(go, ["config", "init"]), run(rust, ["config", "init"])
+        if (config_left.code, config_right.code) != (0, 0) or config_left.stderr or config_right.stderr:
+            raise AssertionError(f"config-init-safe-seam failed: {config_left} != {config_right}")
+        config_pattern = re.compile(rb"^Config written to .*/.config/symfritz/config.toml\n$")
+        if not config_pattern.match(config_left.stdout) or not config_pattern.match(config_right.stdout):
+            raise AssertionError("config-init-safe-seam emitted an unexpected path or stream")
+        before = len(server.requests)
+        auth_left, auth_right = run(go, ["auth", "store", "--symvault", "fritz.password"]), run(
+            rust, ["auth", "store", "--symvault", "fritz.password"]
+        )
+        if auth_left.code == 0 or auth_right.code == 0 or len(server.requests) != before:
+            raise AssertionError("auth safe seam unexpectedly succeeded or contacted fake box")
+        reboot_left, reboot_right = run(go, ["reboot"]), run(rust, ["reboot"])
+        if reboot_left.code == 0 or reboot_right.code == 0 or len(server.requests) != before:
+            raise AssertionError("unconfirmed reboot contacted the fake box")
+        print("PASS config-auth-mutation-safe-seams")
+
+        if server.failures:
+            raise AssertionError("fake-box assertions failed: " + "; ".join(server.failures))
+        print(f"PASS strict-fake-http requests={len(server.requests)}")
     finally:
         server.shutdown()
         server.server_close()
@@ -214,10 +347,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--go", default="./symfritz")
     parser.add_argument("--rust", default="./target/debug/symfritz-rust")
+    parser.add_argument("--root", default=".")
     args = parser.parse_args()
     try:
-        run_suite(os.path.abspath(args.go), os.path.abspath(args.rust))
-    except (AssertionError, OSError, subprocess.SubprocessError) as exc:
+        run_suite(os.path.abspath(args.go), os.path.abspath(args.rust), Path(args.root).resolve())
+    except (AssertionError, OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
         print(f"FAIL {exc}", file=sys.stderr)
         return 1
     return 0

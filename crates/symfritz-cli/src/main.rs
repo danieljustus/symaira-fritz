@@ -6,9 +6,11 @@ use std::{
     io::{self, Read, Write},
     net::{IpAddr, ToSocketAddrs},
     process::{Command as ProcessCommand, ExitCode},
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
 };
 
-use clap::{CommandFactory, Parser};
+use clap::CommandFactory;
 use clap_complete::{generate, shells};
 use serde::{Deserialize, Serialize};
 use symfritz_aha::{Client as AhaClient, Device as AhaDevice, Group as AhaGroup, SystemClock};
@@ -40,6 +42,7 @@ const VERSION: &str = match option_env!("SYMFRITZ_VERSION") {
 };
 const EXIT_CONFIG: u8 = 9;
 const EXIT_OPERATION: u8 = 1;
+static CANCEL_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug)]
 struct HandlerError {
@@ -126,7 +129,23 @@ impl CnonceSource for RandomCnonce {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).is_some_and(|arg| arg == "--help") && args.len() == 2 {
+        let mut command = Cli::command();
+        if let Err(error) = command.print_long_help() {
+            eprintln!("Error: {error}");
+            return ExitCode::from(EXIT_OPERATION);
+        }
+        println!();
+        return ExitCode::SUCCESS;
+    }
+    let cli = match symfritz_cli::cli::parse_args(&args) {
+        Ok(cli) => cli,
+        Err(message) => {
+            eprintln!("Error: {message}");
+            return ExitCode::from(EXIT_OPERATION);
+        }
+    };
     if let Err(error) = install_signal_handler() {
         eprintln!("Error: {}", error.message);
         return ExitCode::from(EXIT_OPERATION);
@@ -155,6 +174,9 @@ fn main() -> ExitCode {
     match execute(cli, format) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
+            if CANCEL_REQUESTED.load(Ordering::SeqCst) {
+                return ExitCode::from(130);
+            }
             if format != OutputFormat::Text && !error.config && !error.status {
                 let payload = ErrorOutput {
                     error: ErrorDetails {
@@ -178,9 +200,11 @@ fn main() -> ExitCode {
 }
 
 fn install_signal_handler() -> Result<(), HandlerError> {
-    ctrlc::set_handler(|| std::process::exit(130)).map_err(|error| {
-        HandlerError::operation(format!("failed to install signal handler: {error}"))
+    CANCEL_REQUESTED.store(false, Ordering::Relaxed);
+    ctrlc::set_handler(|| {
+        CANCEL_REQUESTED.store(true, Ordering::SeqCst);
     })
+    .map_err(|error| HandlerError::operation(format!("failed to install signal handler: {error}")))
 }
 
 fn execute(cli: Cli, format: OutputFormat) -> Result<(), HandlerError> {
@@ -586,8 +610,22 @@ fn execute_traffic(args: TrafficArgs, format: OutputFormat) -> Result<(), Handle
         if !args.watch {
             return Ok(());
         }
-        std::thread::sleep(args.interval);
+        if CANCEL_REQUESTED.load(Ordering::SeqCst) || wait_for_interval(args.interval) {
+            return Err(HandlerError::operation("traffic watch canceled"));
+        }
     }
+}
+
+fn wait_for_interval(interval: Duration) -> bool {
+    let deadline = std::time::Instant::now() + interval;
+    while !CANCEL_REQUESTED.load(Ordering::SeqCst) {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return false;
+        }
+        std::thread::sleep(remaining.min(Duration::from_millis(25)));
+    }
+    true
 }
 
 fn write_traffic_watch_snapshot(
@@ -1082,17 +1120,14 @@ fn store_credential(
     ))
 }
 
-fn prompt_hidden(prompt: &str) -> Result<String, HandlerError> {
-    use std::io::IsTerminal;
-    eprint!("{prompt}");
-    let stdin = std::io::stdin();
-    if !stdin.is_terminal() {
-        return Err(HandlerError::operation(
-            "cannot prompt for password: stdin is not a terminal (set SYMFRITZ_PASSWORD instead)",
-        ));
-    }
-    #[cfg(unix)]
-    {
+#[cfg(unix)]
+struct TerminalEchoGuard {
+    saved: String,
+}
+
+#[cfg(unix)]
+impl TerminalEchoGuard {
+    fn new() -> Result<Self, HandlerError> {
         let saved = ProcessCommand::new("stty")
             .arg("-g")
             .output()
@@ -1112,9 +1147,33 @@ fn prompt_hidden(prompt: &str) -> Result<String, HandlerError> {
         if !disabled.success() {
             return Err(HandlerError::operation("cannot disable password echo"));
         }
+        Ok(Self { saved })
+    }
+}
+
+#[cfg(unix)]
+impl Drop for TerminalEchoGuard {
+    fn drop(&mut self) {
+        // Drop is the final safety net for read errors, cancellation, and panic
+        // unwinding. Never replace the user's terminal mode with a guess.
+        let _ = ProcessCommand::new("stty").arg(&self.saved).status();
+    }
+}
+
+fn prompt_hidden(prompt: &str) -> Result<String, HandlerError> {
+    use std::io::IsTerminal;
+    eprint!("{prompt}");
+    let stdin = std::io::stdin();
+    if !stdin.is_terminal() {
+        return Err(HandlerError::operation(
+            "cannot prompt for password: stdin is not a terminal (set SYMFRITZ_PASSWORD instead)",
+        ));
+    }
+    #[cfg(unix)]
+    {
+        let _echo_guard = TerminalEchoGuard::new()?;
         let mut value = String::new();
         let read_result = stdin.read_line(&mut value);
-        let _ = ProcessCommand::new("stty").arg(&saved).status();
         eprintln!();
         read_result
             .map_err(|error| HandlerError::operation(format!("reading password: {error}")))?;
@@ -2531,5 +2590,17 @@ fn strip_command_descriptions(command: &mut clap::Command) {
         .long_about(Option::<&str>::None);
     for child in command.get_subcommands_mut() {
         strip_command_descriptions(child);
+    }
+}
+
+#[cfg(test)]
+mod signal_tests {
+    use super::{CANCEL_REQUESTED, Duration, Ordering, wait_for_interval};
+
+    #[test]
+    fn cancellation_cooperatively_interrupts_watch_interval() {
+        CANCEL_REQUESTED.store(true, Ordering::SeqCst);
+        assert!(wait_for_interval(Duration::from_secs(5)));
+        CANCEL_REQUESTED.store(false, Ordering::SeqCst);
     }
 }

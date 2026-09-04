@@ -172,7 +172,7 @@ fn command_tree_preserves_aliases_defaults_and_argument_metadata() {
 }
 
 #[test]
-fn generated_argument_cases_keep_parse_exit_two() {
+fn generated_argument_cases_match_go_fixtures_byte_for_byte() {
     let fixture = fixture();
     assert_eq!(fixture.validation.len(), 17);
     assert!(fixture.validation.iter().all(|case| {
@@ -187,17 +187,12 @@ fn generated_argument_cases_keep_parse_exit_two() {
             .unwrap_or_else(|error| panic!("run {}: {error}", case.id));
         assert_eq!(
             output.status.code(),
-            Some(2),
-            "{} should fail during parsing (Go fixture stderr: {:?})",
-            case.id,
-            case.stderr
-        );
-        assert!(output.stdout.is_empty(), "{} emitted stdout", case.id);
-        assert!(
-            !output.stderr.is_empty(),
-            "{} emitted no parse error",
+            Some(case.exit_code),
+            "{} exit status",
             case.id
         );
+        assert_eq!(output.stdout, case.stdout.as_bytes(), "{} stdout", case.id);
+        assert_eq!(output.stderr, case.stderr.as_bytes(), "{} stderr", case.id);
     }
 }
 

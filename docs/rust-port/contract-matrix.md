@@ -74,15 +74,17 @@ MCP remains reserved for issue #191.
 
 `make port-cli-parity` builds both binaries and runs
 `scripts/cli-differential.py` against an isolated local fake TR-064 endpoint.
-Stable version, configuration, and confirmation errors use byte comparison;
-traffic JSON/YAML values use semantic comparison because Go emits integral
-rates as integers while Rust's typed rates are floating-point. Watch snapshot
-counts are intentionally timing-tolerant, but both implementations must flush
-at least two NDJSON records and exit 130 on SIGINT (macOS/Linux).
+The harness compares all 17 committed validation fixtures byte-for-byte (exit,
+stdout, and stderr), exercises every command family through executable help
+checks, and uses explicit semantic normalization only for path-dependent config
+messages and structured traffic output. The strict fake box validates method,
+route, SOAPAction, traffic arguments, Digest challenge/retry sequence, and
+records unexpected requests; traffic text/JSON/YAML, watch flushing/cancel, and
+safe config/auth/reboot seams are exercised without real backend binaries.
 
-Remaining gaps are explicit: full fake-box command coverage for every typed
-handler, byte-identical Cobra versus clap help/parse diagnostics, and live-box
-coverage remain future work. MCP is issue #191 and is not implemented here.
+The typed handler fake-box matrix is intentionally not claimed complete: the
+remaining typed command success/failure paths and live-box coverage need more
+fixtures. MCP is issue #191 and is not implemented here.
 
 ## Rules
 
