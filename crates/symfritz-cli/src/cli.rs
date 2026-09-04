@@ -500,10 +500,8 @@ pub fn parse_args(args: &[String]) -> Result<Cli, ParseError> {
         .iter()
         .skip(1)
         .any(|arg| arg == "--help" || arg == "-h");
-    if !asks_for_help {
-        if let Some(message) = go_validation_error(args) {
-            return Err(ParseError::Invalid(message.to_owned()));
-        }
+    if !asks_for_help && let Some(message) = go_validation_error(args) {
+        return Err(ParseError::Invalid(message.to_owned()));
     }
     Cli::try_parse_from(args).map_err(|error| match error.kind() {
         ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
