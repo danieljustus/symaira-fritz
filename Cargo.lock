@@ -924,6 +924,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
 dependencies = [
  "memchr",
+ "serde",
 ]
 
 [[package]]
@@ -1276,6 +1277,19 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
+
+[[package]]
+name = "symfritz-aha"
+version = "0.0.0"
+dependencies = [
+ "quick-xml",
+ "roxmltree",
+ "serde",
+ "serde_json",
+ "symfritz-core",
+ "symfritz-tr064",
+ "url",
+]
 
 [[package]]
 name = "symfritz-cli"

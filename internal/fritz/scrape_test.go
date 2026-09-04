@@ -97,3 +97,29 @@ func TestScrapeDataLUAResponseValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestLooksLikeHTMLUsesGoBytePrefix(t *testing.T) {
+	tests := []struct {
+		name string
+		body []byte
+		want bool
+	}{
+		{
+			name: "unicode whitespace is trimmed",
+			body: []byte("\u2003<html>"),
+			want: true,
+		},
+		{
+			name: "invalid utf8 is not normalized as whitespace",
+			body: []byte{0xff, '<', 'h', 't', 'm', 'l', '>'},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := looksLikeHTML(tt.body, "application/octet-stream"); got != tt.want {
+				t.Fatalf("looksLikeHTML = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

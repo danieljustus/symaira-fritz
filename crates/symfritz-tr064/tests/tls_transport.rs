@@ -254,3 +254,43 @@ fn network_error_does_not_expose_sensitive_query_values() {
     assert!(!error.contains("sensitive-session-value"));
     assert!(!error.contains("sensitive-password"));
 }
+
+#[test]
+fn concrete_transport_truncates_without_content_length_probe() {
+    let limit = 1024;
+    let mut body = b"OK\n".to_vec();
+    body.resize(limit + 16, b'x');
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let body_len = body.len();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0_u8; 4096];
+        let _bytes_read = stream.read(&mut request).unwrap();
+        let headers =
+            format!("HTTP/1.1 200 OK\r\nContent-Length: {body_len}\r\nConnection: close\r\n\r\n");
+        stream.write_all(headers.as_bytes()).unwrap();
+        stream.write_all(&body).unwrap();
+        stream.flush().unwrap();
+    });
+
+    let root = TestDir::new();
+    let origin = Url::parse(&format!("http://{address}")).unwrap();
+    let mut transport = BlockingHttpTransport::new(HttpTransportConfig::new(
+        origin.clone(),
+        PinStore::new(root.0.join("pins.json")),
+    ))
+    .unwrap();
+    let response = transport
+        .send(Request {
+            method: Method::Get,
+            url: origin.join("health").unwrap().to_string(),
+            headers: BTreeMap::new(),
+            body: Vec::new(),
+            response_limit: limit,
+        })
+        .unwrap();
+    server.join().unwrap();
+    assert_eq!(response.body.len(), limit);
+    assert!(response.body.starts_with(b"OK\n"));
+}

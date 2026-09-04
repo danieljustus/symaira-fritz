@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "oracle": "Go internal/fritz AHA Home and Homeauto contracts",
+  "hkr_error_descriptions": {
+    "0": "no error",
+    "1": "no connection to actuator",
+    "2": "valve stroke too large",
+    "3": "valve stroke too small",
+    "4": "installation not ready / check mounting",
+    "5": "valve travel too short (sluggish?) / descale",
+    "6": "battery charge extremely low"
+  },
+  "device_xml": [
+    {
+      "id": "device-list",
+      "xml": "\u003c?xml version=\"1.0\"?\u003e\u003cdevicelist version=\"1\"\u003e\u003cdevice identifier=\"ain-1\" id=\"0\"\u003e\u003cname\u003ePlug\u003c/name\u003e\u003cpresent\u003e1\u003c/present\u003e\u003cswitch\u003e\u003cstate\u003e1\u003c/state\u003e\u003c/switch\u003e\u003ctemperature\u003e\u003ccelsius\u003e235\u003c/celsius\u003e\u003c/temperature\u003e\u003chkr\u003e\u003ctist\u003e44\u003c/tist\u003e\u003ctsoll\u003e42\u003c/tsoll\u003e\u003cbatterylow\u003e0\u003c/batterylow\u003e\u003cbattery\u003e90\u003c/battery\u003e\u003cwindowopenactiv\u003e0\u003c/windowopenactiv\u003e\u003cerrorcode\u003e0\u003c/errorcode\u003e\u003cnextchange\u003e\u003cend\u003e1700000000\u003c/end\u003e\u003cstart\u003e1699990000\u003c/start\u003e\u003ctchange\u003e60\u003c/tchange\u003e\u003c/nextchange\u003e\u003c/hkr\u003e\u003cpowermeter\u003e\u003cpower\u003e12\u003c/power\u003e\u003cenergy\u003e34\u003c/energy\u003e\u003c/powermeter\u003e\u003c/device\u003e\u003cgroup identifier=\"group-1\" id=\"g\"\u003e\u003cname\u003eAll\u003c/name\u003e\u003cgroupinfo\u003e\u003cmasterdeviceid\u003eain-1\u003c/masterdeviceid\u003e\u003cmembers\u003eain-1,ain-2,\u003c/members\u003e\u003c/groupinfo\u003e\u003c/group\u003e\u003c/devicelist\u003e",
+      "devices": [
+        {
+          "identifier": "ain-1",
+          "id": "0",
+          "name": "Plug",
+          "present": 1,
+          "switch": "1",
+          "celsius": "235",
+          "tist": "44",
+          "tsoll": "42",
+          "batterylow": "0",
+          "battery": "90",
+          "windowopenactiv": "0",
+          "errorcode": "0",
+          "nextchange": {
+            "End": "1700000000",
+            "Start": "1699990000",
+            "TChange": 60
+          },
+          "power": "12",
+          "energy": "34"
+        }
+      ],
+      "groups": [
+        {
+          "identifier": "group-1",
+          "id": "g",
+          "name": "All",
+          "members": [
+            "ain-1",
+            "ain-2",
+            ""
+          ],
+          "master_device_id": "ain-1"
+        }
+      ],
+      "names_and_ains": {
+        "All": "group-1",
+        "Plug": "ain-1"
+      }
+    }
+  ],
+  "home_queries": [
+    {
+      "id": "switch",
+      "sid": "sid+value",
+      "switchcmd": "setswitchon",
+      "params": {
+        "ain": [
+          "ain-1"
+        ]
+      },
+      "url": "http://fritz.box/webservices/homeautoswitch.lua?ain=ain-1\u0026sid=sid%2Bvalue\u0026switchcmd=setswitchon"
+    },
+    {
+      "id": "repeated",
+      "sid": "sid",
+      "switchcmd": "getdevicelistinfos",
+      "params": {
+        "foo": [
+          "a b",
+          "x\u0026y"
+        ]
+      },
+      "url": "http://fritz.box/webservices/homeautoswitch.lua?foo=a+b\u0026foo=x%26y\u0026sid=sid\u0026switchcmd=getdevicelistinfos"
+    }
+  ],
+  "hkr_params": [
+    {
+      "id": "half-degree",
+      "temp_celsius": 20.5,
+      "param": "41"
+    },
+    {
+      "id": "on",
+      "temp_celsius": 254,
+      "param": "254"
+    },
+    {
+      "id": "off",
+      "temp_celsius": 253,
+      "param": "253"
+    }
+  ]
+}

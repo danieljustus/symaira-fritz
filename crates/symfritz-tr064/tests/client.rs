@@ -243,10 +243,13 @@ fn discovery_http_status_matches_go_error_context() {
 }
 
 #[test]
-fn oversized_response_is_rejected_even_if_transport_misbehaves() {
+fn oversized_response_is_truncated_like_go_limit_reader() {
+    let mut body = success_body();
+    body.resize(1 << 20, b' ');
+    body.extend_from_slice(b"ignored suffix");
     let transport = FakeTransport::with_responses([Response {
         status: 200,
-        body: vec![b'x'; (1 << 20) + 1],
+        body,
         ..Response::default()
     }]);
     let mut client = Client::new(
@@ -256,12 +259,36 @@ fn oversized_response_is_rejected_even_if_transport_misbehaves() {
         "",
         "",
     );
-    let service = Service {
-        service_type: "urn:test:service:Thing:1".to_owned(),
-        control_url: "/thing".to_owned(),
-    };
-    assert!(matches!(
-        client.call(&service, "Run", &BTreeMap::new()),
-        Err(ClientError::ResponseTooLarge { .. })
-    ));
+    let result = client
+        .call(
+            &Service {
+                service_type: "urn:test:service:Thing:1".to_owned(),
+                control_url: "/thing".to_owned(),
+            },
+            "GetInfo",
+            &BTreeMap::new(),
+        )
+        .unwrap();
+    assert_eq!(result["NewModelName"], "FRITZ!Box 7590 AX");
+}
+
+#[test]
+fn oversized_discovery_is_truncated_like_go_limit_reader() {
+    let mut body = br#"<root><device><serviceList><service><serviceType>urn:test:service:Info:1</serviceType><controlURL>/info</controlURL></service></serviceList></device></root>"#.to_vec();
+    body.resize(4 << 20, b' ');
+    body.extend_from_slice(b"ignored suffix");
+    let transport = FakeTransport::with_responses([Response {
+        status: 200,
+        body,
+        ..Response::default()
+    }]);
+    let mut client = Client::new(
+        transport,
+        SequenceCnonce(VecDeque::new()),
+        "http://fritz.box:49000",
+        "",
+        "",
+    );
+    let services = client.discover().unwrap();
+    assert_eq!(services[0].control_url, "/info");
 }

@@ -118,14 +118,7 @@ func (c *Client) doHome(ctx context.Context, switchcmd string, params url.Values
 	if err != nil {
 		return "", 0, err
 	}
-	q := url.Values{"sid": {sid}, "switchcmd": {switchcmd}}
-	for k, vs := range params {
-		for _, v := range vs {
-			q.Add(k, v)
-		}
-	}
-	u := c.baseHTTP() + "/webservices/homeautoswitch.lua?" + q.Encode()
-
+	u := buildAHAURL(c.baseHTTP(), sid, switchcmd, params)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return "", 0, err
@@ -140,6 +133,17 @@ func (c *Client) doHome(ctx context.Context, switchcmd string, params url.Values
 		return "", resp.StatusCode, err
 	}
 	return string(body), resp.StatusCode, nil
+}
+
+// buildAHAURL is the production query-composition seam used by port fixtures.
+func buildAHAURL(base, sid, switchcmd string, params url.Values) string {
+	q := url.Values{"sid": {sid}, "switchcmd": {switchcmd}}
+	for key, values := range params {
+		for _, value := range values {
+			q.Add(key, value)
+		}
+	}
+	return strings.TrimRight(base, "/") + "/webservices/homeautoswitch.lua?" + q.Encode()
 }
 
 // Devices returns the parsed list of DECT smart-home actors.
@@ -173,14 +177,17 @@ func (c *Client) SwitchOff(ctx context.Context, ain string) error {
 func (c *Client) SetHkrTemp(ctx context.Context, ain string, tempCelsius float64) error {
 	// AVM expects temperature in half degrees, e.g. 20.0 °C -> 40.
 	// Special values: 254 (ON), 253 (OFF) are passed as is.
-	var param string
-	if tempCelsius == 254 || tempCelsius == 253 {
-		param = fmt.Sprintf("%.0f", tempCelsius)
-	} else {
-		param = fmt.Sprintf("%.0f", tempCelsius*2)
-	}
+	param := hkrTempParam(tempCelsius)
 	_, err := c.Home(ctx, "sethkrtsoll", url.Values{"ain": {ain}, "param": {param}})
 	return err
+}
+
+// hkrTempParam is the production half-degree/special-value mapping seam.
+func hkrTempParam(tempCelsius float64) string {
+	if tempCelsius == 254 || tempCelsius == 253 {
+		return fmt.Sprintf("%.0f", tempCelsius)
+	}
+	return fmt.Sprintf("%.0f", tempCelsius*2)
 }
 
 // UnmarshalXML customizes XML unmarshaling for Group.

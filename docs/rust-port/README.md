@@ -24,7 +24,10 @@ Implemented slices:
 - SOAP request/response/fault handling and nested service discovery through a
   bounded transport;
 - concrete blocking HTTP/rustls transport with private-origin DNS pinning,
-  SPKI TOFU persistence, strict internal-only fallback, and URL redaction.
+  SPKI TOFU persistence, strict internal-only fallback, and URL redaction;
+- typed AHA-HTTP device/group/switch/thermostat behavior and TR-064 Homeauto
+  enumeration/switch control, with Go-generated fixtures and injectable tests;
+- `data.lua` raw JSON behavior without the incorrect automatic 403 retry.
 
 ## Measured Go baseline
 
@@ -108,7 +111,7 @@ own language-neutral fixtures.
 3. Port the TR-064 protocol engine and discovery against deterministic fake
    boxes. *(complete)*
 4. Port the concrete HTTP/TLS adapter and TLS pin persistence. *(complete)*
-5. Port typed capabilities and AHA/session behavior. *(next)*
+5. Port typed capabilities and AHA/session behavior. *(complete)*
 6. Port MCP and run raw-frame differential tests with zero stdout pollution.
 7. Validate against a real FRITZ!Box using sanitized recordings.
 8. Ship a prerelease with the last known-good Go binary as the explicit fallback.

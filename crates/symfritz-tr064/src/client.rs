@@ -73,10 +73,6 @@ pub enum ClientError {
     Cnonce(String),
     UnauthorizedChallenge,
     DiscoveryHttpStatus(u16),
-    ResponseTooLarge {
-        limit: usize,
-        actual: usize,
-    },
     SoapFault {
         status: u16,
         code: i32,
@@ -95,12 +91,6 @@ impl std::fmt::Display for ClientError {
             }
             Self::DiscoveryHttpStatus(status) => {
                 write!(formatter, "discover: tr64desc.xml returned HTTP {status}")
-            }
-            Self::ResponseTooLarge { limit, actual } => {
-                write!(
-                    formatter,
-                    "response exceeds {limit}-byte limit: {actual} bytes"
-                )
             }
             Self::SoapFault {
                 status,
@@ -220,11 +210,11 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
             body: Vec::new(),
             response_limit: DISCOVERY_RESPONSE_LIMIT,
         };
-        let response = self
+        let mut response = self
             .transport
             .send(request)
             .map_err(|error| ClientError::Transport(error.0))?;
-        enforce_limit(&response, DISCOVERY_RESPONSE_LIMIT)?;
+        response.body.truncate(DISCOVERY_RESPONSE_LIMIT);
         if response.status != 200 {
             return Err(ClientError::DiscoveryHttpStatus(response.status));
         }
@@ -273,11 +263,11 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
             body: body.to_owned(),
             response_limit: SOAP_RESPONSE_LIMIT,
         };
-        let response = self
+        let mut response = self
             .transport
             .send(request)
             .map_err(|error| ClientError::Transport(error.0))?;
-        enforce_limit(&response, SOAP_RESPONSE_LIMIT)?;
+        response.body.truncate(SOAP_RESPONSE_LIMIT);
         Ok(response)
     }
 
@@ -310,14 +300,4 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
             &cnonce,
         )))
     }
-}
-
-fn enforce_limit(response: &Response, limit: usize) -> Result<(), ClientError> {
-    if response.body.len() > limit {
-        return Err(ClientError::ResponseTooLarge {
-            limit,
-            actual: response.body.len(),
-        });
-    }
-    Ok(())
 }

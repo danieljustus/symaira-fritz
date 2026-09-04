@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "oracle": "Go internal/fritz session and scrape contracts",
+  "session_xml": [
+    {
+      "id": "ready-sid",
+      "xml": "\u003c?xml version=\"1.0\"?\u003e\u003cSessionInfo\u003e\u003cSID\u003e0123456789abcdef\u003c/SID\u003e\u003cChallenge\u003eignored\u003c/Challenge\u003e\u003cBlockTime\u003e0\u003c/BlockTime\u003e\u003c/SessionInfo\u003e",
+      "sid": "0123456789abcdef",
+      "challenge": "ignored"
+    },
+    {
+      "id": "invalid-sid-with-block-time",
+      "xml": "\u003cSessionInfo\u003e\u003cSID\u003e0000000000000000\u003c/SID\u003e\u003cChallenge\u003e1234567z\u003c/Challenge\u003e\u003cBlockTime\u003e30\u003c/BlockTime\u003e\u003c/SessionInfo\u003e",
+      "sid": "0000000000000000",
+      "challenge": "1234567z",
+      "block_time": 30
+    },
+    {
+      "id": "missing-optional-block-time",
+      "xml": "\u003cSessionInfo\u003e\u003cSID\u003e0000000000000000\u003c/SID\u003e\u003cChallenge\u003elegacy\u003c/Challenge\u003e\u003c/SessionInfo\u003e",
+      "sid": "0000000000000000",
+      "challenge": "legacy"
+    },
+    {
+      "id": "nested-fields-ignored",
+      "xml": "\u003cSessionInfo\u003e\u003cWrapper\u003e\u003cSID\u003enested-sid\u003c/SID\u003e\u003cChallenge\u003enested-challenge\u003c/Challenge\u003e\u003cBlockTime\u003e99\u003c/BlockTime\u003e\u003c/Wrapper\u003e\u003cSID\u003edirect-sid\u003c/SID\u003e\u003cChallenge\u003edirect-challenge\u003c/Challenge\u003e\u003cBlockTime\u003e7\u003c/BlockTime\u003e\u003c/SessionInfo\u003e",
+      "sid": "direct-sid",
+      "challenge": "direct-challenge",
+      "block_time": 7
+    },
+    {
+      "id": "duplicate-direct-fields-last-wins",
+      "xml": "\u003cSessionInfo\u003e\u003cSID\u003efirst-sid\u003c/SID\u003e\u003cChallenge\u003efirst-challenge\u003c/Challenge\u003e\u003cBlockTime\u003e1\u003c/BlockTime\u003e\u003cSID\u003elast-sid\u003c/SID\u003e\u003cChallenge\u003elast-challenge\u003c/Challenge\u003e\u003cBlockTime\u003e2\u003c/BlockTime\u003e\u003c/SessionInfo\u003e",
+      "sid": "last-sid",
+      "challenge": "last-challenge",
+      "block_time": 2
+    },
+    {
+      "id": "malformed-xml",
+      "xml": "\u003cSessionInfo\u003e\u003cSID\u003eoops",
+      "error": "malformed XML"
+    },
+    {
+      "id": "malformed-block-time",
+      "xml": "\u003cSessionInfo\u003e\u003cSID\u003esid\u003c/SID\u003e\u003cBlockTime\u003elater\u003c/BlockTime\u003e\u003c/SessionInfo\u003e",
+      "error": "malformed XML"
+    }
+  ],
+  "data_forms": [
+    {
+      "id": "overview-extra",
+      "page": "overview",
+      "sid": "0123456789abcdef",
+      "params": {
+        "foo": [
+          "bar"
+        ]
+      },
+      "body": "foo=bar\u0026page=overview\u0026sid=0123456789abcdef"
+    },
+    {
+      "id": "repeated-and-escaped",
+      "page": "a page",
+      "sid": "sid+value",
+      "params": {
+        "a": [
+          "x\u0026y"
+        ],
+        "z": [
+          "one",
+          "two"
+        ]
+      },
+      "body": "a=x%26y\u0026page=a+page\u0026sid=sid%2Bvalue\u0026z=one\u0026z=two"
+    }
+  ]
+}

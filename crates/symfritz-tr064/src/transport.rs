@@ -26,7 +26,7 @@ use crate::safeurl::{SafeUrlError, redact_url, validate_request_url};
 use crate::{Method, Request, Response, Transport, TransportError};
 
 /// Default maximum response size for a concrete transport.
-pub const DEFAULT_RESPONSE_LIMIT: usize = 4 << 20;
+pub const DEFAULT_RESPONSE_LIMIT: usize = 5 << 20;
 
 /// Optional diagnostic sink used for the single fallback warning.
 pub type WarningSink = Arc<dyn Fn(&str) + Send + Sync>;
@@ -79,7 +79,6 @@ pub enum HttpTransportError {
     InvalidRequestUrl { url: String, source: SafeUrlError },
     EndpointUnavailable { url: String, message: String },
     Request { url: String, message: String },
-    ResponseTooLarge { limit: usize },
 }
 
 impl fmt::Display for HttpTransportError {
@@ -91,9 +90,6 @@ impl fmt::Display for HttpTransportError {
             }
             Self::EndpointUnavailable { url, message } | Self::Request { url, message } => {
                 write!(formatter, "request to {url} failed: {message}")
-            }
-            Self::ResponseTooLarge { limit } => {
-                write!(formatter, "response exceeds {limit}-byte limit")
             }
         }
     }
@@ -213,24 +209,15 @@ impl BlockingHttpTransport {
             self.record_peer_pin(url, &response)?;
         }
         let limit = request.response_limit.min(DEFAULT_RESPONSE_LIMIT);
-        if response
-            .content_length()
-            .is_some_and(|length| length > limit as u64)
-        {
-            return Err(HttpTransportError::ResponseTooLarge { limit });
-        }
-        let mut body = Vec::new();
+        let mut body = Vec::with_capacity(limit);
         response
             .by_ref()
-            .take((limit as u64).saturating_add(1))
+            .take(limit as u64)
             .read_to_end(&mut body)
             .map_err(|error| HttpTransportError::Request {
                 url: redact_url(url),
                 message: error.to_string(),
             })?;
-        if body.len() > limit {
-            return Err(HttpTransportError::ResponseTooLarge { limit });
-        }
         let headers = response
             .headers()
             .iter()
@@ -625,9 +612,6 @@ mod tests {
             url: "https://fritz.box:49443".to_owned(),
             message: "response body read timed out".to_owned(),
         }));
-        assert!(!is_endpoint_unreachable(
-            &HttpTransportError::ResponseTooLarge { limit: 1 }
-        ));
     }
 
     #[test]
