@@ -1375,6 +1375,7 @@ dependencies = [
  "getrandom",
  "hex",
  "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "symfritz-aha",

@@ -64,27 +64,39 @@ confirmation/no-side-effect behavior, and cancellation exit 130.
 
 Issue #190 subtask 3a wires the mutation handlers (`dial`, `hangup`, WOL, guest
 on/off, home switch/temp, and confirmed reboot), config initialization, and
-credential trust/test/login/store paths. The handlers use the shared Rust
-TR-064/AHA/core implementations; interactive credential capture keeps the
-password out of argv and configured secret backends fail closed. The CLI
-harness exercises the confirmed reboot rejection without touching the fake box;
-MCP remains reserved for issue #191.
+credential trust/test/store paths. The handlers use the shared Rust
+TR-064/AHA/core implementations; configured secret backends fail closed. The
+black-box harness exercises every non-MCP family with a strict local fake box,
+including mutation request sequences and an isolated SymVault executable.
+Interactive `auth login` is deliberately excluded from this non-interactive
+harness because terminal echo/prompt behavior is platform-specific; the
+injected credential and secret-resolution tests in
+`symfritz-core/tests/auth_fixtures.rs` and `internal/secret` cover the
+login/authentication logic without touching a real Keychain or backend. MCP
+remains reserved for issue #191.
 
 ## Final CLI parity scope and gaps
 
 `make port-cli-parity` builds both binaries and runs
 `scripts/cli-differential.py` against an isolated local fake TR-064 endpoint.
-The harness compares all 17 committed validation fixtures byte-for-byte (exit,
-stdout, and stderr), exercises every command family through executable help
-checks, and uses explicit semantic normalization only for path-dependent config
-messages and structured traffic output. The strict fake box validates method,
-route, SOAPAction, traffic arguments, Digest challenge/retry sequence, and
-records unexpected requests; traffic text/JSON/YAML, watch flushing/cancel, and
-safe config/auth/reboot seams are exercised without real backend binaries.
+The harness compares every implemented non-MCP command family through
+executable help, validation, success, error, config, auth-test/store, and
+mutation checks. It binds the fake box on `0.0.0.0:49000`, discovers the local
+RFC1918 address dynamically, and compares request method, route, SOAP action,
+arguments, authentication sequence, output semantics, and mutation order.
+Temporary HOME/config paths are normalized; structured JSON is compared
+semantically, and doctor compares the shared structured report plus stable
+failure status while allowing the language-specific error suffix. Watch mode
+requires valid object-per-line NDJSON, cancellation exit 130, matching stderr,
+and an equivalent final snapshot because poll timing can change the first
+in-flight snapshot. There are no skip or `NON-PASS` paths: a required family failure aborts the
+run. The only intentional exclusions are MCP (issue #191) and interactive
+auth login (terminal-specific; covered by injected/secret tests as described
+above).
 
-The typed handler fake-box matrix is intentionally not claimed complete: the
-remaining typed command success/failure paths and live-box coverage need more
-fixtures. MCP is issue #191 and is not implemented here.
+The matrix below still tracks repository-wide work outside this issue,
+including MCP and release/live-box coverage; those rows are not claimed by the
+non-MCP CLI harness.
 
 ## Rules
 

@@ -165,6 +165,7 @@ impl CnonceSource for RandomCnonce {
 }
 
 fn main() -> ExitCode {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).is_some_and(|arg| arg == "--help") && args.len() == 2 {
         let mut command = Cli::command();
