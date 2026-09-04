@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/symfritz-cli", "crates/symfritz-core", "crates/symfritz-tr064"]
+members = ["crates/symfritz-aha", "crates/symfritz-cli", "crates/symfritz-core", "crates/symfritz-tr064"]
 resolver = "3"
 
 [workspace.package]
