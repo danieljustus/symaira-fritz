@@ -7,6 +7,7 @@ Thank you for your interest in contributing to Symaira Fritz! This document prov
 ### Prerequisites
 
 - Go 1.26.6 or later
+- Rust 1.98.0 via rustup (for the staged Rust port)
 - Git
 
 ### Getting Started
@@ -26,11 +27,14 @@ Thank you for your interest in contributing to Symaira Fritz! This document prov
    CGO_ENABLED=0 go vet ./...
    CGO_ENABLED=0 go build ./...
    CGO_ENABLED=0 go test -race ./...
+   make rust-check
+   make port-parity-version
    ```
 
 ## Code Style
 
-- Follow standard Go conventions (`gofmt`, `go vet`)
+- Follow standard Go conventions (`gofmt`, `go vet`) and Rust conventions
+  (`rustfmt`, Clippy with warnings denied)
 - Keep functions focused and small
 - Write meaningful commit messages
 - Add tests for new functionality
