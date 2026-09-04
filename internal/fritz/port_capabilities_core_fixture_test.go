@@ -16,6 +16,7 @@ type portCapabilitiesCoreFixture struct {
 	Radios        []Radio                  `json:"radios"`
 	WLANClients   []WLANClient             `json:"wlan_clients"`
 	Mesh          MeshTopology             `json:"mesh"`
+	Diagnosis     Diagnosis                `json:"diagnosis"`
 	Requests      []portCapabilityRequest  `json:"requests"`
 	Negative      []portCapabilityNegative `json:"negative"`
 }
@@ -70,6 +71,7 @@ func TestPortCapabilitiesCoreFixture(t *testing.T) {
 				}},
 			}},
 		},
+		Diagnosis: Diagnosis{Ref: "fixture-ref", Checks: []Check{}, OK: true},
 		Requests: []portCapabilityRequest{
 			{ID: "status-device-info", ServiceType: ServiceDeviceInfo.Type, ControlURL: ServiceDeviceInfo.ControlURL, Action: "GetInfo"},
 			{ID: "status-wan-info", ServiceType: ServiceWANIPConnection.Type, ControlURL: ServiceWANIPConnection.ControlURL, Action: "GetInfo"},

@@ -26,7 +26,7 @@ use crate::safeurl::{SafeUrlError, redact_raw_url, redact_url, validate_request_
 use crate::{Method, Request, Response, Transport, TransportError};
 
 /// Default maximum response size for a concrete transport.
-pub const DEFAULT_RESPONSE_LIMIT: usize = 5 << 20;
+pub const DEFAULT_RESPONSE_LIMIT: usize = 8 << 20;
 
 /// Optional diagnostic sink used for the single fallback warning.
 pub type WarningSink = Arc<dyn Fn(&str) + Send + Sync>;

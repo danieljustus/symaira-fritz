@@ -6,12 +6,12 @@ use std::{
     time::Duration,
 };
 
-use crate::{Client, ClientError, CnonceSource, Method, Request, Service, Transport};
+use crate::{Client, ClientError, CnonceSource, Method, Request, Response, Service, Transport};
 use roxmltree::Document;
 use serde::{Deserialize, Serialize};
 
 const MAX_DIAGNOSIS_WORKERS: usize = 8;
-const MESH_RESPONSE_LIMIT: usize = 8 << 20;
+pub const MESH_RESPONSE_LIMIT: usize = 8 << 20;
 
 /// Error categories shared by typed capability reports.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -446,26 +446,36 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
             .map(|_| ())
     }
 
-    /// Fetch and parse the mesh topology JSON returned by the Hosts extension.
-    pub fn mesh_topology(&mut self) -> Result<MeshTopology, ClientError> {
+    /// Return the path advertised by the Hosts mesh extension.
+    pub fn mesh_list_path(&mut self) -> Result<String, ClientError> {
         let response = self.call(
             &Service::hosts(),
             "X_AVM-DE_GetMeshListPath",
             &BTreeMap::new(),
         )?;
-        let path = response
+        response
             .get("NewX_AVM-DE_MeshListPath")
             .filter(|path| !path.is_empty())
+            .cloned()
             .ok_or_else(|| {
                 ClientError::Transport(
                     "box returned no mesh list path (unsupported firmware?)".to_owned(),
                 )
-            })?;
-        let url = absolute_path(self.base_url(), path)?;
-        let response = self.authenticated_get_with_limit(&url, MESH_RESPONSE_LIMIT)?;
-        serde_json::from_slice(&response.body).map_err(|error| {
-            ClientError::Transport(format!("mesh: parsing mesh list JSON: {error}"))
-        })
+            })
+    }
+
+    /// Build the same-origin URL used for one mesh-list candidate.
+    pub fn mesh_candidate_url(&self, path: &str) -> Result<String, ClientError> {
+        absolute_path(self.base_url(), path)
+    }
+
+    /// Fetch one mesh-list candidate with a plain bounded GET.
+    ///
+    /// Mesh JSON uses the session id in its query string, not TR-064 Digest
+    /// authentication. The concrete transport still enforces its configured
+    /// same-origin policy.
+    pub fn fetch_mesh_candidate(&mut self, url: &str) -> Result<Response, ClientError> {
+        self.plain_get_with_limit(url, MESH_RESPONSE_LIMIT)
     }
 }
 
@@ -1137,6 +1147,11 @@ pub struct MeshLink {
     pub cur_data_rate_tx: i64,
 }
 
+/// Parse a mesh topology body returned by a bounded mesh candidate fetch.
+pub fn parse_mesh_topology(body: &[u8]) -> Result<MeshTopology, serde_json::Error> {
+    serde_json::from_slice(&body[..body.len().min(MESH_RESPONSE_LIMIT)])
+}
+
 impl MeshTopology {
     /// Resolve a node or interface UID to its parent device name.
     #[must_use]
@@ -1368,6 +1383,7 @@ pub struct Check {
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Diagnosis {
+    #[serde(rename = "ref")]
     pub reference: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub host: Option<Host>,

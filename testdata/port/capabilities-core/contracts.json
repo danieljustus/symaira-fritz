@@ -89,6 +89,11 @@
       }
     ]
   },
+  "diagnosis": {
+    "ref": "fixture-ref",
+    "checks": [],
+    "ok": true
+  },
   "requests": [
     {
       "id": "status-device-info",

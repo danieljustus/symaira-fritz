@@ -45,16 +45,6 @@ impl CnonceSource for NoCnonce {
     }
 }
 
-struct SequenceCnonce(VecDeque<String>);
-
-impl CnonceSource for SequenceCnonce {
-    fn next_cnonce(&mut self) -> Result<String, String> {
-        self.0
-            .pop_front()
-            .ok_or_else(|| "cnonce not queued".to_owned())
-    }
-}
-
 fn soap(action: &str, values: &[(&str, &str)]) -> Response {
     let mut body = format!(
         "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><u:{action}Response>"
@@ -96,6 +86,7 @@ struct Fixture {
     radios: Vec<serde_json::Value>,
     wlan_clients: Vec<serde_json::Value>,
     mesh: serde_json::Value,
+    diagnosis: serde_json::Value,
     requests: Vec<RequestVector>,
     negative: Vec<NegativeVector>,
 }
@@ -137,6 +128,7 @@ fn go_fixture_covers_core_models_requests_and_negative_branches() {
     assert_eq!(fixture.radios[1]["index"], 3);
     assert_eq!(fixture.wlan_clients[0]["signal_strength"], "80");
     assert_eq!(fixture.mesh["nodes"][0]["mesh_role"], "master");
+    assert_eq!(fixture.diagnosis["ref"], "fixture-ref");
     assert_eq!(fixture.requests[0].id, "status-device-info");
     assert_eq!(
         fixture.requests[0].service_type,
@@ -271,7 +263,10 @@ fn host_mac_wol_wlan_and_mesh_use_typed_calls() {
             ..Response::default()
         },
     ]);
-    let topology = client.mesh_topology().unwrap();
+    let path = client.mesh_list_path().unwrap();
+    let url = client.mesh_candidate_url(&path).unwrap();
+    let response = client.fetch_mesh_candidate(&url).unwrap();
+    let topology = symfritz_tr064::parse_mesh_topology(&response.body).unwrap();
     assert_eq!(topology.node_name("n1-lan"), "FRITZ!Box 7590");
     assert_eq!(
         topology.nodes[0].node_interfaces[0].node_links[0].cur_data_rate_rx,
@@ -279,6 +274,7 @@ fn host_mac_wol_wlan_and_mesh_use_typed_calls() {
     );
     let transport = client.into_transport();
     assert_eq!(transport.requests[1].method, Method::Get);
+    assert_eq!(transport.requests[1].headers, BTreeMap::new());
     assert_eq!(
         transport.requests[1].url,
         "http://fritz.box:49000/mesh.json"
@@ -327,6 +323,9 @@ fn diagnosis_keeps_port_order_and_optional_failures_are_warnings() {
     assert!(probes[1].name.contains("second"));
     assert_eq!(probes[1].status, symfritz_tr064::CheckStatus::Fail);
     assert!(!diagnosis.ok);
+    let json = serde_json::to_value(&diagnosis).unwrap();
+    assert_eq!(json["ref"], "127.0.0.1");
+    assert!(json.get("reference").is_none());
 }
 
 #[allow(dead_code)]
@@ -410,38 +409,27 @@ fn status_keeps_partial_report_when_returning_original_error() {
 }
 
 #[test]
-fn mesh_digest_retry_preserves_requested_response_limit() {
+fn mesh_plain_get_preserves_requested_response_limit_and_auth_mode() {
     let mut body = br#"{"schema_version":"1.0","nodes":[]}"#.to_vec();
     body.resize((1 << 20) + 1, b' ');
-    let mut client = Client::new(
-        FakeTransport::new([
-            soap(
-                "X_AVM-DE_GetMeshListPath",
-                &[("NewX_AVM-DE_MeshListPath", "/mesh.json")],
-            ),
-            Response {
-                status: 401,
-                headers: BTreeMap::from([(
-                    "WWW-Authenticate".to_owned(),
-                    "Digest realm=\"F!Box\", nonce=\"abc123\", qop=\"auth\"".to_owned(),
-                )]),
-                ..Response::default()
-            },
-            Response {
-                status: 200,
-                body,
-                ..Response::default()
-            },
-        ]),
-        SequenceCnonce(VecDeque::from(["0011223344556677".to_owned()])),
-        "http://fritz.box:49000",
-        "user",
-        "pass",
-    );
-    client.mesh_topology().unwrap();
+    let mut client = make_client([
+        soap(
+            "X_AVM-DE_GetMeshListPath",
+            &[("NewX_AVM-DE_MeshListPath", "/mesh.json?sid=existing")],
+        ),
+        Response {
+            status: 200,
+            body,
+            ..Response::default()
+        },
+    ]);
+    let path = client.mesh_list_path().unwrap();
+    let url = client.mesh_candidate_url(&path).unwrap();
+    let response = client.fetch_mesh_candidate(&url).unwrap();
+    assert_eq!(response.body.len(), (1 << 20) + 1);
     let transport = client.into_transport();
     assert_eq!(transport.requests[1].response_limit, 8 << 20);
-    assert_eq!(transport.requests[2].response_limit, 8 << 20);
+    assert!(transport.requests[1].headers.is_empty());
 }
 
 #[test]
@@ -456,7 +444,9 @@ fn authenticated_get_status_errors_redact_query_values() {
             ..Response::default()
         },
     ]);
-    let error = client.mesh_topology().unwrap_err().to_string();
+    let path = client.mesh_list_path().unwrap();
+    let url = client.mesh_candidate_url(&path).unwrap();
+    let error = client.fetch_mesh_candidate(&url).unwrap_err().to_string();
     assert!(!error.contains("secret-sid"));
     assert!(error.contains("sid=REDACTED"));
 }

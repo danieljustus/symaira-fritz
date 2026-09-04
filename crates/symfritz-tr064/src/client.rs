@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use symfritz_core::auth::{DigestChallenge, digest_authorization_header, parse_digest_challenge};
 
-use crate::safeurl::{redact_error_message, redact_raw_url, redact_url};
+use crate::safeurl::{redact_error_message, redact_raw_url, redact_url, validate_request_url};
 use crate::{
     DiscoveryError, Service, SoapParseError, build_request, find_service_by_name,
     parse_description, parse_fault, parse_response,
@@ -309,6 +309,59 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
             )));
         }
         Ok(response)
+    }
+
+    /// Fetch one URL without Digest authentication, retaining at most `response_limit` bytes.
+    pub(crate) fn plain_get_with_limit(
+        &mut self,
+        url: &str,
+        response_limit: usize,
+    ) -> Result<Response, ClientError> {
+        let parsed = url::Url::parse(url).map_err(|error| {
+            ClientError::Transport(format!(
+                "invalid mesh GET URL {}: {error}",
+                redact_raw_url(url)
+            ))
+        })?;
+        let origin = url::Url::parse(&self.base_url).map_err(|error| {
+            ClientError::Transport(format!("invalid configured TR-064 origin: {error}"))
+        })?;
+        validate_request_url(&origin, &parsed).map_err(|error| {
+            ClientError::Transport(format!(
+                "unsafe mesh GET URL {}: {error}",
+                redact_url(&parsed)
+            ))
+        })?;
+        let request = Request {
+            method: Method::Get,
+            url: url.to_owned(),
+            headers: BTreeMap::new(),
+            body: Vec::new(),
+            response_limit,
+        };
+        let mut response = self
+            .transport
+            .send(request)
+            .map_err(|error| ClientError::Transport(redact_error_message(&error.0, &parsed)))?;
+        response.body.truncate(response_limit);
+        if response.status != 200 {
+            return Err(ClientError::Transport(format!(
+                "GET {} returned HTTP {}",
+                redact_url(&parsed),
+                response.status
+            )));
+        }
+        Ok(response)
+    }
+
+    pub fn mesh_candidate_matches_origin(&self, url: &str) -> bool {
+        let Ok(origin) = url::Url::parse(&self.base_url) else {
+            return false;
+        };
+        let Ok(candidate) = url::Url::parse(url) else {
+            return false;
+        };
+        validate_request_url(&origin, &candidate).is_ok()
     }
 
     pub(crate) fn base_url(&self) -> &str {
