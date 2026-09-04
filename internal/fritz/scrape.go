@@ -71,10 +71,10 @@ func looksLikeHTML(body []byte, contentType string) bool {
 	if strings.Contains(strings.ToLower(contentType), "text/html") {
 		return true
 	}
-	prefix := body
+	prefix := bytes.TrimSpace(body)
 	if len(prefix) > 512 {
 		prefix = prefix[:512]
 	}
-	lower := strings.ToLower(string(bytes.TrimSpace(prefix)))
+	lower := strings.ToLower(string(prefix))
 	return strings.HasPrefix(lower, "<!doctype html") || strings.HasPrefix(lower, "<html")
 }

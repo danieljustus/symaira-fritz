@@ -36,6 +36,17 @@ func TestScrapeDataLUAResponseValidation(t *testing.T) {
 			body:        "temporarily unavailable",
 			wantErr:     []string{"non-JSON response", "text/plain"},
 		},
+		{
+			name:    "missing content type",
+			body:    "temporarily unavailable",
+			wantErr: []string{"non-JSON response", "unknown"},
+		},
+		{
+			name:        "HTML marker without HTML content type",
+			contentType: "application/octet-stream",
+			body:        strings.Repeat(" ", 600) + `<!DOCTYPE html><html><body>Login</body></html>`,
+			wantErr:     []string{"HTML login page", "symfritz auth test"},
+		},
 	}
 
 	for _, tt := range tests {
