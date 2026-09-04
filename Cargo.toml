@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/symfritz-cli", "crates/symfritz-core"]
+members = ["crates/symfritz-cli", "crates/symfritz-core", "crates/symfritz-tr064"]
 resolver = "3"
 
 [workspace.package]
@@ -13,6 +13,9 @@ clap = { version = "4.6.6", features = ["derive"] }
 hex = "0.4.3"
 md-5 = "0.11.0"
 pbkdf2 = "0.13.0"
+quick-xml = "0.42.0"
+roxmltree = "0.21.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.11.0"
+symfritz-core = { path = "crates/symfritz-core", version = "=0.0.0" }

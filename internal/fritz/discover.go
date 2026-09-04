@@ -84,6 +84,10 @@ func (c *Client) fetchDiscovery(ctx context.Context) ([]Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseDiscoveryDescription(body)
+}
+
+func parseDiscoveryDescription(body []byte) ([]Service, error) {
 	var root scpdRoot
 	if err := xml.Unmarshal(body, &root); err != nil {
 		return nil, fmt.Errorf("discover: parsing tr64desc.xml: %w", err)
@@ -126,6 +130,10 @@ func (c *Client) ServiceByName(ctx context.Context, name string) (Service, error
 	if err != nil {
 		return Service{}, err
 	}
+	return findServiceByName(services, name)
+}
+
+func findServiceByName(services []Service, name string) (Service, error) {
 	lname := strings.ToLower(name)
 	var matches []Service
 	for _, s := range services {

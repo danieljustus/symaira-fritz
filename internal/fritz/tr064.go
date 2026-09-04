@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -143,7 +144,13 @@ func buildSOAPRequest(serviceType, action string, args map[string]string) []byte
 	b.WriteString(`<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">`)
 	b.WriteString(`<s:Body>`)
 	fmt.Fprintf(&b, `<u:%s xmlns:u="%s">`, action, serviceType)
-	for k, v := range args {
+	keys := make([]string, 0, len(args))
+	for k := range args {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		v := args[k]
 		fmt.Fprintf(&b, "<%s>%s</%s>", k, xmlEscape(v), k)
 	}
 	fmt.Fprintf(&b, `</u:%s>`, action)

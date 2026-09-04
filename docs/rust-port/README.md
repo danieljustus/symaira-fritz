@@ -18,7 +18,9 @@ Implemented slices:
 
 - byte-exact CLI `version` behavior;
 - legacy MD5 and modern PBKDF2 session challenge responses;
-- HTTP Digest challenge parsing and deterministic Authorization headers.
+- HTTP Digest challenge parsing and deterministic Authorization headers;
+- SOAP request/response/fault handling and nested service discovery through a
+  bounded, injected transport.
 
 ## Measured Go baseline
 
@@ -99,8 +101,10 @@ own language-neutral fixtures.
 
 1. Freeze CLI/config/error and fixture contracts. *(in progress)*
 2. Port pure parsers and authentication vectors. *(complete)*
-3. Port TR-064 transport and discovery against deterministic fake boxes. *(next)*
-4. Port typed capabilities, AHA/session behavior, and TLS pin persistence.
+3. Port the TR-064 protocol engine and discovery against deterministic fake
+   boxes. *(complete; concrete HTTP/TLS adapter remains in step 4)*
+4. Port the concrete HTTP/TLS adapter, typed capabilities, AHA/session behavior,
+   and TLS pin persistence. *(next)*
 5. Port MCP and run raw-frame differential tests with zero stdout pollution.
 6. Validate against a real FRITZ!Box using sanitized recordings.
 7. Ship a prerelease with the last known-good Go binary as the explicit fallback.
