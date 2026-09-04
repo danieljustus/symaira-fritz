@@ -34,9 +34,9 @@ impl Error for SafeUrlError {}
 
 /// Checks that a request targets the configured router origin.
 ///
-/// HTTPS may be rewritten only to its exact HTTP fallback pair. Hostnames are
-/// compared case-insensitively, while ports are compared explicitly; this
-/// prevents a discovered control/resource URL from becoming an SSRF primitive.
+/// Hostnames are compared case-insensitively and schemes/ports explicitly.
+/// Plaintext fallback URLs are generated only inside the transport after a
+/// classified endpoint failure; callers cannot request a downgrade directly.
 pub fn validate_request_url(
     configured_origin: &Url,
     request_url: &Url,
@@ -67,13 +67,7 @@ pub fn validate_request_url(
     let actual_port = request_url.port_or_known_default();
     let same_origin =
         configured_origin.scheme() == request_url.scheme() && expected_port == actual_port;
-    let fallback_origin = configured_origin.scheme() == "https"
-        && request_url.scheme() == "http"
-        && matches!(
-            (expected_port, actual_port),
-            (Some(443), Some(80)) | (Some(49443), Some(49000))
-        );
-    if !(same_origin || fallback_origin) {
+    if !same_origin {
         return Err(SafeUrlError::OriginMismatch {
             expected: redact_url(configured_origin),
             actual: redact_url(request_url),
@@ -129,14 +123,15 @@ mod tests {
     }
 
     #[test]
-    fn permits_only_exact_tls_fallback_origin() {
+    fn rejects_caller_requested_tls_downgrade() {
         let origin = Url::parse("https://fritz.box:49443").unwrap();
         assert!(
             validate_request_url(&origin, &Url::parse("https://FRITZ.BOX:49443/x").unwrap())
                 .is_ok()
         );
         assert!(
-            validate_request_url(&origin, &Url::parse("http://fritz.box:49000/x").unwrap()).is_ok()
+            validate_request_url(&origin, &Url::parse("http://fritz.box:49000/x").unwrap())
+                .is_err()
         );
         assert!(
             validate_request_url(&origin, &Url::parse("http://other:49000/x").unwrap()).is_err()

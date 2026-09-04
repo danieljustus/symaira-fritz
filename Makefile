@@ -48,7 +48,7 @@ rust-check: rust-lint rust-test
 .PHONY: port-fixtures
 port-fixtures: build
 	$(GO) run ./cmd/capture-port-fixtures -oracle ./$(BINARY_NAME)
-	SYMFRITZ_UPDATE_PORT_FIXTURES=1 $(GO) test ./internal/fritz ./internal/config ./internal/secret ./cmd/symfritz -run '^TestPort(Auth|TR064|Config|ConfigInit|Secret)Fixture$$' -count=1
+	SYMFRITZ_UPDATE_PORT_FIXTURES=1 $(GO) test ./internal/fritz ./internal/config ./internal/secret ./cmd/symfritz -run '^TestPort(Auth|TR064|Config|ConfigInit|Secret|Transport)Fixture$$' -count=1
 
 .PHONY: port-parity-version
 port-parity-version: build rust-build

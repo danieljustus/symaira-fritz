@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 base64.workspace = true
+getrandom.workspace = true
 hex.workspace = true
 md-5.workspace = true
 pbkdf2.workspace = true

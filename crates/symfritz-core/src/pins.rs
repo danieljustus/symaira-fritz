@@ -1,7 +1,7 @@
 //! Persistent SHA-256 SPKI pins used for trust-on-first-use TLS.
 //!
 //! The on-disk format intentionally matches the Go client:
-//! `{ "pins": { "host:port": "base64-sha256-spki" } }`.
+//! `{ "pins": { "host": "base64-sha256-spki" } }`.
 
 use std::{
     collections::BTreeMap,
@@ -9,11 +9,11 @@ use std::{
     fmt, fs,
     io::{self, Write},
     path::{Path, PathBuf},
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::{Arc, Mutex},
 };
+
+#[cfg(windows)]
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
@@ -192,14 +192,10 @@ fn write_state(path: &Path, pins: &BTreeMap<String, String>) -> Result<(), PinSt
             message: error.to_string(),
         }
     })?;
-    let temp = path.with_extension(format!(
-        "json.tmp.{}.{}",
-        std::process::id(),
-        TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
+    let temp = secure_temp_path(path)?;
     let result = (|| {
         let mut options = fs::OpenOptions::new();
-        options.write(true).create(true).truncate(true);
+        options.write(true).create_new(true);
         set_file_mode(&mut options);
         let mut file = options
             .open(&temp)
@@ -208,7 +204,8 @@ fn write_state(path: &Path, pins: &BTreeMap<String, String>) -> Result<(), PinSt
             .map_err(|error| io_error(&temp, error))?;
         file.sync_all().map_err(|error| io_error(&temp, error))?;
         set_existing_file_mode(&temp).map_err(|error| io_error(&temp, error))?;
-        replace_file(&temp, path)
+        replace_file(&temp, path)?;
+        sync_directory(parent).map_err(|error| io_error(parent, error))
     })();
     if result.is_err() {
         let _ = fs::remove_file(&temp);
@@ -223,7 +220,31 @@ fn io_error(path: &Path, error: io::Error) -> PinStoreError {
     }
 }
 
+#[cfg(windows)]
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn secure_temp_path(path: &Path) -> Result<PathBuf, PinStoreError> {
+    let mut nonce = [0_u8; 16];
+    getrandom::getrandom(&mut nonce).map_err(|error| PinStoreError::Io {
+        path: path.to_path_buf(),
+        message: format!("could not create secure temporary filename: {error}"),
+    })?;
+    Ok(path.with_extension(format!(
+        "json.tmp.{}.{}",
+        std::process::id(),
+        hex::encode(nonce)
+    )))
+}
+
+#[cfg(unix)]
+fn sync_directory(path: &Path) -> io::Result<()> {
+    fs::File::open(path)?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
 
 #[cfg(not(windows))]
 fn replace_file(temp: &Path, path: &Path) -> Result<(), PinStoreError> {
@@ -232,16 +253,34 @@ fn replace_file(temp: &Path, path: &Path) -> Result<(), PinStoreError> {
 
 #[cfg(windows)]
 fn replace_file(temp: &Path, path: &Path) -> Result<(), PinStoreError> {
-    if path.exists() {
-        fs::remove_file(path).map_err(|error| io_error(path, error))?;
+    if !path.exists() {
+        return fs::rename(temp, path).map_err(|error| io_error(path, error));
     }
-    fs::rename(temp, path).map_err(|error| io_error(path, error))
+    let backup = path.with_extension(format!(
+        "json.bak.{}.{}",
+        std::process::id(),
+        TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::rename(path, &backup).map_err(|error| io_error(path, error))?;
+    if let Err(error) = fs::rename(temp, path) {
+        let restore = fs::rename(&backup, path);
+        let message = match restore {
+            Ok(()) => error.to_string(),
+            Err(restore_error) => format!("{error}; restoring old store failed: {restore_error}"),
+        };
+        return Err(PinStoreError::Io {
+            path: path.to_path_buf(),
+            message,
+        });
+    }
+    let _ = fs::remove_file(backup);
+    Ok(())
 }
 
 #[cfg(unix)]
 fn set_directory_mode(path: &Path) -> io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
 }
 
 #[cfg(not(unix))]
@@ -302,14 +341,14 @@ mod tests {
         let path = temp_path("missing/pins.json");
         let store = PinStore::new(&path);
         assert!(store.load_error().is_none());
-        store.set("fritz.box:49443", "AQID").unwrap();
+        store.set("fritz.box", "AQID").unwrap();
         let bytes = fs::read(&path).unwrap();
         assert_eq!(
             String::from_utf8(bytes).unwrap(),
-            "{\n  \"pins\": {\n    \"fritz.box:49443\": \"AQID\"\n  }\n}"
+            "{\n  \"pins\": {\n    \"fritz.box\": \"AQID\"\n  }\n}"
         );
         assert_eq!(
-            PinStore::new(&path).get("fritz.box:49443").as_deref(),
+            PinStore::new(&path).get("fritz.box").as_deref(),
             Some("AQID")
         );
         let _ = fs::remove_dir_all(path.parent().unwrap().parent().unwrap());
