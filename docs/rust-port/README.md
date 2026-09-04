@@ -28,7 +28,8 @@ Implemented slices:
 - typed AHA-HTTP device/group/switch/thermostat behavior and session-authenticated
   web-origin CPU temperatures, plus TR-064 Homeauto enumeration/switch control,
   with Go-generated fixtures and injectable tests;
-- typed TR-064 status, host/Wake-on-LAN, WLAN/guest WLAN, mesh, router
+- typed TR-064 status reports, including `StatusFailure` values that retain the
+  complete all-failure report and its prioritized source error, plus host/Wake-on-LAN, WLAN/guest WLAN, mesh, router
   classification, and bounded TCP diagnosis capabilities, with a Go oracle
   fixture and fake-transport tests;
 - typed TR-064 DSL statistics, phone call filtering/dial/hangup, reduced

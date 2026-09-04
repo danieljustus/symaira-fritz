@@ -354,9 +354,9 @@ fn status_returns_original_prioritized_unauthorized_error() {
             ..Response::default()
         },
     ]);
-    let error = client.status().unwrap_err();
+    let failure = client.status().unwrap_err();
     assert_eq!(
-        error,
+        failure.source,
         symfritz_tr064::ClientError::SoapFault {
             status: 500,
             code: 606,
@@ -364,9 +364,11 @@ fn status_returns_original_prioritized_unauthorized_error() {
         }
     );
     assert_eq!(
-        symfritz_tr064::error_kind(&error),
+        symfritz_tr064::error_kind(&failure.source),
         symfritz_tr064::ErrorKind::Unauthorized
     );
+    assert_eq!(failure.to_string(), failure.source.to_string());
+    assert!(std::error::Error::source(&failure).is_some());
 }
 
 #[test]
@@ -377,14 +379,33 @@ fn status_keeps_partial_report_when_returning_original_error() {
         unauthorized(),
         unauthorized(),
     ]);
-    let error = client.status().unwrap_err();
+    let failure = client.status().unwrap_err();
+    assert!(failure.status.model_name.is_empty());
+    assert!(failure.status.firmware_version.is_empty());
+    assert!(failure.status.external_ip.is_empty());
+    assert!(failure.status.connection_state.is_empty());
+    assert!(failure.status.uptime.is_empty());
+    assert!(failure.status.update_available.is_empty());
+    assert!(failure.status.partial);
+    assert_eq!(failure.status.errors.len(), 4);
+    assert!(
+        failure
+            .status
+            .errors
+            .iter()
+            .all(|error| error.kind == symfritz_tr064::ErrorKind::Unauthorized)
+    );
     assert_eq!(
-        error,
+        failure.source,
         symfritz_tr064::ClientError::SoapFault {
             status: 500,
             code: 606,
             description: "unauthorized".to_owned(),
         }
+    );
+    assert_eq!(
+        symfritz_tr064::error_kind(&failure.source),
+        symfritz_tr064::ErrorKind::Unauthorized
     );
 }
 

@@ -103,11 +103,37 @@ impl std::fmt::Display for StatusError {
     }
 }
 
+/// Failure returned when a status report has no useful primary data.
+///
+/// The best-effort report is retained alongside the original prioritized
+/// protocol error so callers can inspect both the partial data and its cause.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StatusFailure {
+    pub status: Status,
+    pub source: ClientError,
+}
+
+impl std::fmt::Display for StatusFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.source.fmt(formatter)
+    }
+}
+
+impl std::error::Error for StatusFailure {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
 /// Firmware update availability from the UserInterface service.
 impl<T: Transport, C: CnonceSource> Client<T, C> {
     /// Fetch the box overview. Partial failures are retained in `Status`; an
     /// error is returned only when no useful primary data was obtained.
-    pub fn status(&mut self) -> Result<Status, ClientError> {
+    ///
+    /// The error is intentionally report-carrying so callers do not lose the
+    /// data collected before a total failure.
+    #[allow(clippy::result_large_err)]
+    pub fn status(&mut self) -> Result<Status, StatusFailure> {
         let mut status = Status::default();
         let mut errors = Vec::new();
         let mut original_errors = Vec::new();
@@ -171,15 +197,15 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
             && status.connection_state.is_empty()
             && status.uptime.is_empty();
         if status.errors.len() == 4 || (no_primary_data && status.partial) {
-            if let Some(error) = original_errors.iter().find(|error| is_unauthorized(error)) {
-                return Err(error.clone());
-            }
-            if let Some(error) = original_errors.first() {
-                return Err(error.clone());
-            }
-            return Err(ClientError::Transport(
-                "all status sub-queries failed".to_owned(),
-            ));
+            let source = original_errors
+                .iter()
+                .find(|error| is_unauthorized(error))
+                .or_else(|| original_errors.first())
+                .cloned()
+                .unwrap_or_else(|| {
+                    ClientError::Transport("all status sub-queries failed".to_owned())
+                });
+            return Err(StatusFailure { status, source });
         }
         Ok(status)
     }
