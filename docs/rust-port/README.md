@@ -25,8 +25,18 @@ Implemented slices:
   bounded transport;
 - concrete blocking HTTP/rustls transport with private-origin DNS pinning,
   SPKI TOFU persistence, strict internal-only fallback, and URL redaction;
-- typed AHA-HTTP device/group/switch/thermostat behavior and TR-064 Homeauto
-  enumeration/switch control, with Go-generated fixtures and injectable tests;
+- typed AHA-HTTP device/group/switch/thermostat behavior and session-authenticated
+  web-origin CPU temperatures, plus TR-064 Homeauto enumeration/switch control,
+  with Go-generated fixtures and injectable tests;
+- typed TR-064 status reports, including `StatusFailure` values that retain the
+  complete all-failure report and its prioritized source error, plus host/Wake-on-LAN, WLAN/guest WLAN, mesh, router
+  classification, and bounded TCP diagnosis capabilities, with a Go oracle
+  fixture and fake-transport tests;
+- typed TR-064 DSL statistics, phone call filtering/dial/hangup, reduced
+  online-monitor traffic, filtered device logs, and reboot, with deterministic
+  Go-generated fixtures and injected fake-transport tests;
+- session-authenticated `query.lua` CPU temperatures in `symfritz-aha`, using the
+  web origin and its own SID lifecycle, with one bounded 403 relogin retry;
 - `data.lua` raw JSON behavior without the incorrect automatic 403 retry.
 
 ## Measured Go baseline
@@ -87,6 +97,12 @@ make port-parity-version    # Go + Rust + committed golden fixtures
 `make port-parity-version` currently covers only the first vertical slice. It
 runs both binaries with isolated `HOME`, fixed locale/timezone, and all
 `SYMFRITZ_*` variables removed.
+
+The remaining typed capabilities are split by protocol boundary: TR-064 owns
+SOAP/digest operations, while `symfritz-aha::Client` owns session-authenticated
+web-origin operations including CPU temperatures and `data.lua`. CPU refreshes
+its own SID exactly once after HTTP 403; TR-064 digest and session
+authentication are not silently conflated.
 
 ## Reuse assessment
 

@@ -107,6 +107,23 @@ pub fn redact_url(url: &Url) -> String {
     safe.to_string()
 }
 
+/// Parse and redact a raw URL for use in an error message.
+///
+/// Invalid URLs are represented by a fixed marker so malformed input cannot
+/// smuggle query values into diagnostics.
+#[must_use]
+pub fn redact_raw_url(raw: &str) -> String {
+    Url::parse(raw)
+        .map(|url| redact_url(&url))
+        .unwrap_or_else(|_| "<invalid URL>".to_owned())
+}
+
+/// Replace a request URL in transport text with its redacted representation.
+#[must_use]
+pub fn redact_error_message(message: &str, url: &Url) -> String {
+    message.replace(url.as_str(), &redact_url(url))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -190,3 +190,65 @@ fn device_xml_requires_devicelist_local_name_and_accepts_namespaces() {
         assert_eq!(list.devices[0].identifier, "ain", "{name}");
     }
 }
+
+#[test]
+fn cpu_query_uses_web_origin_json_body_and_owned_sid_refresh() {
+    let mut client = client([
+        Ok(response(403, "")),
+        Ok(login("fresh-sid")),
+        Ok(response(200, r#"{"CPUTEMP":"41,broken,42,43"}"#)),
+    ]);
+    client.set_cached_sid("mock-sid");
+
+    assert_eq!(client.cpu_temperatures().unwrap(), [41, 42, 43]);
+    let transport = client.into_transport();
+    assert_eq!(transport.requests.len(), 3);
+    assert_eq!(transport.requests[0].method, Method::Post);
+    assert_eq!(
+        transport.requests[0].url,
+        "http://fritz.box/query.lua?sid=mock-sid"
+    );
+    assert_eq!(
+        transport.requests[1].url,
+        "http://fritz.box/login_sid.lua?version=2"
+    );
+    assert_eq!(
+        transport.requests[2].url,
+        "http://fritz.box/query.lua?sid=fresh-sid"
+    );
+    assert_eq!(
+        transport.requests[0].headers["Content-Type"],
+        "application/json"
+    );
+    assert_eq!(
+        transport.requests[0].body,
+        br#"{"CPUTEMP":"cpu:status/StatTemperature"}"#
+    );
+    assert_eq!(transport.requests[0].response_limit, 1 << 20);
+}
+
+#[test]
+fn cpu_query_does_not_retry_a_second_forbidden_response() {
+    let mut client = client([
+        Ok(response(403, "")),
+        Ok(login("fresh-sid")),
+        Ok(response(403, "")),
+    ]);
+    client.set_cached_sid("mock-sid");
+
+    assert_eq!(
+        client.cpu_temperatures(),
+        Err(ClientError::CpuHttpStatus(403))
+    );
+    assert_eq!(client.transport_mut().requests.len(), 3);
+}
+
+#[test]
+fn cpu_query_missing_key_preserves_go_error_string() {
+    let mut client = client([Ok(response(200, "{}"))]);
+    client.set_cached_sid("sid");
+    assert_eq!(
+        client.cpu_temperatures().unwrap_err().to_string(),
+        "query.lua response missing CPUTEMP key"
+    );
+}

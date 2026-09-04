@@ -18,8 +18,8 @@ would be decorative scaffolding.
 |---|---|---|
 | `symfritz-cli` | Argument parsing, output formatting, exit mapping | `version` (implemented) |
 | `symfritz-core` | Domain types, config/secret policy, error taxonomy, pure parsers | session/digest and config/credential fixtures (implemented) |
-| `symfritz-tr064` | SOAP, digest auth, discovery, bounded HTTP/TLS transport policy | raw `call`, private-origin DNS pinning, TOFU and strict fallback (implemented) |
-| `symfritz-aha` | SID login, AHA endpoints, data.lua isolation | SID lifecycle + raw `data.lua` foundation (implemented; typed AHA models follow) |
+| `symfritz-tr064` | SOAP, digest auth, discovery, bounded HTTP/TLS transport policy, typed router capabilities | raw `call`, private-origin DNS pinning, TOFU and strict fallback (implemented); status (including retained `StatusFailure` reports), hosts/WLAN/mesh/diagnosis plus DSL/phone/traffic/log/reboot (implemented) |
+| `symfritz-aha` | SID login, typed AHA/Homeauto models, session-authenticated web-origin endpoints, data.lua isolation | SID lifecycle, bounded CPU query, typed AHA models, and raw `data.lua` foundation (implemented) |
 | `symfritz-mcp` | MCP schemas, handlers, stdio transport | `tools/list` |
 
 The final `symfritz` entrypoint composes adapters but owns no protocol logic.

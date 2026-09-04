@@ -1,10 +1,11 @@
 #![deny(unsafe_code)]
 
-//! Session-id and best-effort `data.lua` clients for FRITZ!OS.
+//! Session-id and bounded web-origin clients for FRITZ!OS.
 //!
-//! `data.lua` is an internal web-UI endpoint. AVM changes its request and
-//! response shape between FRITZ!OS releases, so this crate deliberately exposes
-//! only the bounded raw JSON response and does not model its contents.
+//! The crate owns the session-authenticated web origin: AHA/Homeauto commands,
+//! the experimental `query.lua` CPU endpoint, and the raw `data.lua` scraper.
+//! AVM changes the web-UI request and response shape between FRITZ!OS releases,
+//! so `data.lua` deliberately exposes only its bounded raw JSON response.
 
 use std::{
     collections::BTreeMap,
@@ -16,6 +17,10 @@ use std::{
 use quick_xml::{Reader, events::Event};
 use serde::Deserialize;
 use symfritz_core::auth::{ChallengeError, challenge_response};
+use symfritz_tr064::{
+    Client as Tr064Client, CnonceSource as Tr064CnonceSource, MeshTopology, parse_mesh_topology,
+};
+use url::Url;
 
 /// The sentinel returned by `login_sid.lua` when no authenticated SID exists.
 pub const INVALID_SID: &str = "0000000000000000";
@@ -23,6 +28,8 @@ pub const INVALID_SID: &str = "0000000000000000";
 pub const LOGIN_RESPONSE_LIMIT: usize = 1 << 16;
 /// Maximum response body prefix retained and parsed from `data.lua` (5 MiB).
 pub const DATA_LUA_RESPONSE_LIMIT: usize = 5 << 20;
+/// Maximum response body prefix retained and parsed from `query.lua` (1 MiB).
+pub const QUERY_RESPONSE_LIMIT: usize = 1 << 20;
 /// Default local cache lifetime for a SID.
 pub const DEFAULT_SID_TTL: Duration = Duration::from_secs(15 * 60);
 
@@ -138,6 +145,7 @@ pub enum ClientError {
     RateLimited(i64),
     AhaForbiddenAfterRelogin,
     AhaHttpStatus { switchcmd: String, status: u16 },
+    CpuHttpStatus(u16),
     DataLuaHttpStatus(u16),
     HtmlLoginPage,
     NonJsonResponse { content_type: String },
@@ -166,6 +174,7 @@ impl fmt::Display for ClientError {
             Self::AhaHttpStatus { switchcmd, status } => {
                 write!(formatter, "aha: {switchcmd} returned HTTP {status}")
             }
+            Self::CpuHttpStatus(status) => write!(formatter, "query.lua returned HTTP {status}"),
             Self::DataLuaHttpStatus(status) => {
                 write!(formatter, "scrape: data.lua returned HTTP {status}")
             }
@@ -274,6 +283,95 @@ impl<T: Transport, C: Clock> Client<T, C> {
     pub fn set_cached_sid(&mut self, sid: impl Into<String>) {
         self.sid = Some(sid.into());
         self.sid_acquired_at = Some(self.clock.now());
+    }
+
+    /// Fetch the mesh list path through TR-064 and the JSON through session auth.
+    ///
+    /// Relative paths are attempted on the TR-064 origin first and then on the
+    /// web origin. Both requests are plain GETs with the SID in the query;
+    /// neither uses Digest authentication. An absolute path is one candidate.
+    pub fn mesh_topology<TR, TC>(
+        &mut self,
+        tr064: &mut Tr064Client<TR, TC>,
+    ) -> Result<MeshTopology, ClientError>
+    where
+        TR: symfritz_tr064::Transport,
+        TC: Tr064CnonceSource,
+    {
+        let raw_path = tr064
+            .mesh_list_path()
+            .map_err(|error| mesh_error("getting mesh list path", &error.to_string()))?;
+        let path = if has_sid_query(&raw_path) {
+            raw_path
+        } else {
+            append_sid(&raw_path, &self.sid()?)
+        };
+
+        let response = if is_absolute_http_url(&path) {
+            if tr064.mesh_candidate_matches_origin(&path) {
+                tr064
+                    .fetch_mesh_candidate(&path)
+                    .map(|response| response.body)
+                    .map_err(|error| mesh_error("fetching mesh list", &error.to_string()))?
+            } else if self.mesh_candidate_matches_origin(&path) {
+                self.fetch_mesh_candidate(&path)?.body
+            } else {
+                return Err(mesh_error(
+                    "fetching mesh list",
+                    &format!("absolute candidate is outside both configured origins: {path}"),
+                ));
+            }
+        } else {
+            let tr064_url = tr064
+                .mesh_candidate_url(&path)
+                .map_err(|error| mesh_error("building TR-064 mesh URL", &error.to_string()))?;
+            match tr064.fetch_mesh_candidate(&tr064_url) {
+                Ok(response) => response.body,
+                Err(tr064_error) => {
+                    let web_url = self.mesh_candidate_url(&path)?;
+                    if web_url == tr064_url {
+                        return Err(mesh_error(
+                            "fetching mesh list",
+                            &format!("TR-064 candidate failed: {}", tr064_error),
+                        ));
+                    }
+                    self.fetch_mesh_candidate(&web_url)
+                        .map(|response| response.body)
+                        .map_err(|web_error| {
+                            mesh_error(
+                                "fetching mesh list",
+                                &format!(
+                                    "TR-064 candidate failed: {}; web candidate failed: {}",
+                                    tr064_error, web_error
+                                ),
+                            )
+                        })?
+                }
+            }
+        };
+        parse_mesh_topology(&response)
+            .map_err(|error| mesh_error("parsing mesh list JSON", &error.to_string()))
+    }
+
+    /// Build the same-origin URL used for one web-origin mesh candidate.
+    pub fn mesh_candidate_url(&self, path: &str) -> Result<String, ClientError> {
+        absolute_mesh_path(&self.base_url, path)
+    }
+
+    /// Fetch one web-origin mesh candidate with a plain bounded GET.
+    pub fn fetch_mesh_candidate(&mut self, url: &str) -> Result<Response, ClientError> {
+        self.plain_get_with_limit(url, symfritz_tr064::MESH_RESPONSE_LIMIT)
+    }
+
+    /// Return whether a candidate is on this client's configured origin.
+    pub fn mesh_candidate_matches_origin(&self, url: &str) -> bool {
+        let Ok(origin) = Url::parse(&self.base_url) else {
+            return false;
+        };
+        let Ok(candidate) = Url::parse(url) else {
+            return false;
+        };
+        symfritz_tr064::validate_request_url(&origin, &candidate).is_ok()
     }
 
     /// POST a best-effort, version-fragile request to `/data.lua`.
@@ -415,6 +513,92 @@ impl<T: Transport, C: Clock> Client<T, C> {
             return Err(ClientError::HtmlLoginPage);
         }
         Err(ClientError::NonJsonResponse { content_type })
+    }
+
+    fn plain_get_with_limit(
+        &mut self,
+        url: &str,
+        response_limit: usize,
+    ) -> Result<Response, ClientError> {
+        let parsed = Url::parse(url).map_err(|error| {
+            ClientError::Transport(format!(
+                "invalid mesh GET URL {}: {error}",
+                symfritz_tr064::redact_raw_url(url)
+            ))
+        })?;
+        let origin = Url::parse(&self.base_url).map_err(|error| {
+            ClientError::Transport(format!("invalid configured web origin: {error}"))
+        })?;
+        symfritz_tr064::validate_request_url(&origin, &parsed).map_err(|error| {
+            ClientError::Transport(format!(
+                "unsafe mesh GET URL {}: {error}",
+                symfritz_tr064::redact_url(&parsed)
+            ))
+        })?;
+        let request = Request {
+            method: Method::Get,
+            url: url.to_owned(),
+            headers: BTreeMap::new(),
+            body: Vec::new(),
+            response_limit,
+        };
+        let mut response = self
+            .transport
+            .send(request)
+            .map_err(|error| mesh_error("contacting FRITZ!Box", &error.0))?;
+        response.body.truncate(response_limit);
+        if response.status != 200 {
+            return Err(mesh_error(
+                "fetching mesh list",
+                &format!(
+                    "GET {} returned HTTP {}",
+                    symfritz_tr064::redact_url(&parsed),
+                    response.status
+                ),
+            ));
+        }
+        Ok(response)
+    }
+
+    /// Query CPU temperatures through the experimental `query.lua` endpoint.
+    ///
+    /// CPU data is served by the web origin and therefore uses this client's
+    /// own cached SID, not the TR-064 digest client.
+    pub fn cpu_temperatures(&mut self) -> Result<Vec<i64>, ClientError> {
+        let response = self.cpu_once()?;
+        if response.status == 403 {
+            self.invalidate_sid();
+            let response = self.cpu_once()?;
+            return self.validate_cpu_response(response);
+        }
+        self.validate_cpu_response(response)
+    }
+
+    fn cpu_once(&mut self) -> Result<Response, ClientError> {
+        let sid = self.sid()?;
+        let request = Request {
+            method: Method::Post,
+            url: format!(
+                "{}/query.lua?sid={}",
+                self.base_url,
+                encode_query_value(&sid)
+            ),
+            headers: BTreeMap::from([("Content-Type".to_owned(), "application/json".to_owned())]),
+            body: br#"{"CPUTEMP":"cpu:status/StatTemperature"}"#.to_vec(),
+            response_limit: QUERY_RESPONSE_LIMIT,
+        };
+        let mut response = self.transport.send(request).map_err(|error| {
+            ClientError::Transport(format!("status: contacting FRITZ!Box: {error}"))
+        })?;
+        response.body.truncate(QUERY_RESPONSE_LIMIT);
+        Ok(response)
+    }
+
+    fn validate_cpu_response(&self, response: Response) -> Result<Vec<i64>, ClientError> {
+        if response.status != 200 {
+            return Err(ClientError::CpuHttpStatus(response.status));
+        }
+        parse_cpu_response(&response.body)
     }
 
     /// Perform one AHA-HTTP `switchcmd`, retrying exactly once after HTTP 403.
@@ -872,6 +1056,26 @@ fn is_valid_sid(sid: &str) -> bool {
     !sid.is_empty() && sid != INVALID_SID
 }
 
+fn parse_cpu_response(body: &[u8]) -> Result<Vec<i64>, ClientError> {
+    let values: serde_json::Value = serde_json::from_slice(body).map_err(|error| {
+        ClientError::Transport(format!("status: parsing query.lua response: {error}"))
+    })?;
+    let raw = values
+        .get("CPUTEMP")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            ClientError::Transport("query.lua response missing CPUTEMP key".to_owned())
+        })?;
+    Ok(raw
+        .split(',')
+        .filter_map(|value| value.parse().ok())
+        .collect())
+}
+
+fn encode_query_value(value: &str) -> String {
+    url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
+}
+
 fn encode_pairs<I, K, V>(pairs: I) -> String
 where
     I: IntoIterator<Item = (K, V)>,
@@ -958,6 +1162,70 @@ fn is_go_space(character: char) -> bool {
         '\u{0085}' | '\u{00a0}' | '\u{1680}' | '\u{2000}'
             ..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}'
     )
+}
+
+fn is_absolute_http_url(value: &str) -> bool {
+    Url::parse(value).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
+}
+
+fn absolute_mesh_path(base: &str, path: &str) -> Result<String, ClientError> {
+    if is_absolute_http_url(path) {
+        return Ok(path.to_owned());
+    }
+    let path = if path.starts_with('/') {
+        path.to_owned()
+    } else {
+        format!("/{path}")
+    };
+    Ok(format!("{}{}", base.trim_end_matches('/'), path))
+}
+
+fn has_sid_query(path: &str) -> bool {
+    let query = path
+        .split_once('?')
+        .map(|(_, query)| query.split('#').next().unwrap_or_default())
+        .unwrap_or_default();
+    url::form_urlencoded::parse(query.as_bytes()).any(|(key, _)| key.eq_ignore_ascii_case("sid"))
+}
+
+fn append_sid(path: &str, sid: &str) -> String {
+    let (without_fragment, fragment) = path
+        .split_once('#')
+        .map_or((path, ""), |(before, after)| (before, after));
+    let separator = if without_fragment.contains('?') {
+        '&'
+    } else {
+        '?'
+    };
+    let result = format!(
+        "{without_fragment}{separator}sid={}",
+        encode_query_value(sid)
+    );
+    if fragment.is_empty() {
+        result
+    } else {
+        format!("{result}#{fragment}")
+    }
+}
+
+fn redact_sid_text(message: &str) -> String {
+    let mut output = String::with_capacity(message.len());
+    let mut rest = message;
+    while let Some(offset) = rest.to_ascii_lowercase().find("sid=") {
+        let (prefix, value_start) = rest.split_at(offset + 4);
+        output.push_str(prefix);
+        let value_end = value_start
+            .find(|character: char| ['&', ' ', ')', '"'].contains(&character))
+            .unwrap_or(value_start.len());
+        output.push_str("REDACTED");
+        rest = &value_start[value_end..];
+    }
+    output.push_str(rest);
+    output
+}
+
+fn mesh_error(context: &str, message: &str) -> ClientError {
+    ClientError::Transport(format!("mesh: {context}: {}", redact_sid_text(message)))
 }
 
 #[cfg(test)]

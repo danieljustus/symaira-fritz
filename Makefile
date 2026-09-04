@@ -49,10 +49,18 @@ rust-check: rust-lint rust-test
 port-aha-fixtures:
 	SYMFRITZ_UPDATE_PORT_FIXTURES=1 $(GO) test ./internal/fritz -run '^TestPortAHAFixture$$' -count=1
 
+.PHONY: port-capabilities-core-fixtures
+port-capabilities-core-fixtures:
+	SYMFRITZ_UPDATE_PORT_FIXTURES=1 $(GO) test ./internal/fritz -run '^TestPortCapabilitiesCoreFixture$$' -count=1
+
+.PHONY: port-remaining-fixtures
+port-remaining-fixtures:
+	SYMFRITZ_UPDATE_PORT_FIXTURES=1 $(GO) test ./internal/fritz -run '^TestPortRemainingCapabilitiesFixture$$' -count=1
+
 .PHONY: port-fixtures
 port-fixtures: build
 	$(GO) run ./cmd/capture-port-fixtures -oracle ./$(BINARY_NAME)
-	SYMFRITZ_UPDATE_PORT_FIXTURES=1 $(GO) test ./internal/fritz ./internal/config ./internal/secret ./cmd/symfritz -run '^TestPort(Auth|TR064|Config|ConfigInit|Secret|Transport|SessionData)Fixture$$' -count=1
+	SYMFRITZ_UPDATE_PORT_FIXTURES=1 $(GO) test ./internal/fritz ./internal/config ./internal/secret ./cmd/symfritz -run '^TestPort(Auth|TR064|Config|ConfigInit|Secret|Transport|SessionData|CapabilitiesCore|RemainingCapabilities)Fixture$$' -count=1
 	$(MAKE) port-aha-fixtures
 
 .PHONY: port-parity-version

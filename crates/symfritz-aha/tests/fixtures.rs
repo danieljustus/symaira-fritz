@@ -228,3 +228,58 @@ fn hkr_temperature_mapping_matches_go_helpers() {
         );
     }
 }
+
+#[derive(Debug, Deserialize)]
+struct RemainingFixture {
+    requests: Vec<RemainingRequest>,
+    fallbacks: Vec<RemainingFallback>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemainingRequest {
+    id: String,
+    method: Option<String>,
+    url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemainingFallback {
+    id: String,
+    expected_request: Vec<RemainingRequest>,
+}
+
+#[test]
+fn cpu_fixture_freezes_web_origin_and_refresh_requests() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let bytes = fs::read(root.join("testdata/port/capabilities-remaining/contracts.json")).unwrap();
+    let fixture: RemainingFixture = serde_json::from_slice(&bytes).unwrap();
+    let request = fixture
+        .requests
+        .iter()
+        .find(|request| request.id == "cpu-query")
+        .unwrap();
+    assert_eq!(request.method.as_deref(), Some("POST"));
+    assert_eq!(
+        request.url.as_deref(),
+        Some("http://fritz.box/query.lua?sid=mock-sid")
+    );
+    assert!(!request.url.as_deref().unwrap().contains(":49000"));
+
+    let refresh = fixture
+        .fallbacks
+        .iter()
+        .find(|fallback| fallback.id == "cpu-403-refresh-once")
+        .unwrap();
+    assert_eq!(refresh.expected_request.len(), 2);
+    assert_eq!(
+        refresh.expected_request[1].url.as_deref(),
+        Some("http://fritz.box/query.lua?sid=fresh-sid")
+    );
+    assert!(
+        !refresh.expected_request[1]
+            .url
+            .as_deref()
+            .unwrap()
+            .contains(":49000")
+    );
+}

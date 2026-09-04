@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "oracle": "Go internal/fritz typed capability production models and request seams",
+  "hosts": [
+    {
+      "name": "macmini",
+      "ip": "192.168.188.65",
+      "mac": "F0:18:98:F3:64:B5",
+      "active": true,
+      "interface_type": "Ethernet",
+      "address_source": "DHCP",
+      "lease_time_remaining": 3600
+    },
+    {
+      "name": "macbook",
+      "ip": "192.168.188.40",
+      "mac": "AA:BB:CC:DD:EE:FF",
+      "active": false,
+      "interface_type": "802.11ax",
+      "address_source": "DHCP",
+      "lease_time_remaining": 0
+    }
+  ],
+  "radios": [
+    {
+      "index": 1,
+      "ssid": "MyNet",
+      "enabled": true,
+      "channel": "6",
+      "standard": "802.11ac",
+      "bssid": "AA:BB:CC:DD:EE:01",
+      "status": "Up"
+    },
+    {
+      "index": 3,
+      "ssid": "GuestNet",
+      "enabled": false,
+      "channel": "11",
+      "standard": "802.11n",
+      "bssid": "",
+      "status": "Down"
+    }
+  ],
+  "wlan_clients": [
+    {
+      "radio_index": 1,
+      "mac": "aa:bb:cc:dd:ee:01",
+      "ip": "192.168.188.10",
+      "signal_strength": "80",
+      "speed": "300",
+      "authorized": true
+    },
+    {
+      "radio_index": 3,
+      "mac": "aa:bb:cc:dd:ee:03",
+      "ip": "192.168.188.30",
+      "signal_strength": "65",
+      "speed": "150",
+      "authorized": false
+    }
+  ],
+  "mesh": {
+    "schema_version": "1.0",
+    "nodes": [
+      {
+        "uid": "n1",
+        "device_name": "FRITZ!Box 7590",
+        "device_model": "FB7590",
+        "is_meshed": true,
+        "mesh_role": "master",
+        "node_interfaces": [
+          {
+            "uid": "n1-lan",
+            "name": "LAN Bridge",
+            "type": "LAN",
+            "node_links": [
+              {
+                "state": "CONNECTED",
+                "node_1": "n1-lan",
+                "node_2": "n2-wlan",
+                "max_data_rate_rx": 1000,
+                "max_data_rate_tx": 1000,
+                "cur_data_rate_rx": 500,
+                "cur_data_rate_tx": 400
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "diagnosis": {
+    "ref": "fixture-ref",
+    "checks": [],
+    "ok": true
+  },
+  "requests": [
+    {
+      "id": "status-device-info",
+      "service_type": "urn:dslforum-org:service:DeviceInfo:1",
+      "control_url": "/upnp/control/deviceinfo",
+      "action": "GetInfo"
+    },
+    {
+      "id": "status-wan-info",
+      "service_type": "urn:dslforum-org:service:WANIPConnection:1",
+      "control_url": "/upnp/control/wanipconnection1",
+      "action": "GetInfo"
+    },
+    {
+      "id": "status-wan-external-ip",
+      "service_type": "urn:dslforum-org:service:WANIPConnection:1",
+      "control_url": "/upnp/control/wanipconnection1",
+      "action": "GetExternalIPAddress"
+    },
+    {
+      "id": "status-user-interface",
+      "service_type": "urn:dslforum-org:service:UserInterface:1",
+      "control_url": "/upnp/control/userif",
+      "action": "GetInfo"
+    },
+    {
+      "id": "host-by-mac",
+      "service_type": "urn:dslforum-org:service:Hosts:1",
+      "control_url": "/upnp/control/hosts",
+      "action": "GetSpecificHostEntry",
+      "args": {
+        "NewMACAddress": "AA:BB:CC:DD:EE:FF"
+      }
+    },
+    {
+      "id": "host-by-ip",
+      "service_type": "urn:dslforum-org:service:Hosts:1",
+      "control_url": "/upnp/control/hosts",
+      "action": "X_AVM-DE_GetSpecificHostEntryByIP",
+      "args": {
+        "NewIPAddress": "192.168.188.40"
+      }
+    },
+    {
+      "id": "wake-on-lan",
+      "service_type": "urn:dslforum-org:service:Hosts:1",
+      "control_url": "/upnp/control/hosts",
+      "action": "X_AVM-DE_WakeOnLANByMACAddress",
+      "args": {
+        "NewMACAddress": "AA:BB:CC:DD:EE:FF"
+      }
+    },
+    {
+      "id": "guest-set-enable",
+      "service_type": "urn:dslforum-org:service:WLANConfiguration:3",
+      "control_url": "/upnp/control/wlanconfig3",
+      "action": "SetEnable",
+      "args": {
+        "NewEnable": "1"
+      }
+    }
+  ],
+  "negative": [
+    {
+      "id": "empty-host-name",
+      "input": "",
+      "message": "no host named \"\" in the FRITZ!Box host table"
+    },
+    {
+      "id": "duplicate-host-name",
+      "input": "duplicate",
+      "message": "2 hosts named \"duplicate\"; use --mac or --ip to disambiguate"
+    },
+    {
+      "id": "empty-mesh-path",
+      "input": "",
+      "message": "box returned no mesh list path (unsupported firmware?)"
+    }
+  ]
+}
