@@ -1,0 +1,296 @@
+{
+  "schema_version": 1,
+  "oracle": "Go internal/fritz production SOAP and discovery functions",
+  "soap_requests": [
+    {
+      "id": "no-arguments",
+      "service_type": "urn:dslforum-org:service:DeviceInfo:1",
+      "action": "GetInfo",
+      "args": {},
+      "body": "\u003c?xml version=\"1.0\" encoding=\"utf-8\"?\u003e\u003cs:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"\u003e\u003cs:Body\u003e\u003cu:GetInfo xmlns:u=\"urn:dslforum-org:service:DeviceInfo:1\"\u003e\u003c/u:GetInfo\u003e\u003c/s:Body\u003e\u003c/s:Envelope\u003e"
+    },
+    {
+      "id": "sorted-and-escaped-arguments",
+      "service_type": "urn:dslforum-org:service:Hosts:1",
+      "action": "X_Test",
+      "args": {
+        "NewAlpha": "\u003ctag attr=\"x\"\u003eA\u0026B's\u003c/tag\u003e",
+        "NewMiddle": "Grüße",
+        "NewZulu": "last"
+      },
+      "body": "\u003c?xml version=\"1.0\" encoding=\"utf-8\"?\u003e\u003cs:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\"\u003e\u003cs:Body\u003e\u003cu:X_Test xmlns:u=\"urn:dslforum-org:service:Hosts:1\"\u003e\u003cNewAlpha\u003e\u0026lt;tag attr=\u0026#34;x\u0026#34;\u0026gt;A\u0026amp;B\u0026#39;s\u0026lt;/tag\u0026gt;\u003c/NewAlpha\u003e\u003cNewMiddle\u003eGrüße\u003c/NewMiddle\u003e\u003cNewZulu\u003elast\u003c/NewZulu\u003e\u003c/u:X_Test\u003e\u003c/s:Body\u003e\u003c/s:Envelope\u003e"
+    }
+  ],
+  "soap_responses": [
+    {
+      "id": "namespaced-values",
+      "action": "GetInfo",
+      "xml": "\u003cs:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"\u003e\u003cs:Body\u003e\u003cu:GetInfoResponse xmlns:u=\"urn:dslforum-org:service:DeviceInfo:1\"\u003e\u003cNewModelName\u003eFRITZ!Box 7590 AX\u003c/NewModelName\u003e\u003cNewSoftwareVersion\u003e8.20\u003c/NewSoftwareVersion\u003e\u003c/u:GetInfoResponse\u003e\u003c/s:Body\u003e\u003c/s:Envelope\u003e",
+      "output": {
+        "NewModelName": "FRITZ!Box 7590 AX",
+        "NewSoftwareVersion": "8.20"
+      }
+    },
+    {
+      "id": "empty-response",
+      "action": "Reboot",
+      "xml": "\u003cs:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"\u003e\u003cs:Body\u003e\u003cu:RebootResponse xmlns:u=\"urn:dslforum-org:service:DeviceConfig:1\"\u003e\u003c/u:RebootResponse\u003e\u003c/s:Body\u003e\u003c/s:Envelope\u003e"
+    },
+    {
+      "id": "entities-and-cdata",
+      "action": "GetInfo",
+      "xml": "\u003cGetInfoResponse\u003e\u003cNewText\u003eA\u0026amp;B\u0026#34;quoted\u0026#34;\u003c/NewText\u003e\u003cNewCDATA\u003e\u003c![CDATA[\u003craw\u003e]]\u003e\u003c/NewCDATA\u003e\u003c/GetInfoResponse\u003e",
+      "output": {
+        "NewCDATA": "\u003craw\u003e",
+        "NewText": "A\u0026B\"quoted\""
+      }
+    },
+    {
+      "id": "nested-values-follow-go-state-machine",
+      "action": "GetInfo",
+      "xml": "\u003cGetInfoResponse\u003e\u003cOuter\u003ebefore\u003cInner\u003einside\u003c/Inner\u003eafter\u003c/Outer\u003e\u003c/GetInfoResponse\u003e",
+      "output": {
+        "Inner": "inside",
+        "Outer": "before"
+      }
+    },
+    {
+      "id": "valid-without-action-response",
+      "action": "GetInfo",
+      "xml": "\u003cEnvelope\u003e\u003cBody\u003e\u003c/Body\u003e\u003c/Envelope\u003e"
+    },
+    {
+      "id": "malformed",
+      "action": "GetInfo",
+      "xml": "\u003cs:Envelope\u003e\u003cGetInfoResponse\u003e",
+      "error": true
+    }
+  ],
+  "soap_faults": [
+    {
+      "id": "upnp-invalid-args",
+      "xml": "\u003cs:Fault\u003e\u003cdetail\u003e\u003cUPnPError\u003e\u003cerrorCode\u003e402\u003c/errorCode\u003e\u003cerrorDescription\u003eInvalid Args\u003c/errorDescription\u003e\u003c/UPnPError\u003e\u003c/detail\u003e\u003c/s:Fault\u003e",
+      "code": 402,
+      "description": "Invalid Args"
+    },
+    {
+      "id": "unauthorized-localized",
+      "xml": "\u003cs:Fault\u003e\u003cdetail\u003e\u003cUPnPError\u003e\u003cerrorCode\u003e606\u003c/errorCode\u003e\u003cerrorDescription\u003eAktion nicht autorisiert\u003c/errorDescription\u003e\u003c/UPnPError\u003e\u003c/detail\u003e\u003c/s:Fault\u003e",
+      "code": 606,
+      "description": "Aktion nicht autorisiert"
+    },
+    {
+      "id": "raw-fallback",
+      "xml": "\u003cs:Fault\u003e\u003cfaultstring\u003eNo such entry\u003c/faultstring\u003e\u003c/s:Fault\u003e",
+      "code": 0,
+      "description": "\u003cs:Fault\u003e\u003cfaultstring\u003eNo such entry\u003c/faultstring\u003e\u003c/s:Fault\u003e"
+    }
+  ],
+  "discovery": [
+    {
+      "id": "redacted-router-description",
+      "input_file": "internal/fritz/testdata/tr64desc.xml",
+      "services": [
+        {
+          "type": "urn:dslforum-org:service:DeviceConfig:1",
+          "control_url": "/upnp/control/deviceconfig"
+        },
+        {
+          "type": "urn:dslforum-org:service:DeviceInfo:1",
+          "control_url": "/upnp/control/deviceinfo"
+        },
+        {
+          "type": "urn:dslforum-org:service:Hosts:1",
+          "control_url": "/upnp/control/hosts"
+        },
+        {
+          "type": "urn:dslforum-org:service:LANConfigSecurity:1",
+          "control_url": "/upnp/control/lanconfigsecurity"
+        },
+        {
+          "type": "urn:dslforum-org:service:LANEthernetInterfaceConfig:1",
+          "control_url": "/upnp/control/lanethernetifcfg"
+        },
+        {
+          "type": "urn:dslforum-org:service:LANHostConfigManagement:1",
+          "control_url": "/upnp/control/lanhostconfigmgm"
+        },
+        {
+          "type": "urn:dslforum-org:service:Layer3Forwarding:1",
+          "control_url": "/upnp/control/layer3forwarding"
+        },
+        {
+          "type": "urn:dslforum-org:service:ManagementServer:1",
+          "control_url": "/upnp/control/mgmsrv"
+        },
+        {
+          "type": "urn:dslforum-org:service:Time:1",
+          "control_url": "/upnp/control/time"
+        },
+        {
+          "type": "urn:dslforum-org:service:UserInterface:1",
+          "control_url": "/upnp/control/userif"
+        },
+        {
+          "type": "urn:dslforum-org:service:WANCommonInterfaceConfig:1",
+          "control_url": "/upnp/control/wancommonifconfig1"
+        },
+        {
+          "type": "urn:dslforum-org:service:WANEthernetLinkConfig:1",
+          "control_url": "/upnp/control/wanethlinkconfig1"
+        },
+        {
+          "type": "urn:dslforum-org:service:WANIPConnection:1",
+          "control_url": "/upnp/control/wanipconnection1"
+        },
+        {
+          "type": "urn:dslforum-org:service:WANPPPConnection:1",
+          "control_url": "/upnp/control/wanpppconn1"
+        },
+        {
+          "type": "urn:dslforum-org:service:WLANConfiguration:1",
+          "control_url": "/upnp/control/wlanconfig1"
+        },
+        {
+          "type": "urn:dslforum-org:service:WLANConfiguration:2",
+          "control_url": "/upnp/control/wlanconfig2"
+        },
+        {
+          "type": "urn:dslforum-org:service:WLANConfiguration:3",
+          "control_url": "/upnp/control/wlanconfig3"
+        },
+        {
+          "type": "urn:dslforum-org:service:WLANConfiguration:4",
+          "control_url": "/upnp/control/wlanconfig4"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_AppSetup:1",
+          "control_url": "/upnp/control/x_appsetup"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_Auth:1",
+          "control_url": "/upnp/control/x_auth"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_Dect:1",
+          "control_url": "/upnp/control/x_dect"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_Filelinks:1",
+          "control_url": "/upnp/control/x_filelinks"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_Homeauto:1",
+          "control_url": "/upnp/control/x_homeauto"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_Homeplug:1",
+          "control_url": "/upnp/control/x_homeplug"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_HostFilter:1",
+          "control_url": "/upnp/control/x_hostfilter"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_MyFritz:1",
+          "control_url": "/upnp/control/x_myfritz"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_OnTel:1",
+          "control_url": "/upnp/control/x_contact"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_RemoteAccess:1",
+          "control_url": "/upnp/control/x_remote"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_Speedtest:1",
+          "control_url": "/upnp/control/x_speedtest"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_Storage:1",
+          "control_url": "/upnp/control/x_storage"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_TAM:1",
+          "control_url": "/upnp/control/x_tam"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_UPnP:1",
+          "control_url": "/upnp/control/x_upnp"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_USPController:1",
+          "control_url": "/upnp/control/x_uspcontroller"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_WANMobileConnection:1",
+          "control_url": "/upnp/control/x_wanmobileconn"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_AVM-DE_WebDAVClient:1",
+          "control_url": "/upnp/control/x_webdav"
+        },
+        {
+          "type": "urn:dslforum-org:service:X_VoIP:1",
+          "control_url": "/upnp/control/x_voip"
+        }
+      ]
+    },
+    {
+      "id": "nested-and-sorted",
+      "xml": "\u003c?xml version=\"1.0\"?\u003e\u003croot xmlns=\"urn:dslforum-org:device-1-0\"\u003e\u003cdevice\u003e\u003cserviceList\u003e\u003cservice\u003e\u003cserviceType\u003eurn:test:service:Zulu:1\u003c/serviceType\u003e\u003ccontrolURL\u003e/zulu\u003c/controlURL\u003e\u003c/service\u003e\u003c/serviceList\u003e\u003cdeviceList\u003e\u003cdevice\u003e\u003cserviceList\u003e\u003cservice\u003e\u003cserviceType\u003eurn:test:service:Alpha:1\u003c/serviceType\u003e\u003ccontrolURL\u003e/alpha\u003c/controlURL\u003e\u003c/service\u003e\u003c/serviceList\u003e\u003c/device\u003e\u003c/deviceList\u003e\u003c/device\u003e\u003c/root\u003e",
+      "services": [
+        {
+          "type": "urn:test:service:Alpha:1",
+          "control_url": "/alpha"
+        },
+        {
+          "type": "urn:test:service:Zulu:1",
+          "control_url": "/zulu"
+        }
+      ]
+    },
+    {
+      "id": "malformed",
+      "xml": "\u003croot\u003e\u003cdevice\u003e",
+      "error": true
+    }
+  ],
+  "service_lookup": [
+    {
+      "id": "device-info",
+      "name": "DeviceInfo",
+      "service": {
+        "type": "urn:dslforum-org:service:DeviceInfo:1",
+        "control_url": "/upnp/control/deviceinfo"
+      }
+    },
+    {
+      "id": "case-insensitive",
+      "name": "deviceinfo",
+      "service": {
+        "type": "urn:dslforum-org:service:DeviceInfo:1",
+        "control_url": "/upnp/control/deviceinfo"
+      }
+    },
+    {
+      "id": "specific-wlan",
+      "name": "WLANConfiguration:2",
+      "service": {
+        "type": "urn:dslforum-org:service:WLANConfiguration:2",
+        "control_url": "/upnp/control/wlanconfig2"
+      }
+    },
+    {
+      "id": "ambiguous",
+      "name": "X_AVM-DE",
+      "error": "17 services match \"X_AVM-DE\"; be more specific"
+    },
+    {
+      "id": "missing",
+      "name": "NoSuchService",
+      "error": "no discovered service matches \"NoSuchService\""
+    }
+  ]
+}
