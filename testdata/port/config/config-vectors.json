@@ -1,0 +1,214 @@
+{
+  "schema_version": 1,
+  "oracle": "Go internal/config and configkit production functions",
+  "defaults": {
+    "host": "fritz.box",
+    "user": "",
+    "password": "",
+    "password_ref": "",
+    "keychain": false,
+    "keychain_account": "",
+    "use_tls": true,
+    "insecure_tls": false,
+    "timeout_seconds": 15
+  },
+  "path_suffix": ".config/symfritz/config.toml",
+  "project_file_name": ".symfritz.toml",
+  "template_toml": "# symfritz configuration\n\n[box]\n# FRITZ!Box address (hostname or IP), without scheme.\nhost = \"fritz.box\"\n\n# FRITZ!Box username. Leave empty for legacy password-only boxes.\nuser = \"\"\n\n# Credential resolution order (highest first):\n#   1. SYMFRITZ_PASSWORD environment variable\n#   2. password_ref  — a symvault entry, resolved at runtime via 'symvault get'\n#   3. keychain      — the macOS Keychain (service \"symfritz\")\n#   4. password      — plaintext below (least secure)\n#\n# Recommended: store the password once with 'symfritz auth login', which writes\n# it to the Keychain (macOS) or symvault, and leave 'password' empty here.\n\n# symvault entry path, e.g. \"fritz.password\". Empty = disabled.\npassword_ref = \"\"\n\n# Read the password from the macOS Keychain (service \"symfritz\").\nkeychain = false\n\n# Keychain account name; defaults to the box host when empty.\nkeychain_account = \"\"\n\n# Plaintext password (least secure — prefer the options above).\npassword = \"\"\n\n# Use the TLS TR-064 endpoint (https, port 49443).\nuse_tls = true\n\n# Skip TLS certificate verification (disables TOFU certificate pinning;\n# optional opt-out for legacy setups).\ninsecure_tls = false\n\n# Per-request HTTP timeout in seconds.\ntimeout_seconds = 15\n",
+  "timeout_cases": [
+    {
+      "input_seconds": 0,
+      "expected_seconds": 15
+    },
+    {
+      "input_seconds": -1,
+      "expected_seconds": 15
+    },
+    {
+      "input_seconds": -10,
+      "expected_seconds": 15
+    },
+    {
+      "input_seconds": 1,
+      "expected_seconds": 1
+    },
+    {
+      "input_seconds": 15,
+      "expected_seconds": 15
+    },
+    {
+      "input_seconds": 30,
+      "expected_seconds": 30
+    },
+    {
+      "input_seconds": 300,
+      "expected_seconds": 300
+    }
+  ],
+  "precedence_cases": [
+    {
+      "id": "defaults-only",
+      "expected": {
+        "host": "fritz.box",
+        "user": "",
+        "password": "",
+        "password_ref": "",
+        "keychain": false,
+        "keychain_account": "",
+        "use_tls": true,
+        "insecure_tls": false,
+        "timeout_seconds": 15
+      },
+      "expected_timeout_sec": 15
+    },
+    {
+      "id": "global-file",
+      "global_toml": "[box]\nhost=\"global.box\"\nuser=\"global-user\"\ntimeout_seconds=45\n",
+      "expected": {
+        "host": "global.box",
+        "user": "global-user",
+        "password": "",
+        "password_ref": "",
+        "keychain": false,
+        "keychain_account": "",
+        "use_tls": true,
+        "insecure_tls": false,
+        "timeout_seconds": 45
+      },
+      "expected_timeout_sec": 45
+    },
+    {
+      "id": "all-fields",
+      "global_toml": "[box]\nhost=\"router.home\"\nuser=\"alice\"\npassword=\"plain-value\"\npassword_ref=\"vault.box\"\nkeychain=true\nkeychain_account=\"router-admin\"\nuse_tls=true\ninsecure_tls=true\ntimeout_seconds=20\n",
+      "expected": {
+        "host": "router.home",
+        "user": "alice",
+        "password": "plain-value",
+        "password_ref": "vault.box",
+        "keychain": true,
+        "keychain_account": "router-admin",
+        "use_tls": true,
+        "insecure_tls": true,
+        "timeout_seconds": 20
+      },
+      "expected_timeout_sec": 20
+    },
+    {
+      "id": "project-over-global",
+      "global_toml": "[box]\nhost=\"global.box\"\nuser=\"global-user\"\npassword_ref=\"global.ref\"\n",
+      "project_toml": "[box]\nhost=\"project.box\"\ntimeout_seconds=30\n",
+      "expected": {
+        "host": "project.box",
+        "user": "global-user",
+        "password": "",
+        "password_ref": "global.ref",
+        "keychain": false,
+        "keychain_account": "",
+        "use_tls": true,
+        "insecure_tls": false,
+        "timeout_seconds": 30
+      },
+      "expected_timeout_sec": 30
+    },
+    {
+      "id": "file-zero-values-do-not-override",
+      "global_toml": "[box]\nuse_tls=false\nkeychain=false\ntimeout_seconds=0\nhost=\"\"\n",
+      "expected": {
+        "host": "fritz.box",
+        "user": "",
+        "password": "",
+        "password_ref": "",
+        "keychain": false,
+        "keychain_account": "",
+        "use_tls": true,
+        "insecure_tls": false,
+        "timeout_seconds": 15
+      },
+      "expected_timeout_sec": 15
+    },
+    {
+      "id": "nested-env",
+      "global_toml": "[box]\nhost=\"global.box\"\n",
+      "env": {
+        "SYMFRITZ_BOX_HOST": "env.box",
+        "SYMFRITZ_BOX_INSECURE_TLS": "true",
+        "SYMFRITZ_BOX_TIMEOUT_SECONDS": "90",
+        "SYMFRITZ_BOX_USER": "env-user",
+        "SYMFRITZ_BOX_USE_TLS": "false"
+      },
+      "expected": {
+        "host": "env.box",
+        "user": "env-user",
+        "password": "",
+        "password_ref": "",
+        "keychain": false,
+        "keychain_account": "",
+        "use_tls": false,
+        "insecure_tls": true,
+        "timeout_seconds": 90
+      },
+      "expected_timeout_sec": 90
+    },
+    {
+      "id": "shorthand-env-last",
+      "global_toml": "[box]\nhost=\"global.box\"\nuser=\"global-user\"\n",
+      "env": {
+        "SYMFRITZ_BOX_HOST": "nested.box",
+        "SYMFRITZ_BOX_USER": "nested-user",
+        "SYMFRITZ_HOST": "short.box",
+        "SYMFRITZ_USER": "short-user"
+      },
+      "expected": {
+        "host": "short.box",
+        "user": "short-user",
+        "password": "",
+        "password_ref": "",
+        "keychain": false,
+        "keychain_account": "",
+        "use_tls": true,
+        "insecure_tls": false,
+        "timeout_seconds": 15
+      },
+      "expected_timeout_sec": 15
+    },
+    {
+      "id": "empty-env-ignored",
+      "global_toml": "[box]\nhost=\"global.box\"\n",
+      "env": {
+        "SYMFRITZ_BOX_HOST": "",
+        "SYMFRITZ_HOST": ""
+      },
+      "expected": {
+        "host": "global.box",
+        "user": "",
+        "password": "",
+        "password_ref": "",
+        "keychain": false,
+        "keychain_account": "",
+        "use_tls": true,
+        "insecure_tls": false,
+        "timeout_seconds": 15
+      },
+      "expected_timeout_sec": 15
+    },
+    {
+      "id": "invalid-env-bool",
+      "env": {
+        "SYMFRITZ_BOX_USE_TLS": "nope"
+      },
+      "error": true
+    },
+    {
+      "id": "invalid-env-int",
+      "env": {
+        "SYMFRITZ_BOX_TIMEOUT_SECONDS": "nope"
+      },
+      "error": true
+    },
+    {
+      "id": "malformed-toml",
+      "global_toml": "[box\nhost=\"broken\"\n",
+      "error": true
+    }
+  ]
+}

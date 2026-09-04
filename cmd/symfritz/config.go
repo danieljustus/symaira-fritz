@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -22,24 +24,27 @@ func newConfigCmd() *cobra.Command {
 			if err != nil {
 				return exitcodes.Wrap(err, exitcodes.ExitConfig, exitcodes.KindConfig, "cannot determine home directory")
 			}
-			dir := home + "/.config/symfritz"
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitConfig, exitcodes.KindConfig, "cannot create config directory")
-			}
-			path := dir + "/config.toml"
 			force, _ := cmd.Flags().GetBool("force")
-			if _, err := os.Stat(path); err == nil && !force {
-				fmt.Fprintf(os.Stderr, "config already exists at %s (use --force to overwrite)\n", path)
-				return nil
-			}
-			if err := os.WriteFile(path, []byte(config.DefaultConfigTOML()), 0600); err != nil {
-				return exitcodes.Wrap(err, exitcodes.ExitConfig, exitcodes.KindConfig, "cannot write config file")
-			}
-			fmt.Printf("Config written to %s\n", path)
-			return nil
+			return initConfigFile(home+"/.config/symfritz/config.toml", force, os.Stdout, os.Stderr)
 		},
 	}
 	initCmd.Flags().Bool("force", false, "overwrite existing config file")
 	cfg.AddCommand(initCmd, newDetectCmd())
 	return cfg
+}
+
+func initConfigFile(path string, force bool, stdout, stderr io.Writer) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return exitcodes.Wrap(err, exitcodes.ExitConfig, exitcodes.KindConfig, "cannot create config directory")
+	}
+	if _, err := os.Stat(path); err == nil && !force {
+		fmt.Fprintf(stderr, "config already exists at %s (use --force to overwrite)\n", path)
+		return nil
+	}
+	if err := os.WriteFile(path, []byte(config.DefaultConfigTOML()), 0600); err != nil {
+		return exitcodes.Wrap(err, exitcodes.ExitConfig, exitcodes.KindConfig, "cannot write config file")
+	}
+	fmt.Fprintf(stdout, "Config written to %s\n", path)
+	return nil
 }

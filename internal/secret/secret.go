@@ -13,6 +13,7 @@ package secret
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -107,7 +108,7 @@ func symvaultGet(ctx context.Context, ref string) (string, error) {
 	if _, err := lookPathFn("symvault"); err != nil {
 		return "", fmt.Errorf("%w: symvault", ErrNotInstalled)
 	}
-	cmd := exec.CommandContext(ctx, "symvault", "get", ref, "--print")
+	cmd := exec.CommandContext(ctx, "symvault", symvaultGetArgs(ref)...)
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
@@ -131,12 +132,12 @@ func SymvaultSet(ctx context.Context, ref, value string) error {
 	if _, err := lookPathFn("symvault"); err != nil {
 		return fmt.Errorf("%w: symvault", ErrNotInstalled)
 	}
-	cmd := exec.CommandContext(ctx, "symvault", "set", ref)
-	cmd.Stdin = strings.NewReader(value + "\n")
+	cmd := exec.CommandContext(ctx, "symvault", symvaultSetArgs(ref)...)
+	cmd.Stdin = strings.NewReader(symvaultSetPayload(value))
 	var errb bytes.Buffer
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(errb.String())
+		msg := redactSecretOutput(strings.TrimSpace(errb.String()), value)
 		if msg == "" {
 			msg = err.Error()
 		}
@@ -153,10 +154,7 @@ func keychainGet(ctx context.Context, service, account string) (string, error) {
 	if _, err := lookPathFn("security"); err != nil {
 		return "", fmt.Errorf("%w: security", ErrNotInstalled)
 	}
-	args := []string{"find-generic-password", "-s", service, "-w"}
-	if account != "" {
-		args = append(args, "-a", account)
-	}
+	args := keychainGetArgs(service, account)
 	cmd := exec.CommandContext(ctx, "security", args...)
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
@@ -176,23 +174,75 @@ func KeychainSet(ctx context.Context, service, account, value string) error {
 	if _, err := lookPathFn("security"); err != nil {
 		return fmt.Errorf("%w: security", ErrNotInstalled)
 	}
-	// Pipe password via stdin instead of -w flag to avoid exposing it
-	// in process listings (ps aux). The security command reads from
-	// stdin when -w is omitted.
-	args := []string{"add-generic-password", "-U", "-s", service}
-	if account != "" {
-		args = append(args, "-a", account)
-	}
+	// Run security in interactive mode and send a hex-encoded value through
+	// stdin. The secret never appears in the process argument list.
+	args := keychainSetArgs()
 	cmd := exec.CommandContext(ctx, "security", args...)
-	cmd.Stdin = strings.NewReader(value)
+	cmd.Stdin = strings.NewReader(keychainSetPayload(service, account, value))
 	var errb bytes.Buffer
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(errb.String())
+		msg := redactSecretOutput(strings.TrimSpace(errb.String()), value)
 		if msg == "" {
 			msg = err.Error()
 		}
 		return fmt.Errorf("keychain store failed: %s", msg)
 	}
 	return nil
+}
+
+func symvaultGetArgs(ref string) []string {
+	return []string{"get", ref, "--print"}
+}
+
+func symvaultSetArgs(ref string) []string {
+	return []string{"set", ref, "--stdin-value"}
+}
+
+func symvaultSetPayload(value string) string {
+	return value + "\n"
+}
+
+func keychainGetArgs(service, account string) []string {
+	args := []string{"find-generic-password", "-s", service, "-w"}
+	if account != "" {
+		args = append(args, "-a", account)
+	}
+	return args
+}
+
+func keychainSetArgs() []string {
+	return []string{"-i", "-q"}
+}
+
+func keychainSetPayload(service, account, value string) string {
+	return keychainSetPayloadForKeychain(service, account, value, "")
+}
+
+func keychainSetPayloadForKeychain(service, account, value, keychain string) string {
+	command := "add-generic-password -U -s " + securityInteractiveQuote(service)
+	if account != "" {
+		command += " -a " + securityInteractiveQuote(account)
+	}
+	command += " -X " + hex.EncodeToString([]byte(value))
+	if keychain != "" {
+		command += " " + securityInteractiveQuote(keychain)
+	}
+	return command + "\n"
+}
+
+func securityInteractiveQuote(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `"`, `\"`)
+	return `"` + value + `"`
+}
+
+func redactSecretOutput(message, secret string) string {
+	if secret == "" {
+		return message
+	}
+	message = strings.ReplaceAll(message, secret, "REDACTED")
+	hexSecret := hex.EncodeToString([]byte(secret))
+	message = strings.ReplaceAll(message, hexSecret, "REDACTED")
+	return strings.ReplaceAll(message, strings.ToUpper(hexSecret), "REDACTED")
 }
