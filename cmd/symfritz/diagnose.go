@@ -79,7 +79,7 @@ directly.`,
 		},
 	}
 	routerCmd.Flags().BoolVar(&asJSON, "json", false, "Output as JSON")
-	routerCmd.Flags().IntSliceVar(&ports, "port", nil, "TCP port to probe (repeatable; replaces default ports 22, 5900, 8001)")
+	routerCmd.Flags().IntSliceVar(&ports, "port", nil, "TCP port to probe (repeatable; replaces router defaults 49000, 49443, 80, 443)")
 	cmd.AddCommand(routerCmd)
 
 	return cmd
@@ -108,9 +108,12 @@ func runDiagnoseRouter(cmd *cobra.Command, asJSON bool, ports []int) error {
 		}
 		c.Host = routerHost
 
-		opts := fritz.DiagnoseOptions{}
-		for _, p := range ports {
-			opts.Ports = append(opts.Ports, fritz.PortProbe{Port: p, Label: "custom"})
+		opts := fritz.DiagnoseOptions{Ports: fritz.RouterProbes}
+		if len(ports) > 0 {
+			opts.Ports = nil
+			for _, p := range ports {
+				opts.Ports = append(opts.Ports, fritz.PortProbe{Port: p, Label: "custom"})
+			}
 		}
 		d := c.Diagnose(ctx, routerHost, opts)
 		if format != outputText {

@@ -760,7 +760,7 @@ symfritz diagnose router [flags]
 ```
   -h, --help        help for router
       --json        Output as JSON
-      --port ints   TCP port to probe (repeatable; replaces default ports 22, 5900, 8001)
+      --port ints   TCP port to probe (repeatable; replaces router defaults 49000, 49443, 80, 443)
 ```
 
 ### Options inherited from parent commands

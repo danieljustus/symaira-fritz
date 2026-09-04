@@ -1,7 +1,9 @@
 package fritz
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,6 +53,28 @@ func (c *Client) ScrapeDataLUA(ctx context.Context, page string, params url.Valu
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("scrape: data.lua returned HTTP %d", resp.StatusCode)
 	}
+	if !json.Valid(bytes.TrimSpace(body)) {
+		contentType := resp.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = "unknown"
+		}
+		if looksLikeHTML(body, contentType) {
+			return "", fmt.Errorf("scrape: data.lua returned an HTML login page instead of JSON; run 'symfritz auth test' to verify credentials and retry")
+		}
+		return "", fmt.Errorf("scrape: data.lua returned a non-JSON response (content type %q)", contentType)
+	}
 
 	return string(body), nil
+}
+
+func looksLikeHTML(body []byte, contentType string) bool {
+	if strings.Contains(strings.ToLower(contentType), "text/html") {
+		return true
+	}
+	prefix := bytes.TrimSpace(body)
+	if len(prefix) > 512 {
+		prefix = prefix[:512]
+	}
+	lower := strings.ToLower(string(prefix))
+	return strings.HasPrefix(lower, "<!doctype html") || strings.HasPrefix(lower, "<html")
 }
