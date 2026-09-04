@@ -1296,8 +1296,14 @@ name = "symfritz-cli"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "getrandom",
+ "hex",
  "serde",
  "serde_json",
+ "symfritz-aha",
+ "symfritz-core",
+ "symfritz-tr064",
+ "url",
 ]
 
 [[package]]

@@ -11,7 +11,7 @@ mod soap;
 mod transport;
 
 pub use capabilities::{
-    CALL_ALL, CALL_INCOMING, CALL_MISSED, CALL_OUTGOING, CALL_REJECTED, Check, CheckStatus,
+    CALL_ALL, CALL_INCOMING, CALL_MISSED, CALL_OUTGOING, CALL_REJECTED, Call, Check, CheckStatus,
     DiagnoseOptions, Diagnosis, DslLineStats, ErrorKind, Host, LogEvent, MESH_RESPONSE_LIMIT,
     MeshInterface, MeshNode, MeshTopology, PortProbe, Radio, ResolveHostInfo, Status, StatusError,
     StatusFailure, TrafficData, WLANClient, WLANHost, WlanClient, all_public,

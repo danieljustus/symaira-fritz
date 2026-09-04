@@ -46,6 +46,18 @@ fixtures; **FROZEN** is covered by the Go oracle but has no Rust implementation;
 | DOC-001 | Docs/completions | generated CLI docs + four shells | Go/Cobra generation | no command/help drift | generated artifact diff | all | bytes | FROZEN |
 | LIVE-001 | Real box | sanitized recordings for supported FRITZ!OS | installed Go binary | request/response and side-effect parity | replay + approved live smoke | macOS/Linux | semantic | PENDING |
 
+## Read-only handler slice
+
+Issue #190 subtask 2a wires the production Rust handlers for `status`, `hosts`,
+`wlan` read-only subcommands, one-shot `traffic`, `calls`, `dsl`, `log`,
+`services`, and raw `call`. The `rust-readonly` Make target runs the focused
+CLI contract/output checks and Clippy. CLI-008 remains **PENDING** until the
+black-box fake-box suite compares handler requests and streams against the Go
+oracle; protocol-level fake-transport coverage is recorded in CAP-001–003.
+The intentionally unimplemented gaps remain mutation commands (`wlan guest on|off`,
+plus other mutating top-level commands), `traffic --watch`, and the separate
+`detect`, `doctor`, `diagnose`, `mesh`, `home`, completion, MCP, and signal slices.
+
 ## Rules
 
 - A row moves to **PASS** only when the Rust test and differential comparison are
