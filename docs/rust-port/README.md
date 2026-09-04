@@ -22,7 +22,9 @@ Implemented slices:
 - configuration defaults, TOML/environment precedence, secure initialization,
   and fail-closed credential resolution;
 - SOAP request/response/fault handling and nested service discovery through a
-  bounded, injected transport.
+  bounded transport;
+- concrete blocking HTTP/rustls transport with private-origin DNS pinning,
+  SPKI TOFU persistence, strict internal-only fallback, and URL redaction.
 
 ## Measured Go baseline
 
@@ -104,13 +106,13 @@ own language-neutral fixtures.
 1. Freeze CLI/config/error and fixture contracts. *(in progress)*
 2. Port pure parsers and authentication vectors. *(complete)*
 3. Port the TR-064 protocol engine and discovery against deterministic fake
-   boxes. *(complete; concrete HTTP/TLS adapter remains in step 4)*
-4. Port the concrete HTTP/TLS adapter, typed capabilities, AHA/session behavior,
-   and TLS pin persistence. *(next)*
-5. Port MCP and run raw-frame differential tests with zero stdout pollution.
-6. Validate against a real FRITZ!Box using sanitized recordings.
-7. Ship a prerelease with the last known-good Go binary as the explicit fallback.
-8. Remove Go only after one stable Rust release operates without unexplained
+   boxes. *(complete)*
+4. Port the concrete HTTP/TLS adapter and TLS pin persistence. *(complete)*
+5. Port typed capabilities and AHA/session behavior. *(next)*
+6. Port MCP and run raw-frame differential tests with zero stdout pollution.
+7. Validate against a real FRITZ!Box using sanitized recordings.
+8. Ship a prerelease with the last known-good Go binary as the explicit fallback.
+9. Remove Go only after one stable Rust release operates without unexplained
    parity defects.
 
 See [`architecture.md`](architecture.md) for boundaries and

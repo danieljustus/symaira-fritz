@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "oracle": "Go internal/fritz pin, URL redaction and fallback production functions",
+  "certificate": {
+    "input_file": "testdata/port/transport/test-certificate.der.b64",
+    "spki_pin": "+uwAIrzczZm5kUKXHgoryzGWrrlbeAgB6SaGCXRy74U="
+  },
+  "pin_store": {
+    "host": "fritz.box",
+    "pin": "AQID",
+    "written_json": "{\n  \"pins\": {\n    \"fritz.box\": \"AQID\"\n  }\n}",
+    "file_mode": "-rw-------",
+    "directory_mode": "-rwxr-xr-x",
+    "corrupt_set_fails": true,
+    "reset_repairs": true,
+    "repaired_json": "{\n  \"pins\": {}\n}",
+    "missing_reset_noop": true
+  },
+  "safe_urls": [
+    {
+      "id": "sid",
+      "raw": "http://fritz.box/query.lua?sid=abc123\u0026foo=bar",
+      "redacted": "http://fritz.box/query.lua?foo=bar\u0026sid=REDACTED"
+    },
+    {
+      "id": "response",
+      "raw": "https://fritz.box/login_sid.lua?response=2$1000$salt$hash\u0026version=2",
+      "redacted": "https://fritz.box/login_sid.lua?response=REDACTED\u0026version=2"
+    },
+    {
+      "id": "password",
+      "raw": "http://fritz.box/api?password=plain-value",
+      "redacted": "http://fritz.box/api?password=REDACTED"
+    },
+    {
+      "id": "userinfo",
+      "raw": "http://admin:plain-value@fritz.box/path",
+      "redacted": "http://admin:xxxxx@fritz.box/path"
+    },
+    {
+      "id": "unchanged",
+      "raw": "http://fritz.box/path?foo=bar",
+      "redacted": "http://fritz.box/path?foo=bar"
+    },
+    {
+      "id": "invalid",
+      "raw": "://bad",
+      "redacted": "://bad"
+    }
+  ],
+  "fallback": [
+    {
+      "id": "connection-refused",
+      "message": "dial tcp: connection refused",
+      "expected": true
+    },
+    {
+      "id": "io-timeout",
+      "message": "dial tcp: i/o timeout",
+      "expected": true
+    },
+    {
+      "id": "host-unreachable",
+      "message": "network is unreachable",
+      "expected": true
+    },
+    {
+      "id": "tls-handshake",
+      "message": "tls: handshake failure",
+      "expected": false
+    },
+    {
+      "id": "pin-mismatch",
+      "message": "certificate pin mismatch",
+      "expected": false
+    },
+    {
+      "id": "http-auth",
+      "message": "HTTP 401",
+      "expected": false
+    },
+    {
+      "id": "canceled-timeout",
+      "message": "dial tcp: i/o timeout",
+      "canceled": true,
+      "expected": false
+    }
+  ]
+}
