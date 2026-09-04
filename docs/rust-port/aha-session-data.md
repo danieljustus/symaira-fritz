@@ -43,6 +43,14 @@ successful response text, bounds the body at 1 MiB, and performs exactly one
 SID invalidation/re-login retry for HTTP 403. `devices`, `groups`,
 `device_list`, `switch_on`, `switch_off`, and `set_hkr_temp` preserve the Go
 XML field mapping, group-member splitting, and 253/254 thermostat values.
+`parse_device_list` requires the root's exact local name `devicelist` while
+accepting namespace-qualified roots, matching Go `DeviceList.XMLName`.
+Session parsing reads only direct `SessionInfo` children in document order;
+repeated direct fields therefore use the last value, while nested same-named
+fields are ignored.
+
+The public `HKR_ERROR_DESCRIPTIONS` table and `hkr_error_description` lookup
+preserve the Go thermostat error-code strings for future CLI output.
 TR-064 `homeauto_devices` enumerates `GetGenericDeviceInfos` from index zero
 until the first error, and `homeauto_switch` uses `SetSwitch` with `ON`/`OFF`.
 
@@ -54,7 +62,9 @@ keys are sorted, spaces use `+`, and repeated values are preserved. The body
 contains `page`, `sid`, and caller parameters. A successful response must be
 valid JSON; its original bytes (including surrounding whitespace) are returned
 as text. HTTP status errors, HTML login pages, and other non-JSON bodies retain
-Go's exact scrape error strings. Login parsing errors remain explicit when the
+Go's exact scrape error strings. HTML marker detection applies `bytes.TrimSpace`
+first, then examines only the first 512 bytes (not Unicode characters), including
+when that prefix is not valid UTF-8. Login parsing errors remain explicit when the
 bounded prefix is malformed.
 
 This endpoint is best-effort and version-fragile. Prefer TR-064 or AHA APIs

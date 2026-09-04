@@ -170,3 +170,23 @@ fn aha_response_body_is_bounded_like_go_limit_reader() {
     assert_eq!(result.len(), 1 << 20);
     assert!(result.starts_with("OK\n"));
 }
+
+#[test]
+fn device_xml_requires_devicelist_local_name_and_accepts_namespaces() {
+    assert!(parse_device_list(b"<other><device /></other>").is_err());
+
+    for (name, xml) in [
+        (
+            "prefixed namespace",
+            &br#"<a:devicelist xmlns:a="urn:avm"><device identifier="ain"><name>Plug</name></device></a:devicelist>"#[..],
+        ),
+        (
+            "default namespace",
+            &br#"<devicelist xmlns="urn:avm"><device identifier="ain"><name>Plug</name></device></devicelist>"#[..],
+        ),
+    ] {
+        let list = parse_device_list(xml).unwrap_or_else(|error| panic!("{name}: {error}"));
+        assert_eq!(list.devices.len(), 1, "{name}");
+        assert_eq!(list.devices[0].identifier, "ain", "{name}");
+    }
+}

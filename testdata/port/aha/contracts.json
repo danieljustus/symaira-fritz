@@ -1,6 +1,15 @@
 {
   "schema_version": 1,
   "oracle": "Go internal/fritz AHA Home and Homeauto contracts",
+  "hkr_error_descriptions": {
+    "0": "no error",
+    "1": "no connection to actuator",
+    "2": "valve stroke too large",
+    "3": "valve stroke too small",
+    "4": "installation not ready / check mounting",
+    "5": "valve travel too short (sluggish?) / descale",
+    "6": "battery charge extremely low"
+  },
   "device_xml": [
     {
       "id": "device-list",

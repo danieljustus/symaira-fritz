@@ -80,6 +80,14 @@ func buildPortSessionDataFixture(t *testing.T) portSessionDataFixture {
 			XML: `<SessionInfo><SID>0000000000000000</SID><Challenge>legacy</Challenge></SessionInfo>`,
 		},
 		{
+			ID:  "nested-fields-ignored",
+			XML: `<SessionInfo><Wrapper><SID>nested-sid</SID><Challenge>nested-challenge</Challenge><BlockTime>99</BlockTime></Wrapper><SID>direct-sid</SID><Challenge>direct-challenge</Challenge><BlockTime>7</BlockTime></SessionInfo>`,
+		},
+		{
+			ID:  "duplicate-direct-fields-last-wins",
+			XML: `<SessionInfo><SID>first-sid</SID><Challenge>first-challenge</Challenge><BlockTime>1</BlockTime><SID>last-sid</SID><Challenge>last-challenge</Challenge><BlockTime>2</BlockTime></SessionInfo>`,
+		},
+		{
 			ID:    "malformed-xml",
 			XML:   `<SessionInfo><SID>oops`,
 			Error: "malformed XML",

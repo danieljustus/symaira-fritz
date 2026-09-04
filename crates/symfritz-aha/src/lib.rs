@@ -13,6 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use quick_xml::{Reader, events::Event};
 use serde::Deserialize;
 use symfritz_core::auth::{ChallengeError, challenge_response};
 
@@ -24,6 +25,28 @@ pub const LOGIN_RESPONSE_LIMIT: usize = 1 << 16;
 pub const DATA_LUA_RESPONSE_LIMIT: usize = 5 << 20;
 /// Default local cache lifetime for a SID.
 pub const DEFAULT_SID_TTL: Duration = Duration::from_secs(15 * 60);
+
+/// Exact HKR thermostat error descriptions exposed by the Go client.
+///
+/// The table is intentionally an immutable slice rather than a runtime map so
+/// callers can use it without allocation while preserving the Go string keys.
+pub const HKR_ERROR_DESCRIPTIONS: &[(&str, &str)] = &[
+    ("0", "no error"),
+    ("1", "no connection to actuator"),
+    ("2", "valve stroke too large"),
+    ("3", "valve stroke too small"),
+    ("4", "installation not ready / check mounting"),
+    ("5", "valve travel too short (sluggish?) / descale"),
+    ("6", "battery charge extremely low"),
+];
+
+/// Look up an HKR thermostat error description by its wire-format code.
+#[must_use]
+pub fn hkr_error_description(error_code: &str) -> Option<&'static str> {
+    HKR_ERROR_DESCRIPTIONS
+        .iter()
+        .find_map(|(code, description)| (*code == error_code).then_some(*description))
+}
 
 /// HTTP method required by the injected transport.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -676,6 +699,30 @@ struct GroupInfoWire {
 
 /// Parse an AHA `devicelist` XML response using the Go field mapping.
 pub fn parse_device_list(body: &[u8]) -> Result<DeviceList, ClientError> {
+    let mut reader = Reader::from_reader(body);
+    let root_name = loop {
+        match reader.read_event() {
+            Ok(Event::Start(element)) | Ok(Event::Empty(element)) => {
+                break element.name().local_name().as_ref().to_owned();
+            }
+            Ok(Event::Eof) => {
+                return Err(ClientError::Transport(
+                    "aha: parsing device list: missing root element".to_owned(),
+                ));
+            }
+            Ok(_) => {}
+            Err(error) => {
+                return Err(ClientError::Transport(format!(
+                    "aha: parsing device list: {error}"
+                )));
+            }
+        }
+    };
+    if root_name != "devicelist" {
+        return Err(ClientError::Transport(
+            "aha: parsing device list: expected root element devicelist".to_owned(),
+        ));
+    }
     let wire: DeviceListWire = quick_xml::de::from_reader(body)
         .map_err(|error| ClientError::Transport(format!("aha: parsing device list: {error}")))?;
     let devices = wire
@@ -788,26 +835,35 @@ pub fn parse_session_info(body: &[u8]) -> Result<SessionInfo, ClientError> {
             "expected root element SessionInfo".to_owned(),
         ));
     }
-    let value = |name: &str| {
-        document
-            .descendants()
-            .rfind(|node| node.is_element() && node.tag_name().name() == name)
-            .and_then(|node| node.text())
-            .unwrap_or_default()
-            .to_owned()
-    };
-    let block_time = value("BlockTime");
-    let block_time = if block_time.trim().is_empty() {
-        0
-    } else {
-        block_time
-            .trim()
-            .parse::<i64>()
-            .map_err(|error| ClientError::MalformedLoginXml(error.to_string()))?
-    };
+    let root = document.root_element();
+    let mut sid = String::new();
+    let mut challenge = String::new();
+    let mut block_time = 0;
+    for child in root.children().filter(|node| node.is_element()) {
+        let value = child
+            .children()
+            .filter(|node| node.is_text())
+            .filter_map(|node| node.text())
+            .collect::<String>();
+        match child.tag_name().name() {
+            "SID" => sid = value,
+            "Challenge" => challenge = value,
+            "BlockTime" => {
+                block_time = if value.trim().is_empty() {
+                    0
+                } else {
+                    value
+                        .trim()
+                        .parse::<i64>()
+                        .map_err(|error| ClientError::MalformedLoginXml(error.to_string()))?
+                };
+            }
+            _ => {}
+        }
+    }
     Ok(SessionInfo {
-        sid: value("SID"),
-        challenge: value("Challenge"),
+        sid,
+        challenge,
         block_time,
     })
 }
@@ -843,11 +899,65 @@ fn looks_like_html(body: &[u8], content_type: &str) -> bool {
     }
     // Match Go's bytes.TrimSpace + 512-byte prefix rule. Trimming before the
     // bound is important for login pages preceded by a long whitespace run.
-    let prefix = String::from_utf8_lossy(body);
-    let prefix = prefix.trim_start();
-    let prefix = prefix.chars().take(512).collect::<String>();
-    let prefix = prefix.to_ascii_lowercase();
-    prefix.starts_with("<!doctype html") || prefix.starts_with("<html")
+    let body = trim_go_space(body);
+    let prefix = &body[..body.len().min(512)];
+    let prefix = prefix
+        .iter()
+        .map(|byte| byte.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    prefix.starts_with(b"<!doctype html") || prefix.starts_with(b"<html")
+}
+
+fn trim_go_space(body: &[u8]) -> &[u8] {
+    let mut first_non_space = None;
+    let mut last_non_space_end = 0;
+    let mut offset = 0;
+    while offset < body.len() {
+        let (length, is_space) = go_utf8_rune(body, offset);
+        if !is_space {
+            first_non_space.get_or_insert(offset);
+            last_non_space_end = offset + length;
+        }
+        offset += length;
+    }
+    match first_non_space {
+        Some(start) => &body[start..last_non_space_end],
+        None => &body[0..0],
+    }
+}
+
+fn go_utf8_rune(body: &[u8], offset: usize) -> (usize, bool) {
+    let byte = body[offset];
+    if byte.is_ascii() {
+        return (1, matches!(byte, b'\t'..=b'\r' | b' '));
+    }
+    let length = if byte & 0xe0 == 0xc0 {
+        2
+    } else if byte & 0xf0 == 0xe0 {
+        3
+    } else if byte & 0xf8 == 0xf0 {
+        4
+    } else {
+        return (1, false);
+    };
+    if offset + length > body.len() {
+        return (1, false);
+    }
+    let Ok(text) = std::str::from_utf8(&body[offset..offset + length]) else {
+        return (1, false);
+    };
+    let Some(character) = text.chars().next() else {
+        return (1, false);
+    };
+    (length, is_go_space(character))
+}
+
+fn is_go_space(character: char) -> bool {
+    matches!(
+        character,
+        '\u{0085}' | '\u{00a0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}'
+    )
 }
 
 #[cfg(test)]
@@ -864,5 +974,22 @@ mod tests {
     fn html_detection_matches_go_whitespace_rule() {
         let body = format!("{}<!DOCTYPE html>", " ".repeat(600));
         assert!(looks_like_html(body.as_bytes(), "application/octet-stream"));
+
+        let body = "\u{2003}<!DOCTYPE HTML>";
+        assert!(looks_like_html(body.as_bytes(), "application/octet-stream"));
+    }
+
+    #[test]
+    fn html_detection_uses_a_byte_prefix_and_preserves_invalid_utf8() {
+        let mut body = [0xc3, 0xa9].repeat(300);
+        body.extend_from_slice(b"<!DOCTYPE html>");
+        let trimmed = trim_go_space(&body);
+        assert_eq!(trimmed.len(), body.len());
+        assert_eq!(&trimmed[..512], &body[..512]);
+        assert!(!looks_like_html(&body, "application/octet-stream"));
+
+        let body = [b' ', 0xff, b' ', b'<', b'h', b't', b'm', b'l', b'>'];
+        assert_eq!(trim_go_space(&body), &body[1..]);
+        assert!(!looks_like_html(&body, "application/octet-stream"));
     }
 }

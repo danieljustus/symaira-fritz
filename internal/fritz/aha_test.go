@@ -2,6 +2,7 @@ package fritz
 
 import (
 	"context"
+	"encoding/xml"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -323,5 +324,27 @@ func TestHkrErrorDescriptions(t *testing.T) {
 		if got, ok := HkrErrorDescriptions[k]; !ok || got != want {
 			t.Errorf("HkrErrorDescriptions[%q] = %q (exists: %v), want %q", k, got, ok, want)
 		}
+	}
+}
+
+func TestDeviceListXMLRoot(t *testing.T) {
+	for name, input := range map[string]string{
+		"wrong root":         "<other><device /></other>",
+		"prefixed namespace": `<a:devicelist xmlns:a="urn:avm"><device /></a:devicelist>`,
+		"default namespace":  `<devicelist xmlns="urn:avm"><device /></devicelist>`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var list DeviceList
+			err := xml.Unmarshal([]byte(input), &list)
+			if name == "wrong root" {
+				if err == nil {
+					t.Fatal("xml.Unmarshal accepted a wrong root")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("xml.Unmarshal namespaced root: %v", err)
+			}
+		})
 	}
 }

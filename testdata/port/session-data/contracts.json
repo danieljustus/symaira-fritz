@@ -22,6 +22,20 @@
       "challenge": "legacy"
     },
     {
+      "id": "nested-fields-ignored",
+      "xml": "\u003cSessionInfo\u003e\u003cWrapper\u003e\u003cSID\u003enested-sid\u003c/SID\u003e\u003cChallenge\u003enested-challenge\u003c/Challenge\u003e\u003cBlockTime\u003e99\u003c/BlockTime\u003e\u003c/Wrapper\u003e\u003cSID\u003edirect-sid\u003c/SID\u003e\u003cChallenge\u003edirect-challenge\u003c/Challenge\u003e\u003cBlockTime\u003e7\u003c/BlockTime\u003e\u003c/SessionInfo\u003e",
+      "sid": "direct-sid",
+      "challenge": "direct-challenge",
+      "block_time": 7
+    },
+    {
+      "id": "duplicate-direct-fields-last-wins",
+      "xml": "\u003cSessionInfo\u003e\u003cSID\u003efirst-sid\u003c/SID\u003e\u003cChallenge\u003efirst-challenge\u003c/Challenge\u003e\u003cBlockTime\u003e1\u003c/BlockTime\u003e\u003cSID\u003elast-sid\u003c/SID\u003e\u003cChallenge\u003elast-challenge\u003c/Challenge\u003e\u003cBlockTime\u003e2\u003c/BlockTime\u003e\u003c/SessionInfo\u003e",
+      "sid": "last-sid",
+      "challenge": "last-challenge",
+      "block_time": 2
+    },
+    {
       "id": "malformed-xml",
       "xml": "\u003cSessionInfo\u003e\u003cSID\u003eoops",
       "error": "malformed XML"

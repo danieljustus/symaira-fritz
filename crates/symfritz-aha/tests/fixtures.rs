@@ -14,6 +14,7 @@ use symfritz_aha::{
 struct Fixture {
     schema_version: u32,
     oracle: String,
+    hkr_error_descriptions: BTreeMap<String, String>,
     device_xml: Vec<DeviceVector>,
     home_queries: Vec<QueryVector>,
     hkr_params: Vec<HkrVector>,
@@ -119,6 +120,38 @@ fn fixture_metadata_is_current() {
         fixture.oracle,
         "Go internal/fritz AHA Home and Homeauto contracts"
     );
+    let expected = BTreeMap::from([
+        ("0".to_owned(), "no error".to_owned()),
+        ("1".to_owned(), "no connection to actuator".to_owned()),
+        ("2".to_owned(), "valve stroke too large".to_owned()),
+        ("3".to_owned(), "valve stroke too small".to_owned()),
+        (
+            "4".to_owned(),
+            "installation not ready / check mounting".to_owned(),
+        ),
+        (
+            "5".to_owned(),
+            "valve travel too short (sluggish?) / descale".to_owned(),
+        ),
+        ("6".to_owned(), "battery charge extremely low".to_owned()),
+    ]);
+    assert_eq!(fixture.hkr_error_descriptions, expected);
+    assert_eq!(
+        symfritz_aha::HKR_ERROR_DESCRIPTIONS
+            .iter()
+            .copied()
+            .collect::<BTreeMap<_, _>>(),
+        expected
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect()
+    );
+    for (code, description) in &expected {
+        assert_eq!(
+            symfritz_aha::hkr_error_description(code),
+            Some(description.as_str())
+        );
+    }
 }
 
 #[test]

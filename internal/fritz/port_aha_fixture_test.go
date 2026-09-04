@@ -14,6 +14,7 @@ import (
 type portAHAFixture struct {
 	SchemaVersion int               `json:"schema_version"`
 	Oracle        string            `json:"oracle"`
+	HkrErrors     map[string]string `json:"hkr_error_descriptions"`
 	DeviceXML     []ahaDeviceVector `json:"device_xml"`
 	HomeQueries   []ahaQueryVector  `json:"home_queries"`
 	HkrParams     []ahaHkrVector    `json:"hkr_params"`
@@ -112,6 +113,7 @@ func buildPortAHAFixture(t *testing.T) portAHAFixture {
 	return portAHAFixture{
 		SchemaVersion: 1,
 		Oracle:        "Go internal/fritz AHA Home and Homeauto contracts",
+		HkrErrors:     HkrErrorDescriptions,
 		DeviceXML: []ahaDeviceVector{{
 			ID:       "device-list",
 			XML:      xmlInput,
