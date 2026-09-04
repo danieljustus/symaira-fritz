@@ -6,12 +6,14 @@ use std::{
     time::Duration,
 };
 
-use crate::{Client, ClientError, CnonceSource, Method, Request, Service, Transport};
+use crate::{Client, ClientError, CnonceSource, Method, Request, Response, Service, Transport};
 use roxmltree::Document;
 use serde::{Deserialize, Serialize};
 
 const MAX_DIAGNOSIS_WORKERS: usize = 8;
 const MESH_RESPONSE_LIMIT: usize = 8 << 20;
+const QUERY_RESPONSE_LIMIT: usize = 1 << 20;
+const QUERY_CPU_BODY: &str = r#"{"CPUTEMP":"cpu:status/StatTemperature"}"#;
 
 /// Error categories shared by typed capability reports.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -432,6 +434,570 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
     }
 }
 
+/// DSL line statistics returned by the authenticated and legacy IGD services.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DslLineStats {
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub upstream_noise_margin: i64,
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub downstream_noise_margin: i64,
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub upstream_attenuation: i64,
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub downstream_attenuation: i64,
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub upstream_max_bit_rate: i64,
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub downstream_max_bit_rate: i64,
+    #[serde(skip_serializing_if = "is_false")]
+    pub is_reduced_dataset: bool,
+}
+
+/// One FRITZ!Box call-list entry. `duration` is Go's `time.Duration` JSON
+/// representation (nanoseconds), while `date` retains the parsed local date
+/// in the router's wire format for callers that want to format it.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Call {
+    #[serde(rename = "type")]
+    pub call_type: i32,
+    pub date: String,
+    pub caller: String,
+    pub caller_number: String,
+    pub called_number: String,
+    pub name: String,
+    pub duration: i64,
+}
+
+#[allow(dead_code)]
+pub const CALL_ALL: i32 = 0;
+#[allow(dead_code)]
+pub const CALL_INCOMING: i32 = 1;
+#[allow(dead_code)]
+pub const CALL_MISSED: i32 = 2;
+#[allow(dead_code)]
+pub const CALL_OUTGOING: i32 = 3;
+#[allow(dead_code)]
+pub const CALL_REJECTED: i32 = 10;
+
+/// WAN online-monitor data. Legacy IGD responses intentionally populate only
+/// the receive and default-priority transmit series.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct TrafficData {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub downstream_internet: Vec<f64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub downstream_media: Vec<f64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub downstream_guest: Vec<f64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub upstream_realtime: Vec<f64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub upstream_high_priority: Vec<f64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub upstream_default_priority: Vec<f64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub upstream_low_priority: Vec<f64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub upstream_guest: Vec<f64>,
+    #[serde(skip_serializing_if = "is_false")]
+    pub is_reduced_dataset: bool,
+}
+
+/// One event from the FRITZ!Box system log.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct LogEvent {
+    pub id: String,
+    pub group: String,
+    pub time: String,
+    pub msg: String,
+}
+
+fn is_zero_i64(value: &i64) -> bool {
+    *value == 0
+}
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+impl<T: Transport, C: CnonceSource> Client<T, C> {
+    /// Query CPU temperatures through the experimental `query.lua` endpoint.
+    /// The SID is supplied by the session client because TR-064 and session
+    /// authentication intentionally remain separate adapters.
+    pub fn cpu_temperatures(&mut self, sid: &str) -> Result<Vec<i64>, ClientError> {
+        let response = self.query_lua(sid)?;
+        parse_cpu_response(&response.body)
+    }
+
+    /// Same query with one caller-owned SID refresh after HTTP 403. This is
+    /// the exact bounded retry shape of Go's CPUTemperatures method.
+    pub fn cpu_temperatures_with_refresh<F>(
+        &mut self,
+        sid: &str,
+        mut refresh: F,
+    ) -> Result<Vec<i64>, ClientError>
+    where
+        F: FnMut() -> Result<String, ClientError>,
+    {
+        match self.query_lua(sid) {
+            Ok(response) => parse_cpu_response(&response.body),
+            Err(ClientError::Transport(message)) if message == "query.lua returned HTTP 403" => {
+                let fresh_sid = refresh()?;
+                let response = self.query_lua(&fresh_sid)?;
+                parse_cpu_response(&response.body)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    fn query_lua(&mut self, sid: &str) -> Result<Response, ClientError> {
+        let encoded_sid: String = url::form_urlencoded::byte_serialize(sid.as_bytes()).collect();
+        let request = Request {
+            method: Method::Post,
+            url: format!("{}/query.lua?sid={encoded_sid}", self.base_url()),
+            headers: BTreeMap::from([(
+                String::from("Content-Type"),
+                String::from("application/json"),
+            )]),
+            body: QUERY_CPU_BODY.as_bytes().to_vec(),
+            response_limit: QUERY_RESPONSE_LIMIT,
+        };
+        let mut response = self.transport_mut().send(request).map_err(|error| {
+            ClientError::Transport(format!("status: contacting FRITZ!Box: {error}"))
+        })?;
+        response.body.truncate(QUERY_RESPONSE_LIMIT);
+        if response.status != 200 {
+            return Err(ClientError::Transport(format!(
+                "query.lua returned HTTP {}",
+                response.status
+            )));
+        }
+        Ok(response)
+    }
+
+    /// Fetch DSL statistics, falling back to the unauthenticated IGD service
+    /// only for an authentication failure.
+    pub fn dsl_line_stats(&mut self) -> Result<DslLineStats, ClientError> {
+        let dsl = self.call(
+            &Service::dsl_interface_config(),
+            "GetInfo",
+            &BTreeMap::new(),
+        );
+        let error = match &dsl {
+            Ok(dsl_info) => match self.call(
+                &Service::wan_common_interface(),
+                "GetCommonLinkProperties",
+                &BTreeMap::new(),
+            ) {
+                Ok(common_info) => {
+                    return Ok(DslLineStats {
+                        upstream_noise_margin: parse_i64(dsl_info.get("NewUpstreamNoiseMargin")),
+                        downstream_noise_margin: parse_i64(
+                            dsl_info.get("NewDownstreamNoiseMargin"),
+                        ),
+                        upstream_attenuation: parse_i64(dsl_info.get("NewUpstreamAttenuation")),
+                        downstream_attenuation: parse_i64(dsl_info.get("NewDownstreamAttenuation")),
+                        upstream_max_bit_rate: parse_i64(
+                            common_info.get("NewLayer1UpstreamMaxBitRate"),
+                        ),
+                        downstream_max_bit_rate: parse_i64(
+                            common_info.get("NewLayer1DownstreamMaxBitRate"),
+                        ),
+                        ..DslLineStats::default()
+                    });
+                }
+                Err(error) => error,
+            },
+            Err(error) => error.clone(),
+        };
+        if is_unauthorized(&error) {
+            let common = self.call(
+                &Service::igd_wan_common_interface(),
+                "GetCommonLinkProperties",
+                &BTreeMap::new(),
+            )?;
+            return Ok(DslLineStats {
+                upstream_max_bit_rate: parse_i64(common.get("NewLayer1UpstreamMaxBitRate")),
+                downstream_max_bit_rate: parse_i64(common.get("NewLayer1DownstreamMaxBitRate")),
+                is_reduced_dataset: true,
+                ..DslLineStats::default()
+            });
+        }
+        Err(error)
+    }
+
+    /// Query WAN traffic with the legacy IGD reduced-data fallback.
+    pub fn online_monitor(&mut self) -> Result<TrafficData, ClientError> {
+        let result = self.call(
+            &Service::wan_common_interface(),
+            "X_AVM-DE_GetOnlineMonitor",
+            &BTreeMap::from([(String::from("NewSyncGroupIndex"), String::from("0"))]),
+        );
+        match result {
+            Ok(values) => Ok(TrafficData {
+                downstream_internet: parse_comma_floats(values.get("Newds_current_bps")),
+                downstream_media: parse_comma_floats(values.get("Newmc_current_bps")),
+                downstream_guest: parse_comma_floats(values.get("Newds_guest_bps")),
+                upstream_realtime: parse_comma_floats(values.get("Newprio_realtime_bps")),
+                upstream_high_priority: parse_comma_floats(values.get("Newprio_high_bps")),
+                upstream_default_priority: parse_comma_floats(values.get("Newprio_default_bps")),
+                upstream_low_priority: parse_comma_floats(values.get("Newprio_low_bps")),
+                upstream_guest: parse_comma_floats(values.get("Newus_guest_bps")),
+                ..TrafficData::default()
+            }),
+            Err(error) if is_unauthorized(&error) => {
+                let values = self.call(
+                    &Service::igd_wan_common_interface(),
+                    "GetAddonInfos",
+                    &BTreeMap::new(),
+                )?;
+                Ok(TrafficData {
+                    downstream_internet: vec![parse_f64(values.get("NewByteReceiveRate")) * 8.0],
+                    upstream_default_priority: vec![parse_f64(values.get("NewByteSendRate")) * 8.0],
+                    is_reduced_dataset: true,
+                    ..TrafficData::default()
+                })
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Fetch and filter the call list, preserving router order.
+    pub fn calls(
+        &mut self,
+        call_type: i32,
+        max: usize,
+        days: usize,
+    ) -> Result<Vec<Call>, ClientError> {
+        let response = self.call(&Service::ontel(), "GetCallList", &BTreeMap::new())?;
+        let raw_url = response
+            .get("NewCallListURL")
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                ClientError::Transport(
+                    "tr064: GetCallList returned empty NewCallListURL".to_owned(),
+                )
+            })?;
+        let mut parsed = url::Url::parse(&absolute_path(self.base_url(), raw_url)?)
+            .map_err(|error| ClientError::Transport(error.to_string()))?;
+        let mut updates = Vec::new();
+        if days > 0 {
+            updates.push(("days", days.to_string()));
+        }
+        if max > 0 {
+            updates.push(("max", max.to_string()));
+        }
+        replace_query_params(&mut parsed, &updates);
+        let response = self.authenticated_get(parsed.as_ref())?;
+        parse_calls(&response.body, call_type)
+    }
+
+    /// Ask the VoIP service to dial a number.
+    pub fn dial(&mut self, number: &str) -> Result<(), ClientError> {
+        self.call(
+            &Service::voip(),
+            "X_AVM-DE_DialNumber",
+            &BTreeMap::from([(String::from("NewX_AVM-DE_PhoneNumber"), number.to_owned())]),
+        )
+        .map(|_| ())
+    }
+
+    /// Hang up the active call initiated by [`Self::dial`].
+    pub fn hangup(&mut self) -> Result<(), ClientError> {
+        self.call(&Service::voip(), "X_AVM-DE_DialHangup", &BTreeMap::new())
+            .map(|_| ())
+    }
+
+    /// Retrieve the device log and apply the router-side category filter.
+    pub fn device_log(&mut self, filter: &str) -> Result<Vec<LogEvent>, ClientError> {
+        let response = self.call(
+            &Service::device_info(),
+            "X_AVM-DE_GetDeviceLogPath",
+            &BTreeMap::new(),
+        )?;
+        let path = response
+            .get("NewDeviceLogPath")
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                ClientError::Transport("tr064: GetDeviceLogPath returned empty path".to_owned())
+            })?;
+        let mut parsed = url::Url::parse(&absolute_path(self.base_url(), path)?)
+            .map_err(|error| ClientError::Transport(error.to_string()))?;
+        if !filter.is_empty() && filter != "all" {
+            replace_query_params(&mut parsed, &[("filter", filter.to_owned())]);
+        }
+        let response = self.authenticated_get(parsed.as_ref())?;
+        parse_device_log(&response.body)
+    }
+
+    /// Reboot through the DeviceConfig service. The confirmation policy belongs
+    /// to the CLI; this method only performs the raw side effect.
+    pub fn reboot(&mut self) -> Result<(), ClientError> {
+        self.call(&Service::device_config(), "Reboot", &BTreeMap::new())
+            .map(|_| ())
+    }
+}
+
+fn parse_cpu_response(body: &[u8]) -> Result<Vec<i64>, ClientError> {
+    let values: serde_json::Value = serde_json::from_slice(body).map_err(|error| {
+        ClientError::Transport(format!("status: parsing query.lua response: {error}"))
+    })?;
+    let raw = values
+        .get("CPUTEMP")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            ClientError::Transport("query.lua response missing CPUTEMP key".to_owned())
+        })?;
+    Ok(raw
+        .split(',')
+        .filter_map(|value| value.parse().ok())
+        .collect())
+}
+
+fn parse_i64(value: Option<&String>) -> i64 {
+    value
+        .and_then(|value| value.parse().ok())
+        .unwrap_or_default()
+}
+fn parse_f64(value: Option<&String>) -> f64 {
+    value
+        .and_then(|value| value.split_whitespace().next())
+        .and_then(|value| value.parse().ok())
+        .unwrap_or_default()
+}
+fn parse_comma_floats(value: Option<&String>) -> Vec<f64> {
+    value
+        .map(|value| {
+            value
+                .split(',')
+                .filter_map(|item| item.trim().parse().ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_calls(body: &[u8], wanted_type: i32) -> Result<Vec<Call>, ClientError> {
+    let input = str::from_utf8(body).map_err(|error| ClientError::Transport(error.to_string()))?;
+    let document =
+        Document::parse(input).map_err(|error| ClientError::Transport(error.to_string()))?;
+    let root = document.root_element();
+    let mut nodes: Vec<_> = root
+        .children()
+        .filter(|node| node.is_element() && node.has_tag_name("Call"))
+        .collect();
+    if nodes.is_empty() {
+        nodes = root
+            .children()
+            .filter(|node| node.is_element() && node.has_tag_name("CallList"))
+            .flat_map(|list| {
+                list.children()
+                    .filter(|node| node.is_element() && node.has_tag_name("Call"))
+            })
+            .collect();
+    }
+    Ok(nodes
+        .into_iter()
+        .filter_map(|node| {
+            let text = |name: &str| {
+                node.children()
+                    .find(|child| child.is_element() && child.has_tag_name(name))
+                    .and_then(|child| child.text())
+                    .unwrap_or_default()
+                    .to_owned()
+            };
+            let call_type = text("Type").parse().unwrap_or_default();
+            if wanted_type != CALL_ALL && wanted_type != call_type {
+                return None;
+            }
+            let caller_number = text("Caller");
+            let name = text("Name");
+            Some(Call {
+                call_type,
+                date: valid_call_date(&text("Date")),
+                caller: if name.is_empty() {
+                    caller_number.clone()
+                } else {
+                    name.clone()
+                },
+                caller_number,
+                called_number: text("Called"),
+                name,
+                duration: parse_duration_nanos(&text("Duration")),
+            })
+        })
+        .collect())
+}
+
+fn valid_call_date(value: &str) -> String {
+    let (date, clock) = value.split_once(' ').unwrap_or(("", ""));
+    let date_fields: Vec<_> = date.split('.').collect();
+    let clock_fields: Vec<_> = clock.split(':').collect();
+    if date_fields.len() == 3
+        && (clock_fields.len() == 2 || clock_fields.len() == 3)
+        && date_fields
+            .iter()
+            .all(|field| field.chars().all(|c| c.is_ascii_digit()))
+        && clock_fields
+            .iter()
+            .all(|field| field.chars().all(|c| c.is_ascii_digit()))
+    {
+        let day: u32 = date_fields[0].parse().ok().unwrap_or_default();
+        let month: u32 = date_fields[1].parse().ok().unwrap_or_default();
+        let year_raw: u32 = date_fields[2].parse().ok().unwrap_or_default();
+        let year = if date_fields[2].len() == 2 {
+            if year_raw <= 68 {
+                2000 + year_raw
+            } else {
+                1900 + year_raw
+            }
+        } else {
+            year_raw
+        };
+        let hour: u32 = clock_fields[0].parse().ok().unwrap_or_default();
+        let minute: u32 = clock_fields[1].parse().ok().unwrap_or_default();
+        let second: u32 = clock_fields
+            .get(2)
+            .and_then(|field| field.parse().ok())
+            .unwrap_or_default();
+        if valid_calendar(day, month, year) && hour <= 23 && minute <= 59 && second <= 59 {
+            return format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z");
+        }
+    }
+    let (date, clock) = value.split_once(' ').unwrap_or(("", ""));
+    let date_fields: Vec<_> = date.split('-').collect();
+    let clock_fields: Vec<_> = clock.split(':').collect();
+    if date_fields.len() == 3
+        && clock_fields.len() == 3
+        && date_fields
+            .iter()
+            .all(|field| field.chars().all(|c| c.is_ascii_digit()))
+        && clock_fields
+            .iter()
+            .all(|field| field.chars().all(|c| c.is_ascii_digit()))
+    {
+        let year: u32 = date_fields[0].parse().ok().unwrap_or_default();
+        let month: u32 = date_fields[1].parse().ok().unwrap_or_default();
+        let day: u32 = date_fields[2].parse().ok().unwrap_or_default();
+        let hour: u32 = clock_fields[0].parse().ok().unwrap_or_default();
+        let minute: u32 = clock_fields[1].parse().ok().unwrap_or_default();
+        let second: u32 = clock_fields[2].parse().ok().unwrap_or_default();
+        if valid_calendar(day, month, year) && hour <= 23 && minute <= 59 && second <= 59 {
+            return format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z");
+        }
+    }
+    String::new()
+}
+
+fn replace_query_params(url: &mut url::Url, updates: &[(&str, String)]) {
+    let mut values: BTreeMap<String, Vec<String>> =
+        url.query_pairs()
+            .into_owned()
+            .fold(BTreeMap::new(), |mut values, (key, value)| {
+                values.entry(key).or_default().push(value);
+                values
+            });
+    for (key, value) in updates {
+        values.insert((*key).to_owned(), vec![value.clone()]);
+    }
+    let mut query = url.query_pairs_mut();
+    query.clear();
+    for (key, entries) in values {
+        for value in entries {
+            query.append_pair(&key, &value);
+        }
+    }
+}
+
+fn parse_duration_nanos(value: &str) -> i64 {
+    let parts: Vec<_> = value.split(':').collect();
+    let seconds = match parts.as_slice() {
+        [minutes, seconds] => {
+            minutes.parse::<i64>().unwrap_or_default() * 60
+                + seconds.parse::<i64>().unwrap_or_default()
+        }
+        [hours, minutes, seconds] => {
+            hours.parse::<i64>().unwrap_or_default() * 3600
+                + minutes.parse::<i64>().unwrap_or_default() * 60
+                + seconds.parse::<i64>().unwrap_or_default()
+        }
+        _ => value.parse::<i64>().unwrap_or_default(),
+    };
+    seconds.saturating_mul(1_000_000_000)
+}
+
+fn parse_device_log(body: &[u8]) -> Result<Vec<LogEvent>, ClientError> {
+    let input = str::from_utf8(body).map_err(|error| ClientError::Transport(error.to_string()))?;
+    let document =
+        Document::parse(input).map_err(|error| ClientError::Transport(error.to_string()))?;
+    Ok(document
+        .root_element()
+        .children()
+        .filter(|node| node.is_element() && node.has_tag_name("Event"))
+        .map(|node| {
+            let text = |name: &str| {
+                node.children()
+                    .find(|child| child.is_element() && child.has_tag_name(name))
+                    .and_then(|child| child.text())
+                    .unwrap_or_default()
+                    .to_owned()
+            };
+            let date = text("date");
+            let time = text("time");
+            LogEvent {
+                id: text("id"),
+                group: text("group"),
+                time: valid_log_time(&date, &time),
+                msg: text("msg"),
+            }
+        })
+        .collect())
+}
+fn valid_log_time(date: &str, time: &str) -> String {
+    let fields: Vec<_> = date.split('.').collect();
+    let clock: Vec<_> = time.split(':').collect();
+    if fields.len() != 3
+        || clock.len() != 3
+        || !fields
+            .iter()
+            .chain(clock.iter())
+            .all(|field| field.chars().all(|c| c.is_ascii_digit()))
+    {
+        return String::new();
+    }
+    let day: u32 = fields[0].parse().ok().unwrap_or_default();
+    let month: u32 = fields[1].parse().ok().unwrap_or_default();
+    let year_raw: u32 = fields[2].parse().ok().unwrap_or_default();
+    let year = if fields[2].len() == 2 {
+        if year_raw <= 68 {
+            2000 + year_raw
+        } else {
+            1900 + year_raw
+        }
+    } else {
+        year_raw
+    };
+    let hour: u32 = clock[0].parse().ok().unwrap_or_default();
+    let minute: u32 = clock[1].parse().ok().unwrap_or_default();
+    let second: u32 = clock[2].parse().ok().unwrap_or_default();
+    if !valid_calendar(day, month, year) || hour > 23 || minute > 59 || second > 59 {
+        return String::new();
+    }
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+fn valid_calendar(day: u32, month: u32, year: u32) -> bool {
+    if !(1..=12).contains(&month) || day == 0 {
+        return false;
+    }
+    let leap = year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
+    let days = match month {
+        2 if leap => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    day <= days
+}
+
 fn is_transport(error: &ClientError) -> bool {
     matches!(error_kind(error), ErrorKind::Transport | ErrorKind::Timeout)
 }
@@ -651,34 +1217,81 @@ fn looks_like_mac(value: &str) -> bool {
 }
 
 impl Service {
-    fn device_info() -> Self {
+    /// The fixed DeviceInfo service used by the typed capabilities.
+    pub fn device_info() -> Self {
         Self {
             service_type: String::from("urn:dslforum-org:service:DeviceInfo:1"),
             control_url: String::from("/upnp/control/deviceinfo"),
         }
     }
-    fn user_interface() -> Self {
+    /// The fixed UserInterface service used by status queries.
+    pub fn user_interface() -> Self {
         Self {
             service_type: String::from("urn:dslforum-org:service:UserInterface:1"),
             control_url: String::from("/upnp/control/userif"),
         }
     }
-    fn wan_ip_connection() -> Self {
+    /// The primary WAN IP connection service.
+    pub fn wan_ip_connection() -> Self {
         Self {
             service_type: String::from("urn:dslforum-org:service:WANIPConnection:1"),
             control_url: String::from("/upnp/control/wanipconnection1"),
         }
     }
-    fn wan_ppp_connection() -> Self {
+    /// The PPP WAN fallback service.
+    pub fn wan_ppp_connection() -> Self {
         Self {
             service_type: String::from("urn:dslforum-org:service:WANPPPConnection:1"),
             control_url: String::from("/upnp/control/wanpppconn1"),
         }
     }
-    fn hosts() -> Self {
+    /// The Hosts service.
+    pub fn hosts() -> Self {
         Self {
             service_type: String::from("urn:dslforum-org:service:Hosts:1"),
             control_url: String::from("/upnp/control/hosts"),
+        }
+    }
+    /// The DSL interface configuration service.
+    pub fn dsl_interface_config() -> Self {
+        Self {
+            service_type: String::from("urn:dslforum-org:service:WANDSLInterfaceConfig:1"),
+            control_url: String::from("/upnp/control/wandslifconfig1"),
+        }
+    }
+    /// The authenticated WAN common-interface service.
+    pub fn wan_common_interface() -> Self {
+        Self {
+            service_type: String::from("urn:dslforum-org:service:WANCommonInterfaceConfig:1"),
+            control_url: String::from("/upnp/control/wancommonifconfig1"),
+        }
+    }
+    /// The unauthenticated IGD WAN common-interface service.
+    pub fn igd_wan_common_interface() -> Self {
+        Self {
+            service_type: String::from("urn:schemas-upnp-org:service:WANCommonInterfaceConfig:1"),
+            control_url: String::from("/igdupnp/control/WANCommonIFC1"),
+        }
+    }
+    /// The FRITZ!Box VoIP service.
+    pub fn voip() -> Self {
+        Self {
+            service_type: String::from("urn:dslforum-org:service:X_VoIP:1"),
+            control_url: String::from("/upnp/control/x_voip"),
+        }
+    }
+    /// The FRITZ!Box OnTel call-list service.
+    pub fn ontel() -> Self {
+        Self {
+            service_type: String::from("urn:dslforum-org:service:X_AVM-DE_OnTel:1"),
+            control_url: String::from("/upnp/control/x_contact"),
+        }
+    }
+    /// The DeviceConfig service used for reboot.
+    pub fn device_config() -> Self {
+        Self {
+            service_type: String::from("urn:dslforum-org:service:DeviceConfig:1"),
+            control_url: String::from("/upnp/control/deviceconfig"),
         }
     }
 }

@@ -30,6 +30,10 @@ Implemented slices:
 - typed TR-064 status, host/Wake-on-LAN, WLAN/guest WLAN, mesh, router
   classification, and bounded TCP diagnosis capabilities, with a Go oracle
   fixture and fake-transport tests;
+- typed TR-064 CPU temperature query, DSL statistics with IGD fallback, phone
+  call filtering/dial/hangup, reduced online-monitor traffic, filtered device
+  logs, and reboot, with deterministic Go-generated fixtures and injected
+  fake-transport tests;
 - `data.lua` raw JSON behavior without the incorrect automatic 403 retry.
 
 ## Measured Go baseline
@@ -90,6 +94,11 @@ make port-parity-version    # Go + Rust + committed golden fixtures
 `make port-parity-version` currently covers only the first vertical slice. It
 runs both binaries with isolated `HOME`, fixed locale/timezone, and all
 `SYMFRITZ_*` variables removed.
+
+The remaining typed TR-064 methods live in `symfritz-tr064`. Session-authenticated
+CPU queries accept a SID from `symfritz-aha` and expose a single explicit refresh
+closure for the Go-equivalent 403 retry; TR-064 digest and session authentication
+are not silently conflated.
 
 ## Reuse assessment
 

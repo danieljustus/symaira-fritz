@@ -239,6 +239,10 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
         self.transport
     }
 
+    pub(crate) fn transport_mut(&mut self) -> &mut T {
+        &mut self.transport
+    }
+
     pub(crate) fn authenticated_get(&mut self, url: &str) -> Result<Response, ClientError> {
         self.authenticated_get_with_limit(url, 1 << 20)
     }

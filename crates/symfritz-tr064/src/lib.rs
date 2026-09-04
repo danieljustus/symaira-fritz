@@ -11,11 +11,12 @@ mod soap;
 mod transport;
 
 pub use capabilities::{
-    Check, CheckStatus, DiagnoseOptions, Diagnosis, ErrorKind, Host, MeshInterface, MeshLink,
-    MeshNode, MeshTopology, PortProbe, Radio, ResolveHostInfo, Status, StatusError, WLANClient,
-    WLANHost, WlanClient, all_public, classify_resolved_host, default_probes, dial_ssh, dial_tcp,
-    error_kind, is_private_ip, parse_linux_default_gateway, parse_windows_default_gateway,
-    probe_tr064,
+    CALL_ALL, CALL_INCOMING, CALL_MISSED, CALL_OUTGOING, CALL_REJECTED, Call, Check, CheckStatus,
+    DiagnoseOptions, Diagnosis, DslLineStats, ErrorKind, Host, LogEvent, MeshInterface, MeshLink,
+    MeshNode, MeshTopology, PortProbe, Radio, ResolveHostInfo, Status, StatusError, TrafficData,
+    WLANClient, WLANHost, WlanClient, all_public, classify_resolved_host, default_probes, dial_ssh,
+    dial_tcp, error_kind, is_private_ip, parse_linux_default_gateway,
+    parse_windows_default_gateway, probe_tr064,
 };
 pub use client::{
     Client, ClientError, CnonceSource, Method, Request, Response, Transport, TransportError,

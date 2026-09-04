@@ -1,0 +1,251 @@
+{
+  "schema_version": 1,
+  "oracle": "Go internal/fritz/{status,dsl,phone,traffic,log} production models and request seams; reboot uses cmd/symfritz/reboot.go raw Call",
+  "models": {
+    "dsl": {
+      "upstream_noise_margin": 60,
+      "downstream_noise_margin": 80,
+      "upstream_attenuation": 150,
+      "downstream_attenuation": 180,
+      "upstream_max_bit_rate": 40000000,
+      "downstream_max_bit_rate": 100000000
+    },
+    "calls": [
+      {
+        "type": 1,
+        "date": "2026-06-29T14:15:00Z",
+        "caller": "Alice",
+        "caller_number": "01712345",
+        "called_number": "089123",
+        "name": "Alice",
+        "duration": 15000000000
+      },
+      {
+        "type": 3,
+        "date": "2026-06-29T14:16:00Z",
+        "caller": "089123",
+        "caller_number": "",
+        "called_number": "01712345",
+        "name": "",
+        "duration": 90000000000
+      }
+    ],
+    "traffic": {
+      "downstream_internet": [
+        1000,
+        2000
+      ],
+      "downstream_media": [
+        100,
+        200
+      ],
+      "downstream_guest": [
+        10,
+        20
+      ],
+      "upstream_realtime": [
+        5,
+        5
+      ],
+      "upstream_high_priority": [
+        2,
+        2
+      ],
+      "upstream_default_priority": [
+        1,
+        1
+      ],
+      "upstream_low_priority": [
+        0,
+        0
+      ],
+      "upstream_guest": [
+        0,
+        0
+      ]
+    },
+    "log": [
+      {
+        "id": "10",
+        "group": "sys",
+        "time": "2026-06-29T14:15:00Z",
+        "msg": "System started"
+      },
+      {
+        "id": "11",
+        "group": "net",
+        "time": "2026-06-29T14:16:00Z",
+        "msg": "Link up"
+      }
+    ]
+  },
+  "requests": [
+    {
+      "id": "dsl-info",
+      "service_type": "urn:dslforum-org:service:WANDSLInterfaceConfig:1",
+      "control_url": "/upnp/control/wandslifconfig1",
+      "action": "GetInfo"
+    },
+    {
+      "id": "dsl-common",
+      "service_type": "urn:dslforum-org:service:WANCommonInterfaceConfig:1",
+      "control_url": "/upnp/control/wancommonifconfig1",
+      "action": "GetCommonLinkProperties"
+    },
+    {
+      "id": "dsl-igd-common",
+      "service_type": "urn:schemas-upnp-org:service:WANCommonInterfaceConfig:1",
+      "control_url": "/igdupnp/control/WANCommonIFC1",
+      "action": "GetCommonLinkProperties"
+    },
+    {
+      "id": "traffic-monitor",
+      "service_type": "urn:dslforum-org:service:WANCommonInterfaceConfig:1",
+      "control_url": "/upnp/control/wancommonifconfig1",
+      "action": "X_AVM-DE_GetOnlineMonitor",
+      "args": {
+        "NewSyncGroupIndex": "0"
+      }
+    },
+    {
+      "id": "traffic-igd-addon",
+      "service_type": "urn:schemas-upnp-org:service:WANCommonInterfaceConfig:1",
+      "control_url": "/igdupnp/control/WANCommonIFC1",
+      "action": "GetAddonInfos"
+    },
+    {
+      "id": "phone-list",
+      "service_type": "urn:dslforum-org:service:X_AVM-DE_OnTel:1",
+      "control_url": "/upnp/control/x_contact",
+      "action": "GetCallList"
+    },
+    {
+      "id": "phone-dial",
+      "service_type": "urn:dslforum-org:service:X_VoIP:1",
+      "control_url": "/upnp/control/x_voip",
+      "action": "X_AVM-DE_DialNumber",
+      "args": {
+        "NewX_AVM-DE_PhoneNumber": "123"
+      }
+    },
+    {
+      "id": "phone-hangup",
+      "service_type": "urn:dslforum-org:service:X_VoIP:1",
+      "control_url": "/upnp/control/x_voip",
+      "action": "X_AVM-DE_DialHangup"
+    },
+    {
+      "id": "log-path",
+      "service_type": "urn:dslforum-org:service:DeviceInfo:1",
+      "control_url": "/upnp/control/deviceinfo",
+      "action": "X_AVM-DE_GetDeviceLogPath"
+    },
+    {
+      "id": "reboot",
+      "service_type": "urn:dslforum-org:service:DeviceConfig:1",
+      "control_url": "/upnp/control/deviceconfig",
+      "action": "Reboot"
+    },
+    {
+      "id": "cpu-query",
+      "method": "POST",
+      "url": "/query.lua?sid=mock-sid",
+      "body": "{\"CPUTEMP\":\"cpu:status/StatTemperature\"}"
+    }
+  ],
+  "fallbacks": [
+    {
+      "id": "dsl-unauthorized-to-igd",
+      "trigger": "unauthorized",
+      "reduced": true,
+      "expected_request": [
+        {
+          "id": "dsl-igd-common",
+          "service_type": "urn:schemas-upnp-org:service:WANCommonInterfaceConfig:1",
+          "control_url": "/igdupnp/control/WANCommonIFC1",
+          "action": "GetCommonLinkProperties"
+        }
+      ]
+    },
+    {
+      "id": "traffic-unauthorized-to-igd",
+      "trigger": "unauthorized",
+      "reduced": true,
+      "expected_request": [
+        {
+          "id": "traffic-igd-addon",
+          "service_type": "urn:schemas-upnp-org:service:WANCommonInterfaceConfig:1",
+          "control_url": "/igdupnp/control/WANCommonIFC1",
+          "action": "GetAddonInfos"
+        }
+      ]
+    },
+    {
+      "id": "calls-filter-order",
+      "trigger": "days=7,max=2,type=missed",
+      "reduced": false,
+      "expected_request": [
+        {
+          "id": "phone-list",
+          "service_type": "urn:dslforum-org:service:X_AVM-DE_OnTel:1",
+          "control_url": "/upnp/control/x_contact",
+          "action": "GetCallList"
+        }
+      ]
+    },
+    {
+      "id": "log-filter-all-omitted",
+      "trigger": "filter=all",
+      "reduced": false,
+      "expected_request": [
+        {
+          "id": "log-path",
+          "service_type": "urn:dslforum-org:service:DeviceInfo:1",
+          "control_url": "/upnp/control/deviceinfo",
+          "action": "X_AVM-DE_GetDeviceLogPath"
+        }
+      ]
+    },
+    {
+      "id": "cpu-403-refresh-once",
+      "trigger": "HTTP 403",
+      "reduced": false,
+      "expected_request": [
+        {
+          "id": "cpu-query",
+          "method": "POST",
+          "url": "/query.lua?sid=mock-sid",
+          "body": "{\"CPUTEMP\":\"cpu:status/StatTemperature\"}"
+        },
+        {
+          "id": "cpu-query-refresh",
+          "method": "POST",
+          "url": "/query.lua?sid=fresh-sid",
+          "body": "{\"CPUTEMP\":\"cpu:status/StatTemperature\"}"
+        }
+      ]
+    }
+  ],
+  "negative": [
+    {
+      "id": "empty-call-list-url",
+      "input": "",
+      "message": "tr064: GetCallList returned empty NewCallListURL"
+    },
+    {
+      "id": "empty-device-log-path",
+      "input": "",
+      "message": "tr064: GetDeviceLogPath returned empty path"
+    },
+    {
+      "id": "cpu-missing-key",
+      "input": "{}",
+      "message": "query.lua response missing CPUTEMP key"
+    },
+    {
+      "id": "malformed-call-xml",
+      "input": "\u003cCallList\u003e",
+      "message": "XML parse error"
+    }
+  ]
+}
