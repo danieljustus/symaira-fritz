@@ -291,7 +291,12 @@ class StrictHandler(http.server.BaseHTTPRequestHandler):
     def reply(self, body: bytes, content_type: str, *, status: int = 200, extra: dict[str, str] | None = None) -> None:
         self.send_response(status); self.send_header("Content-Type", content_type); self.send_header("Content-Length", str(len(body)))
         for key, value in (extra or {}).items(): self.send_header(key, value)
-        self.end_headers(); self.wfile.write(body)
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            # Cancellation tests may close an in-flight watch response.
+            pass
 
     def log_message(self, format: str, *args: object) -> None: pass
 
@@ -391,10 +396,15 @@ def assert_server(server: StrictFakeBox, label: str, expected: list[tuple[str, s
     if expected is not None and accepted_actions(server) != expected: raise AssertionError(f"{label}: request sequence mismatch got={accepted_actions(server)!r} want={expected!r}")
 
 
-def run_pair(server: StrictFakeBox, label: str, go: str, rust: str, args: list[str], *, kind: str = "bytes", expected: list[tuple[str, str, str]] | None = None, extra: dict[str, str] | None = None) -> None:
+def run_pair(server: StrictFakeBox, label: str, go: str, rust: str, args: list[str], *, kind: str = "bytes", expected: list[tuple[str, str, str]] | None = None, extra: dict[str, str] | None = None, unordered_requests: bool = False) -> None:
     server.reset(); left = run(go, args, fake=True, extra=extra); assert_server(server, label + " Go", expected); go_requests = accepted_requests(server)
     server.reset(); right = run(rust, args, fake=True, extra=extra); assert_server(server, label + " Rust", expected); rust_requests = accepted_requests(server)
-    if go_requests != rust_requests: raise AssertionError(f"{label}: request/argument mismatch Go={go_requests!r} Rust={rust_requests!r}")
+    requests_match = (
+        sorted(go_requests) == sorted(rust_requests)
+        if unordered_requests
+        else go_requests == rust_requests
+    )
+    if not requests_match: raise AssertionError(f"{label}: request/argument mismatch Go={go_requests!r} Rust={rust_requests!r}")
     if kind == "json": assert_json(label, left, right)
     else: assert_bytes(label, left, right)
     print(f"PASS {label}")
@@ -502,7 +512,10 @@ def run_suite(go: str, rust: str, root: Path) -> None:
         run_pair(server, "hosts-active", go, rust, ["hosts", "active", "--json"], kind="json")
         run_pair(server, "hosts-by-name", go, rust, ["hosts", "get", "laptop", "--output", "json"], kind="json")
         run_pair(server, "wlan-radios", go, rust, ["wlan", "radios", "--json"], kind="json")
-        run_pair(server, "wlan-clients", go, rust, ["wlan", "clients", "--json"], kind="json")
+        # The Go oracle probes per-radio association lists concurrently. Request
+        # completion order is intentionally nondeterministic; the exact request
+        # multiset and rendered client order remain contractual.
+        run_pair(server, "wlan-clients", go, rust, ["wlan", "clients", "--json"], kind="json", unordered_requests=True)
         run_pair(server, "wlan-guest-status", go, rust, ["wlan", "guest", "status", "--json"], kind="json")
         run_pair(server, "dsl", go, rust, ["dsl", "--output", "json"], kind="json")
         run_pair(server, "calls", go, rust, ["calls", "--json"], kind="json")
