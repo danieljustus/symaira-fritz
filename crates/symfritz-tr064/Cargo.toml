@@ -9,8 +9,11 @@ publish = false
 
 [dependencies]
 quick-xml.workspace = true
+reqwest.workspace = true
 roxmltree.workspace = true
+rustls.workspace = true
 symfritz-core.workspace = true
+url.workspace = true
 
 [dev-dependencies]
 serde.workspace = true
