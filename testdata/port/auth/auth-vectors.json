@@ -1,0 +1,222 @@
+{
+  "schema_version": 1,
+  "oracle": "Go internal/fritz production authentication functions",
+  "session": [
+    {
+      "id": "legacy-avm",
+      "challenge": "1234567z",
+      "password": "äbc",
+      "response": "1234567z-9e224a41eeefa284df7bb0f26c2913e2"
+    },
+    {
+      "id": "legacy-surrogate-pair",
+      "challenge": "emoji",
+      "password": "🔐",
+      "response": "emoji-58d447d4d7ed81c63653fba29d40a0b2"
+    },
+    {
+      "id": "legacy-prefix-two",
+      "challenge": "2legacy",
+      "password": "x",
+      "response": "2legacy-2a74259ccc9339d41e5dacfa536e058f"
+    },
+    {
+      "id": "pbkdf2-standard",
+      "challenge": "2$10000$5A1B$2000$5A1C",
+      "password": "geheim",
+      "response": "5A1C$cb5f1b60273c7d5bd137c03f49eb7438e1f76495d4eb6361a7506eaa1dc100bb"
+    },
+    {
+      "id": "pbkdf2-lowercase-salts",
+      "challenge": "2$2$0a0b$3$0c0d",
+      "password": "päss🔐",
+      "response": "0c0d$81f5d1893e74ef864c6c1daf50b8831c852ff810c8b7a350ab42bd7467b308f2"
+    },
+    {
+      "id": "pbkdf2-empty-second-salt",
+      "challenge": "2$2$0a0b$3$",
+      "password": "x",
+      "response": "$466dad002885111121b010a6d57b2b7977b095883739f46210dd2a2d8666de17"
+    },
+    {
+      "id": "error-empty",
+      "challenge": "",
+      "password": "x",
+      "error": "empty challenge from box"
+    },
+    {
+      "id": "error-part-count",
+      "challenge": "2$10000$5A1B$2000",
+      "password": "x",
+      "error": "malformed PBKDF2 challenge"
+    },
+    {
+      "id": "error-iteration",
+      "challenge": "2$x$5A1B$2000$5A1C",
+      "password": "x",
+      "error": "malformed PBKDF2 iteration count"
+    },
+    {
+      "id": "pbkdf2-zero-iteration",
+      "challenge": "2$0$5A1B$2000$5A1C",
+      "password": "x",
+      "response": "5A1C$69949950df289ac2262f71f26628bc30c949a76516d5910edc40eb742e5025b5"
+    },
+    {
+      "id": "pbkdf2-negative-iteration",
+      "challenge": "2$-1$5A1B$2000$5A1C",
+      "password": "x",
+      "response": "5A1C$69949950df289ac2262f71f26628bc30c949a76516d5910edc40eb742e5025b5"
+    },
+    {
+      "id": "error-salt",
+      "challenge": "2$10000$zz$2000$5A1C",
+      "password": "x",
+      "error": "malformed PBKDF2 salt"
+    }
+  ],
+  "digest_parse": [
+    {
+      "id": "standard",
+      "header": "Digest realm=\"F!Box\", nonce=\"abc123\", qop=\"auth\", algorithm=MD5",
+      "parsed": true,
+      "challenge": {
+        "realm": "F!Box",
+        "nonce": "abc123",
+        "qop": "auth",
+        "algorithm": "MD5",
+        "opaque": ""
+      }
+    },
+    {
+      "id": "quoted-comma",
+      "header": "Digest realm=\"Fritz, Box\", nonce=\"n-1\", qop=\"auth,auth-int\", opaque=\"opaque-value\"",
+      "parsed": true,
+      "challenge": {
+        "realm": "Fritz, Box",
+        "nonce": "n-1",
+        "qop": "auth,auth-int",
+        "algorithm": "",
+        "opaque": "opaque-value"
+      }
+    },
+    {
+      "id": "embedded-prefix",
+      "header": "Negotiate token, Digest realm=\"F!Box\", nonce=\"n-2\"",
+      "parsed": true,
+      "challenge": {
+        "realm": "F!Box",
+        "nonce": "n-2",
+        "qop": "",
+        "algorithm": "",
+        "opaque": ""
+      }
+    },
+    {
+      "id": "lowercase-prefix",
+      "header": "digest realm=\"F!Box\", nonce=\"n-3\"",
+      "parsed": false,
+      "challenge": {
+        "realm": "",
+        "nonce": "",
+        "qop": "",
+        "algorithm": "",
+        "opaque": ""
+      }
+    },
+    {
+      "id": "basic",
+      "header": "Basic realm=\"F!Box\"",
+      "parsed": false,
+      "challenge": {
+        "realm": "",
+        "nonce": "",
+        "qop": "",
+        "algorithm": "",
+        "opaque": ""
+      }
+    },
+    {
+      "id": "missing-nonce",
+      "header": "Digest realm=\"F!Box\", qop=\"auth\"",
+      "parsed": false,
+      "challenge": {
+        "realm": "F!Box",
+        "nonce": "",
+        "qop": "auth",
+        "algorithm": "",
+        "opaque": ""
+      }
+    }
+  ],
+  "digest_header": [
+    {
+      "id": "qop-auth",
+      "challenge": {
+        "realm": "F!Box",
+        "nonce": "abc123",
+        "qop": "auth",
+        "algorithm": "MD5",
+        "opaque": ""
+      },
+      "user": "user",
+      "password": "pass",
+      "method": "POST",
+      "uri": "/upnp/control/deviceinfo",
+      "nc": 1,
+      "cnonce": "0011223344556677",
+      "header": "Digest username=\"user\", realm=\"F!Box\", nonce=\"abc123\", uri=\"/upnp/control/deviceinfo\", response=\"fc92337edfacfa83f8eae2c57b8b660d\", qop=auth, nc=00000001, cnonce=\"0011223344556677\""
+    },
+    {
+      "id": "qop-list-opaque",
+      "challenge": {
+        "realm": "Fritz, Box",
+        "nonce": "n-2",
+        "qop": "auth-int, auth",
+        "algorithm": "",
+        "opaque": "opaque-value"
+      },
+      "user": "alice",
+      "password": "päss",
+      "method": "GET",
+      "uri": "/mesh.xml?x=1",
+      "nc": 255,
+      "cnonce": "8899aabbccddeeff",
+      "header": "Digest username=\"alice\", realm=\"Fritz, Box\", nonce=\"n-2\", uri=\"/mesh.xml?x=1\", response=\"6f8c2900ed88260e87daac221ffdbf5b\", qop=auth, nc=000000ff, cnonce=\"8899aabbccddeeff\", opaque=\"opaque-value\""
+    },
+    {
+      "id": "legacy-no-qop",
+      "challenge": {
+        "realm": "F!Box",
+        "nonce": "legacy-nonce",
+        "qop": "",
+        "algorithm": "",
+        "opaque": ""
+      },
+      "user": "user",
+      "password": "pass",
+      "method": "POST",
+      "uri": "/ctrl",
+      "nc": 1,
+      "cnonce": "ignored-without-qop",
+      "header": "Digest username=\"user\", realm=\"F!Box\", nonce=\"legacy-nonce\", uri=\"/ctrl\", response=\"18ca240b2b88bba3531c642c4a98c7b6\""
+    },
+    {
+      "id": "auth-int-only-falls-back",
+      "challenge": {
+        "realm": "F!Box",
+        "nonce": "auth-int-nonce",
+        "qop": "auth-int",
+        "algorithm": "",
+        "opaque": ""
+      },
+      "user": "user",
+      "password": "pass",
+      "method": "POST",
+      "uri": "/ctrl",
+      "nc": 2,
+      "cnonce": "ignored-without-auth",
+      "header": "Digest username=\"user\", realm=\"F!Box\", nonce=\"auth-int-nonce\", uri=\"/ctrl\", response=\"fd41e7b376412184205ef3999f652bbb\""
+    }
+  ]
+}

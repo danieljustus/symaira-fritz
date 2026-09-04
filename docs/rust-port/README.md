@@ -14,6 +14,12 @@ The initial Rust vertical slice implements the deterministic `version`
 contract. It deliberately ships as `symfritz-rust`; `symfritz` remains the Go
 binary and rollback path.
 
+Implemented slices:
+
+- byte-exact CLI `version` behavior;
+- legacy MD5 and modern PBKDF2 session challenge responses;
+- HTTP Digest challenge parsing and deterministic Authorization headers.
+
 ## Measured Go baseline
 
 Measured on macOS arm64 with Go 1.26.6 and the repository at commit `9465896`.
@@ -91,9 +97,9 @@ own language-neutral fixtures.
 
 ## Sequence
 
-1. Freeze CLI/config/error and fixture contracts.
-2. Port pure parsers and authentication vectors.
-3. Port TR-064 transport and discovery against deterministic fake boxes.
+1. Freeze CLI/config/error and fixture contracts. *(in progress)*
+2. Port pure parsers and authentication vectors. *(complete)*
+3. Port TR-064 transport and discovery against deterministic fake boxes. *(next)*
 4. Port typed capabilities, AHA/session behavior, and TLS pin persistence.
 5. Port MCP and run raw-frame differential tests with zero stdout pollution.
 6. Validate against a real FRITZ!Box using sanitized recordings.

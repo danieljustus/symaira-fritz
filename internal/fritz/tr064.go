@@ -59,7 +59,10 @@ func (c *Client) Call(ctx context.Context, svc Service, action string, args map[
 	url := c.tr064Base() + svc.ControlURL
 
 	// Try pre-sending a cached Authorization header (Issue #122).
-	auth := c.getCachedDigestAuth(http.MethodPost, svc.ControlURL)
+	auth, err := c.getCachedDigestAuth(http.MethodPost, svc.ControlURL)
+	if err != nil {
+		return nil, classifyError(err, svc, action)
+	}
 
 	resp, raw, err := c.doSOAP(ctx, url, svc.ControlURL, soapAction, body, auth)
 	if err != nil {
@@ -72,7 +75,10 @@ func (c *Client) Call(ctx context.Context, svc Service, action string, args map[
 		}
 		// Cache the challenge for reuse, increment nc.
 		c.setCachedDigestChallenge(dc)
-		auth := c.buildDigestAuth(dc, http.MethodPost, svc.ControlURL)
+		auth, authErr := c.buildDigestAuth(dc, http.MethodPost, svc.ControlURL)
+		if authErr != nil {
+			return nil, classifyError(authErr, svc, action)
+		}
 		resp, raw, err = c.doSOAP(ctx, url, svc.ControlURL, soapAction, body, auth)
 		if err != nil {
 			return nil, classifyError(err, svc, action)
@@ -268,7 +274,10 @@ func (c *Client) fetchAuthenticatedURL(ctx context.Context, rawURL string) ([]by
 			return nil, fmt.Errorf("fetch: 401 without digest challenge")
 		}
 		c.setCachedDigestChallenge(dc)
-		auth := c.buildDigestAuth(dc, http.MethodGet, parsedURL.RequestURI())
+		auth, err := c.buildDigestAuth(dc, http.MethodGet, parsedURL.RequestURI())
+		if err != nil {
+			return nil, err
+		}
 		req2, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 		if err != nil {
 			return nil, err

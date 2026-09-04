@@ -1,6 +1,5 @@
 GO ?= go
 CARGO ?= cargo
-PYTHON ?= python3
 BINARY_NAME = symfritz
 RUST_BINARY = target/debug/symfritz-rust
 # version is a package-level var in `main`, so inject into main.version
@@ -48,11 +47,12 @@ rust-check: rust-lint rust-test
 
 .PHONY: port-fixtures
 port-fixtures: build
-	$(PYTHON) scripts/capture-port-fixtures.py --oracle ./$(BINARY_NAME)
+	$(GO) run ./cmd/capture-port-fixtures -oracle ./$(BINARY_NAME)
+	SYMFRITZ_UPDATE_PORT_FIXTURES=1 $(GO) test ./internal/fritz -run '^TestPortAuthFixture$$' -count=1
 
 .PHONY: port-parity-version
 port-parity-version: build rust-build
-	$(PYTHON) scripts/port-parity.py --reference ./$(BINARY_NAME) --candidate ./$(RUST_BINARY)
+	$(GO) run ./cmd/port-parity -reference ./$(BINARY_NAME) -candidate ./$(RUST_BINARY)
 
 .PHONY: lint
 lint:

@@ -24,11 +24,11 @@ fixtures; **FROZEN** is covered by the Go oracle but has no Rust implementation;
 | TLS-001 | SPKI TOFU | test certificates + isolated pins | Go `PinStore` | exact SHA-256 SPKI base64 and pin JSON | certificate fixtures | all | bytes | FROZEN |
 | TLS-002 | Pin persistence | missing/corrupt/read-only/concurrent store | Go `PinStore` | modes, refusal to overwrite corrupt data, reset recovery | filesystem suite | all | bytes + metadata | FROZEN |
 | TLS-003 | HTTP fallback | refused TLS vs certificate/auth failures | Go fake transport | fallback only when endpoint does not answer; one warning; port rewrite | transport suite | all | HTTP trace + bytes | FROZEN |
-| AUTH-001 | Legacy login | AVM `1234567z` / `äbc` vector | Go session test | `1234567z-9e224a41eeefa284df7bb0f26c2913e2` | vector test | all | bytes | FROZEN |
-| AUTH-002 | Modern login | PBKDF2 challenge matrix | Go session code | two-round SHA-256 response; malformed inputs rejected | vector/property tests | all | bytes | PENDING |
+| AUTH-001 | Legacy login | AVM `1234567z` / `äbc` plus surrogate-pair vector | Go production helper via generated fixture | UTF-16LE MD5 responses | `symfritz-core/tests/auth_fixtures.rs` | all | bytes | PASS |
+| AUTH-002 | Modern login | PBKDF2 success/error matrix | Go production helper via generated fixture | two-round SHA-256 response; malformed inputs rejected | `symfritz-core/tests/auth_fixtures.rs` | all | bytes | PASS |
 | AUTH-003 | SID lifecycle | ready SID, challenge, invalid SID, block time, expiry | Go fake box | request sequence, caching, retry, errors | HTTP trace suite | all | semantic + bytes | FROZEN |
-| DIG-001 | Digest parser | quoted commas, qop lists, malformed challenge | Go digest tests | parse/select `auth` exactly | property/vector tests | all | semantic | FROZEN |
-| DIG-002 | Digest header | fixed nonce/cnonce/count vector | Go helper with deterministic randomness seam | RFC-compatible MD5 bytes and 8-digit nc | golden vectors | all | bytes | PENDING |
+| DIG-001 | Digest parser | standard, quoted commas, embedded prefix, missing nonce | Go production parser via generated fixture | fields and validity match exactly | `symfritz-core/tests/auth_fixtures.rs` | all | semantic | PASS |
+| DIG-002 | Digest header | fixed nonce/cnonce/count vectors | Go production helper with deterministic cnonce seam | RFC-compatible MD5 bytes, qop fallback and 8-digit nc | `symfritz-core/tests/auth_fixtures.rs` | all | bytes | PASS |
 | SOAP-001 | Request | service/action/argument fixtures | Go `buildSOAPRequest` | exact XML envelope and escaping | golden/property tests | all | bytes | FROZEN |
 | SOAP-002 | Response/fault | namespaced, empty, malformed, oversized XML | Go parser | flat out-args and error classification | parser suite + fuzz | all | semantic | FROZEN |
 | DISC-001 | Discovery | committed `tr64desc.xml` plus adversarial URLs | Go discovery/safe-url tests | service resolution, SSRF/path policy, caching | fixture + property tests | all | semantic | FROZEN |

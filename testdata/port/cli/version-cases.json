@@ -2,11 +2,10 @@
   "schema_version": 1,
   "oracle": "Go symfritz built with version=dev",
   "environment": {
-    "HOME": "isolated temporary directory",
-    "LC_ALL": "C",
-    "LANG": "C",
-    "TZ": "UTC",
-    "SYMFRITZ_*": "unset"
+    "HOME/XDG/TMP": "isolated temporary directories",
+    "LC_ALL/LANG": "C",
+    "SYMFRITZ_*": "unset",
+    "TZ": "UTC"
   },
   "cases": [
     {

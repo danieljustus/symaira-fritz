@@ -109,6 +109,30 @@ func TestFetchAuthenticatedURL_UnauthorizedNoChallenge(t *testing.T) {
 	}
 }
 
+func TestCall_DigestEntropyFailureStopsBeforeAuthenticatedRetry(t *testing.T) {
+	original := randRead
+	randRead = func([]byte) (int, error) { return 0, errors.New("entropy unavailable") }
+	t.Cleanup(func() { randRead = original })
+
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("WWW-Authenticate", `Digest realm="test", nonce="abc", qop="auth"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New("fritz.box", WithUser("user"), WithPassword("pass"))
+	c.tr064BaseURL = srv.URL
+	_, err := c.Call(context.Background(), ServiceDeviceInfo, "GetInfo", nil)
+	if err == nil || !strings.Contains(err.Error(), "generating client nonce") {
+		t.Fatalf("Call error = %v, want client nonce error", err)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d, want 1; no empty-cnonce retry may be sent", requests)
+	}
+}
+
 func TestFetchAuthenticatedURL_NonOKAfterAuth(t *testing.T) {
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -301,8 +325,14 @@ func TestCachedDigestChallenge_NcIncrements(t *testing.T) {
 	dc := digestChallenge{realm: "test", nonce: "n1", qop: "auth"}
 	c.setCachedDigestChallenge(dc)
 
-	h1 := c.getCachedDigestAuth("POST", "/ctrl")
-	h2 := c.getCachedDigestAuth("POST", "/ctrl")
+	h1, err := c.getCachedDigestAuth("POST", "/ctrl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h2, err := c.getCachedDigestAuth("POST", "/ctrl")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// nc should increment: first use is nc=1, second is nc=2
 	if !strings.Contains(h1, "nc=00000001") {

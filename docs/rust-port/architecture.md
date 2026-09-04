@@ -17,7 +17,7 @@ would be decorative scaffolding.
 | Crate | Responsibility | First slice |
 |---|---|---|
 | `symfritz-cli` | Argument parsing, output formatting, exit mapping | `version` (implemented) |
-| `symfritz-core` | Domain types, error taxonomy, pure parsers | session/digest vectors |
+| `symfritz-core` | Domain types, error taxonomy, pure parsers | session/digest vectors (implemented) |
 | `symfritz-tr064` | SOAP, digest auth, discovery, HTTP policy | raw `call` against fake box |
 | `symfritz-aha` | SID login, AHA endpoints, data.lua isolation | `home list` |
 | `symfritz-mcp` | MCP schemas, handlers, stdio transport | `tools/list` |
