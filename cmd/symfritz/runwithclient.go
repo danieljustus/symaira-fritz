@@ -5,7 +5,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/danieljustus/symaira-corekit/exitcodes"
 	"github.com/danieljustus/symaira-fritz/internal/config"
 	"github.com/danieljustus/symaira-fritz/internal/fritz"
 )
@@ -49,4 +48,4 @@ func runWithClientAndConfig(cmd *cobra.Command, msg string, fn func(ctx context.
 // ExitCanceled is the distinct exit code for a user-interrupted (Ctrl-C/SIGTERM)
 // run. It is separate from ExitGeneric so callers can distinguish a clean abort
 // from a real failure.
-const ExitCanceled = exitcodes.ExitInterrupted
+const ExitCanceled = 130

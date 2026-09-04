@@ -237,3 +237,24 @@ fn diagnostic_and_detection_commands_are_wired_to_the_rust_tree() {
         assert!(lookup(&root, path).is_some(), "missing command: {path}");
     }
 }
+
+#[test]
+fn documented_command_list_does_not_drift_from_fixture() {
+    let fixture_paths: std::collections::BTreeSet<_> = fixture()
+        .commands
+        .into_iter()
+        .map(|case| case.path)
+        .collect();
+    let documented_paths: std::collections::BTreeSet<_> = include_str!("../../../docs/cli.md")
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix("- [")
+                .and_then(|line| line.split_once("](#"))
+        })
+        .map(|(path, _)| path.to_owned())
+        .collect();
+    assert_eq!(
+        documented_paths, fixture_paths,
+        "docs/cli.md command list drifted"
+    );
+}

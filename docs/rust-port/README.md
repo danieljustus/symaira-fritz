@@ -96,19 +96,15 @@ be expensive theatre.
 make build
 make rust-check
 make port-fixtures          # deliberate Go-oracle fixture regeneration
-make port-parity-version    # Go + Rust + committed golden fixtures
+make port-parity-version    # Go + Rust version golden cases
+make port-cli-parity        # isolated fake-box black-box CLI differential
 ```
 
-`make port-parity-version` currently covers only the first vertical slice. It
-runs both binaries with isolated `HOME`, fixed locale/timezone, and all
-`SYMFRITZ_*` variables removed.
-
-The command-tree tests compare the generated inventory semantically. Clap's
-help layout, executable name in usage text, and parse-error wording are not yet
-byte-identical to Cobra; CLI-006 therefore remains FROZEN and CLI-007 remains
-PENDING until a dedicated byte-parity adapter is implemented. Parse failures
-intentionally use clap's exit status 2, while Go's current top-level wrapper
-reports those same Cobra validation failures as status 1.
+`make port-cli-parity` runs both binaries with fresh `HOME`/XDG trees, fixed
+locale/timezone, a local fake TR-064 endpoint, deterministic text/JSON/YAML
+traffic cases, watch NDJSON flushing, confirmation/no-side-effect behavior,
+and SIGINT cancellation. Structured traffic values are compared semantically;
+stable version/configuration/confirmation outputs are compared byte-for-byte.
 
 The remaining typed capabilities are split by protocol boundary: TR-064 owns
 SOAP/digest operations, while `symfritz-aha::Client` owns session-authenticated

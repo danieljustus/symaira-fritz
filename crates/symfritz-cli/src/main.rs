@@ -3,7 +3,7 @@
 use std::{
     collections::BTreeMap,
     fmt::Display,
-    io::Read,
+    io::{self, Read, Write},
     net::{IpAddr, ToSocketAddrs},
     process::{Command as ProcessCommand, ExitCode},
 };
@@ -127,6 +127,10 @@ impl CnonceSource for RandomCnonce {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if let Err(error) = install_signal_handler() {
+        eprintln!("Error: {}", error.message);
+        return ExitCode::from(EXIT_OPERATION);
+    }
     if cli.show_version {
         println!("{TOOL} version {VERSION}");
         return ExitCode::SUCCESS;
@@ -171,6 +175,12 @@ fn main() -> ExitCode {
             }
         }
     }
+}
+
+fn install_signal_handler() -> Result<(), HandlerError> {
+    ctrlc::set_handler(|| std::process::exit(130)).map_err(|error| {
+        HandlerError::operation(format!("failed to install signal handler: {error}"))
+    })
 }
 
 fn execute(cli: Cli, format: OutputFormat) -> Result<(), HandlerError> {
@@ -554,21 +564,62 @@ fn execute_dsl(format: OutputFormat) -> Result<(), HandlerError> {
 }
 
 fn execute_traffic(args: TrafficArgs, format: OutputFormat) -> Result<(), HandlerError> {
-    if args.watch {
-        return Err(HandlerError::operation(
-            "traffic watch is not implemented in this read-only slice",
-        ));
-    }
     let (config, password) = load_connection()?;
     let mut client = make_tr064(&config.box_config, &password)?;
-    let stats = client
-        .online_monitor()
-        .map_err(|error| HandlerError::from_client("traffic failed", &error))?;
-    if format != OutputFormat::Text {
-        output::write(&mut std::io::stdout(), &stats, format)
-            .map_err(|error| HandlerError::operation(error.to_string()))?;
-    } else {
-        print_traffic(&stats);
+
+    loop {
+        let stats = client
+            .online_monitor()
+            .map_err(|error| HandlerError::from_client("traffic failed", &error))?;
+        if args.watch {
+            write_traffic_watch_snapshot(&stats, format)?;
+        } else if format != OutputFormat::Text {
+            output::write(&mut io::stdout(), &stats, format)
+                .map_err(|error| HandlerError::operation(error.to_string()))?;
+        } else {
+            print_traffic(&stats);
+            io::stdout()
+                .flush()
+                .map_err(|error| HandlerError::operation(error.to_string()))?;
+        }
+
+        if !args.watch {
+            return Ok(());
+        }
+        std::thread::sleep(args.interval);
+    }
+}
+
+fn write_traffic_watch_snapshot(
+    stats: &TrafficData,
+    format: OutputFormat,
+) -> Result<(), HandlerError> {
+    let stdout = io::stdout();
+    let mut writer = stdout.lock();
+    match format {
+        OutputFormat::Json => {
+            serde_json::to_writer(&mut writer, stats)
+                .map_err(|error| HandlerError::operation(error.to_string()))?;
+            writer
+                .write_all(b"\n")
+                .and_then(|()| writer.flush())
+                .map_err(|error| HandlerError::operation(error.to_string()))?;
+        }
+        OutputFormat::Text => {
+            drop(writer);
+            print_traffic(stats);
+            io::stdout()
+                .flush()
+                .map_err(|error| HandlerError::operation(error.to_string()))?;
+        }
+        OutputFormat::Yaml => {
+            let rendered = output::render(stats, format)
+                .map_err(|error| HandlerError::operation(error.to_string()))?;
+            writer
+                .write_all(rendered.as_bytes())
+                .and_then(|()| writer.flush())
+                .map_err(|error| HandlerError::operation(error.to_string()))?;
+        }
     }
     Ok(())
 }
@@ -799,7 +850,9 @@ fn execute_hangup() -> Result<(), HandlerError> {
 
 fn execute_reboot(args: RebootArgs) -> Result<(), HandlerError> {
     if !args.yes {
-        return Err(HandlerError::config("refusing to reboot without --yes"));
+        return Err(HandlerError::config(
+            "confirmation required: refusing to reboot without --yes",
+        ));
     }
     let (config, password) = load_connection()?;
     let mut client = make_tr064(&config.box_config, &password)?;
@@ -1151,7 +1204,13 @@ fn origin_url(box_config: &BoxConfig, tr064: bool) -> Result<Url, HandlerError> 
         .or_else(|| host.strip_prefix("https://"))
         .unwrap_or(&host)
         .to_owned();
-    let (scheme, port) = if box_config.use_tls {
+    let (host, explicit_port) = match host.rsplit_once(':') {
+        Some((host, port)) if !host.contains(':') && port.parse::<u16>().is_ok() => {
+            (host.to_owned(), port.parse::<u16>().ok())
+        }
+        _ => (host, None),
+    };
+    let (scheme, default_port) = if box_config.use_tls {
         if tr064 {
             ("https", 49443)
         } else {
@@ -1167,6 +1226,7 @@ fn origin_url(box_config: &BoxConfig, tr064: bool) -> Result<Url, HandlerError> 
     } else {
         host
     };
+    let port = explicit_port.unwrap_or(default_port);
     Url::parse(&format!("{scheme}://{host}:{port}"))
         .map_err(|error| HandlerError::config(format!("invalid configured box origin: {error}")))
 }

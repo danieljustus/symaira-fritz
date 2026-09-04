@@ -127,3 +127,14 @@ jobs:
             -reference "./target/debug/symfritz-go${suffix}" \
             -candidate "./target/debug/symfritz-rust${suffix}"
 
+      - name: CLI black-box differential parity
+        shell: bash
+        run: |
+          suffix=""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            suffix=".exe"
+          fi
+          python3 scripts/cli-differential.py \
+            --go "./target/debug/symfritz-go${suffix}" \
+            --rust "./target/debug/symfritz-rust${suffix}"
+

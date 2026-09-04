@@ -77,6 +77,10 @@ port-remaining-fixtures:
 port-cli-fixtures: build
 	$(GO) run ./cmd/capture-cli-fixtures -oracle ./$(BINARY_NAME)
 
+.PHONY: port-cli-parity
+port-cli-parity: build rust-build
+	python3 scripts/cli-differential.py --go ./$(BINARY_NAME) --rust ./$(RUST_BINARY)
+
 .PHONY: port-fixtures
 port-fixtures: build port-cli-fixtures
 	$(GO) run ./cmd/capture-port-fixtures -oracle ./$(BINARY_NAME)

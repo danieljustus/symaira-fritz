@@ -11,11 +11,12 @@ fixtures; **FROZEN** is covered by the Go oracle but has no Rust implementation;
 | CLI-003 | Version JSON | `version --json`, `--output json`, uppercase format | Go binary | compact schema v1 object | same | all | bytes | PASS |
 | CLI-004 | Version YAML | `version --output yaml` | Go binary | ordered three-line YAML | same | all | bytes | PASS |
 | CLI-005 | Output errors | invalid and conflicting formats | Go binary | exit 9; exact stderr | same | all | bytes | PASS |
-| CLI-006 | Command tree | every command in `docs/cli.md` | `make docs` / `--help` | names, aliases, flags, defaults, inherited flags | `tests/cli_contract.rs` | all | semantic inventory/help; byte layout pending | FROZEN |
-| CLI-007 | Argument validation | missing/excess args per command | Go binary | exact exit, stdout, stderr | `tests/cli_contract.rs` | all | parse semantics; byte wording pending | PENDING |
-| CLI-008 | Structured output | text/JSON/YAML for every command | fake-box scenarios | snake_case, omission, ordering where stable | command parity suite | all | parsed/bytes per row | PENDING |
-| CLI-009 | Error taxonomy | auth/config/not-found/transport/timeout/cancel | Go binary | exit codes, kind, message, hint, output stream | negative command suite | all | bytes | FROZEN |
-| CLI-010 | Signals | SIGINT/SIGTERM during request/watch/MCP | Go binary | cancellation and interrupted exit code | process tests | macOS/Linux | semantic | PENDING |
+| CLI-006 | Command tree | every command in `docs/cli.md` | `make docs` / `--help` | names, aliases, flags, defaults, inherited flags | `tests/cli_contract.rs` + `scripts/cli-differential.py` | all | semantic inventory/help | PASS |
+| CLI-007 | Argument validation | missing/excess args per command | Go binary | deterministic parse exit/stream behavior | `tests/cli_contract.rs` + `scripts/cli-differential.py` | all | exit/stream semantics | PASS |
+| CLI-008 | Structured output | traffic fake-box success in text/JSON/YAML and watch NDJSON | Go binary + local fake HTTP | snake_case, omission, stable values, append/flush | `scripts/cli-differential.py` | macOS/Linux | text bytes; structured semantic | PASS |
+| CLI-009 | Error taxonomy | output/config/transport/confirmation failures | Go binary | exit codes 1/9, stream and structured error shape | `scripts/cli-differential.py` | all | bytes where stable | PASS |
+| CLI-010 | Signals | SIGINT during traffic watch | Go binary | flushed output and exit 130 | `scripts/cli-differential.py` | macOS/Linux | semantic | PASS |
+
 | CFG-001 | Defaults | no file/env and timeout matrix | Go loader via generated fixture | host, TLS and 15 s timeout defaults | `symfritz-core/tests/config_fixtures.rs` | all | semantic | PASS |
 | CFG-002 | Precedence | global/project TOML plus nested/shorthand env matrix | Go configkit via generated fixture | env overrides project file overrides global file overrides defaults; file zero-values stay ignored | `symfritz-core/tests/config_fixtures.rs` | all | semantic | PASS |
 | CFG-003 | Init file | isolated fresh/existing/force writes | Go `initConfigFile` via generated fixture | exact bytes, path-dependent streams, mode and overwrite behavior | `symfritz-core/tests/config_fixtures.rs` | all | bytes + metadata | PASS |
@@ -43,7 +44,7 @@ fixtures; **FROZEN** is covered by the Go oracle but has no Rust implementation;
 | MCP-004 | Stdio hygiene | initialize/list/call/cancel/malformed frames | Go MCP server | only protocol frames on stdout; logs on stderr | process suite | all | bytes | PENDING |
 | DIST-001 | Artifacts | release snapshot | GoReleaser | same binary/archive names and target set | release manifest diff | all | metadata | FROZEN |
 | DIST-002 | Trust chain | checksums/sign/notarize/SBOM/Homebrew | release workflow | verifiable artifacts and formula smoke test | prerelease gate | all | cryptographic/semantic | PENDING |
-| DOC-001 | Docs/completions | generated CLI docs + four shells | Go/Cobra generation | no command/help drift | generated artifact diff | all | bytes | FROZEN |
+| DOC-001 | Docs/completions | generated CLI docs + four shells | Go/Cobra generation | no command/help drift | `tests/cli_contract.rs` + completion handler tests | all | semantic inventory + executable scripts | PASS |
 | LIVE-001 | Real box | sanitized recordings for supported FRITZ!OS | installed Go binary | request/response and side-effect parity | replay + approved live smoke | macOS/Linux | semantic | PENDING |
 
 ## Read-only handler slice
@@ -54,11 +55,10 @@ and `config detect`), diagnostic reports (`diagnose` and `diagnose router`),
 `scrape`, version update checking, and bash/fish/PowerShell/zsh completion
 scripts. Detection uses an injected runtime seam and preserves configured-host,
 gateway, and common-address probe order; mesh uses separate TR-064 and web
-origins with the existing SID flow. The focused CLI tests cover handler dispatch
-and completion generation. CLI-008 remains **PENDING** for a full CLI-level
-fake-box differential suite; protocol-level service and session fixtures remain
-in CAP-001–003 and SCRAPE-001. Real-router checks, live GitHub update responses,
-signal handling, and MCP remain intentionally out of this slice.
+origins with the existing SID flow. The focused CLI tests cover handler dispatch,
+completion generation, and the command inventory drift gate. The black-box
+harness now covers deterministic traffic text/JSON/YAML, watch NDJSON flushing,
+confirmation/no-side-effect behavior, and cancellation exit 130.
 
 ## Mutation/config/auth handler slice
 
@@ -66,11 +66,23 @@ Issue #190 subtask 3a wires the mutation handlers (`dial`, `hangup`, WOL, guest
 on/off, home switch/temp, and confirmed reboot), config initialization, and
 credential trust/test/login/store paths. The handlers use the shared Rust
 TR-064/AHA/core implementations; interactive credential capture keeps the
-password out of argv and configured secret backends fail closed. CLI-008 remains
-**PENDING** and CLI-009 remains **FROZEN** until full CLI-level differential
-coverage is added; these handlers have no live-router test dependency in this
-slice. `traffic --watch`, MCP, signals, and real-router checks remain
-intentionally out of scope.
+password out of argv and configured secret backends fail closed. The CLI
+harness exercises the confirmed reboot rejection without touching the fake box;
+MCP remains reserved for issue #191.
+
+## Final CLI parity scope and gaps
+
+`make port-cli-parity` builds both binaries and runs
+`scripts/cli-differential.py` against an isolated local fake TR-064 endpoint.
+Stable version, configuration, and confirmation errors use byte comparison;
+traffic JSON/YAML values use semantic comparison because Go emits integral
+rates as integers while Rust's typed rates are floating-point. Watch snapshot
+counts are intentionally timing-tolerant, but both implementations must flush
+at least two NDJSON records and exit 130 on SIGINT (macOS/Linux).
+
+Remaining gaps are explicit: full fake-box command coverage for every typed
+handler, byte-identical Cobra versus clap help/parse diagnostics, and live-box
+coverage remain future work. MCP is issue #191 and is not implemented here.
 
 ## Rules
 

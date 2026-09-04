@@ -65,14 +65,14 @@ func runTrafficWatch(ctx context.Context, c *fritz.Client, format outputFormat, 
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return ctx.Err()
 		default:
 		}
 
 		stats, err := c.OnlineMonitor(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil
+				return ctx.Err()
 			}
 			return wrapFritzError(err, "traffic watch failed")
 		}
@@ -92,7 +92,7 @@ func runTrafficWatch(ctx context.Context, c *fritz.Client, format outputFormat, 
 
 		select {
 		case <-ctx.Done():
-			return nil
+			return ctx.Err()
 		case <-time.After(interval):
 		}
 	}
