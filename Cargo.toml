@@ -15,7 +15,7 @@ hex = "0.4.3"
 getrandom = "0.2.17"
 md-5 = "0.11.0"
 pbkdf2 = "0.13.0"
-quick-xml = "0.42.0"
+quick-xml = { version = "0.42.0", features = ["serialize"] }
 rcgen = "0.14.10"
 reqwest = { version = "0.13.4", default-features = false, features = ["blocking", "rustls-no-provider"] }
 roxmltree = "0.21.1"

@@ -290,45 +290,32 @@ fn data_lua_validates_status_json_and_html_login_responses() {
 }
 
 #[test]
-fn data_lua_rejects_unbounded_body_and_retries_one_403() {
+fn data_lua_rejects_unbounded_body() {
     let clock = TestClock::new();
     let oversized = Response {
         status: 200,
         headers: BTreeMap::new(),
         body: vec![b'0'; DATA_LUA_RESPONSE_LIMIT + 1],
     };
-    let mut too_large = make_client(&clock, [Ok(login("sid")), Ok(oversized)]);
+    let mut client = make_client(&clock, [Ok(login("sid")), Ok(oversized)]);
     assert!(matches!(
-        too_large.data_lua("overview", &BTreeMap::new()),
+        client.data_lua("overview", &BTreeMap::new()),
         Err(ClientError::ResponseTooLarge {
             endpoint: "data.lua",
             ..
         })
     ));
+}
 
-    let mut retry = make_client(
-        &clock,
-        [
-            Ok(login("old-sid")),
-            Ok(response(403, "")),
-            Ok(login("new-sid")),
-            Ok(response(200, "{}")),
-        ],
-    );
-    assert_eq!(retry.data_lua("overview", &BTreeMap::new()).unwrap(), "{}");
-    assert_eq!(retry.transport_mut().requests.len(), 4);
-
-    let mut forbidden = make_client(
-        &clock,
-        [
-            Ok(login("old-sid")),
-            Ok(response(403, "")),
-            Ok(login("new-sid")),
-            Ok(response(403, "")),
-        ],
-    );
+#[test]
+fn data_lua_does_not_retry_or_invalidate_on_403() {
+    let clock = TestClock::new();
+    let mut client = make_client(&clock, [Ok(login("old-sid")), Ok(response(403, ""))]);
     assert_eq!(
-        forbidden.data_lua("overview", &BTreeMap::new()),
-        Err(ClientError::ForbiddenAfterRelogin)
+        client.data_lua("overview", &BTreeMap::new()),
+        Err(ClientError::DataLuaHttpStatus(403))
     );
+    // The Go scraper has no 403 relogin behavior; the cached SID remains valid.
+    assert_eq!(client.transport_mut().requests.len(), 2);
+    assert_eq!(client.cached_sid(), Some("old-sid"));
 }

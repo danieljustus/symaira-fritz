@@ -13,6 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use serde::Deserialize;
 use symfritz_core::auth::{ChallengeError, challenge_response};
 
 /// The sentinel returned by `login_sid.lua` when no authenticated SID exists.
@@ -117,7 +118,11 @@ pub enum ClientError {
     Challenge(ChallengeError),
     InvalidCredentials,
     RateLimited(i64),
-    ForbiddenAfterRelogin,
+    AhaForbiddenAfterRelogin,
+    AhaHttpStatus {
+        switchcmd: String,
+        status: u16,
+    },
     DataLuaHttpStatus(u16),
     HtmlLoginPage,
     NonJsonResponse {
@@ -150,8 +155,11 @@ impl fmt::Display for ClientError {
                 formatter,
                 "login failed; box is rate-limiting for {seconds}s (wrong password?)"
             ),
-            Self::ForbiddenAfterRelogin => {
-                formatter.write_str("data.lua returned HTTP 403 after re-login")
+            Self::AhaForbiddenAfterRelogin => {
+                formatter.write_str("aha: forbidden after re-login")
+            }
+            Self::AhaHttpStatus { switchcmd, status } => {
+                write!(formatter, "aha: {switchcmd} returned HTTP {status}")
             }
             Self::DataLuaHttpStatus(status) => {
                 write!(formatter, "data.lua returned HTTP {status}")
@@ -274,14 +282,6 @@ impl<T: Transport, C: Clock> Client<T, C> {
         params: &BTreeMap<String, Vec<String>>,
     ) -> Result<String, ClientError> {
         let response = self.data_lua_once(page, params)?;
-        if response.status == 403 {
-            self.invalidate_sid();
-            let response = self.data_lua_once(page, params)?;
-            if response.status == 403 {
-                return Err(ClientError::ForbiddenAfterRelogin);
-            }
-            return self.validate_data_response(response);
-        }
         self.validate_data_response(response)
     }
 
@@ -422,6 +422,387 @@ impl<T: Transport, C: Clock> Client<T, C> {
             return Err(ClientError::HtmlLoginPage);
         }
         Err(ClientError::NonJsonResponse { content_type })
+    }
+
+    /// Perform one AHA-HTTP `switchcmd`, retrying exactly once after HTTP 403.
+    pub fn home(
+        &mut self,
+        switchcmd: &str,
+        params: &BTreeMap<String, Vec<String>>,
+    ) -> Result<String, ClientError> {
+        let response = self.home_once(switchcmd, params)?;
+        if response.status == 403 {
+            self.invalidate_sid();
+            let response = self.home_once(switchcmd, params)?;
+            if response.status == 403 {
+                return Err(ClientError::AhaForbiddenAfterRelogin);
+            }
+            return self.validate_home_response(switchcmd, response);
+        }
+        self.validate_home_response(switchcmd, response)
+    }
+
+    /// Fetch and parse the AHA `getdevicelistinfos` device list.
+    pub fn devices(&mut self) -> Result<Vec<Device>, ClientError> {
+        let list = self.device_list()?;
+        Ok(list.devices)
+    }
+
+    /// Fetch and parse the AHA `getdevicelistinfos` group list.
+    pub fn groups(&mut self) -> Result<Vec<Group>, ClientError> {
+        let list = self.device_list()?;
+        Ok(list.groups)
+    }
+
+    /// Fetch and parse the complete AHA device/group list.
+    pub fn device_list(&mut self) -> Result<DeviceList, ClientError> {
+        let raw = self.home("getdevicelistinfos", &BTreeMap::new())?;
+        parse_device_list(raw.as_bytes())
+    }
+
+    /// Turn an AHA switch actor on.
+    pub fn switch_on(&mut self, ain: &str) -> Result<(), ClientError> {
+        let params = BTreeMap::from([("ain".to_owned(), vec![ain.to_owned()])]);
+        self.home("setswitchon", &params).map(|_| ())
+    }
+
+    /// Turn an AHA switch actor off.
+    pub fn switch_off(&mut self, ain: &str) -> Result<(), ClientError> {
+        let params = BTreeMap::from([("ain".to_owned(), vec![ain.to_owned()])]);
+        self.home("setswitchoff", &params).map(|_| ())
+    }
+
+    /// Set an HKR target in Celsius, or use 254 (`ON`) / 253 (`OFF`).
+    pub fn set_hkr_temp(&mut self, ain: &str, temp_celsius: f64) -> Result<(), ClientError> {
+        let param = if temp_celsius == 254.0 || temp_celsius == 253.0 {
+            format!("{temp_celsius:.0}")
+        } else {
+            format!("{:.0}", temp_celsius * 2.0)
+        };
+        let params = BTreeMap::from([
+            ("ain".to_owned(), vec![ain.to_owned()]),
+            ("param".to_owned(), vec![param]),
+        ]);
+        self.home("sethkrtsoll", &params).map(|_| ())
+    }
+
+    fn home_once(
+        &mut self,
+        switchcmd: &str,
+        params: &BTreeMap<String, Vec<String>>,
+    ) -> Result<Response, ClientError> {
+        let sid = self.sid()?;
+        let mut values = BTreeMap::<String, Vec<String>>::new();
+        values.insert("sid".to_owned(), vec![sid]);
+        values.insert("switchcmd".to_owned(), vec![switchcmd.to_owned()]);
+        for (key, entries) in params {
+            values
+                .entry(key.clone())
+                .or_default()
+                .extend(entries.iter().cloned());
+        }
+        let pairs = values
+            .into_iter()
+            .flat_map(|(key, values)| values.into_iter().map(move |value| (key.clone(), value)));
+        let request = Request {
+            method: Method::Get,
+            url: format!(
+                "{}/webservices/homeautoswitch.lua?{}",
+                self.base_url,
+                encode_pairs(pairs)
+            ),
+            headers: BTreeMap::new(),
+            body: Vec::new(),
+            response_limit: 1 << 20,
+        };
+        self.transport
+            .send(request)
+            .map_err(|error| ClientError::Transport(format!("aha: contacting FRITZ!Box: {error}")))
+    }
+
+    fn validate_home_response(
+        &self,
+        switchcmd: &str,
+        mut response: Response,
+    ) -> Result<String, ClientError> {
+        // Go uses io.LimitReader without a +1 probe: over-limit bodies are
+        // truncated to exactly 1 MiB before status checking and trimming.
+        response.body.truncate(1 << 20);
+        if response.status != 200 {
+            return Err(ClientError::AhaHttpStatus {
+                switchcmd: switchcmd.to_owned(),
+                status: response.status,
+            });
+        }
+        let text = String::from_utf8(response.body).map_err(|error| {
+            ClientError::Transport(format!("aha: invalid response body: {error}"))
+        })?;
+        Ok(text.trim().to_owned())
+    }
+}
+
+/// AHA's parsed `getdevicelistinfos` response.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DeviceList {
+    pub devices: Vec<Device>,
+    pub groups: Vec<Group>,
+}
+
+/// One AHA actor. Numeric values intentionally remain strings as in Go.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Device {
+    pub identifier: String,
+    pub id: String,
+    pub name: String,
+    pub present: i32,
+    pub switch: Switch,
+    pub temperature: Temperature,
+    pub hkr: Hkr,
+    pub powermeter: PowerMeter,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Switch {
+    pub state: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Temperature {
+    pub celsius: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Hkr {
+    pub tist: String,
+    pub tsoll: String,
+    pub batterylow: String,
+    pub battery: String,
+    pub windowopenactiv: String,
+    pub errorcode: String,
+    pub nextchange: NextChange,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct PowerMeter {
+    pub power: String,
+    pub energy: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+pub struct NextChange {
+    #[serde(rename = "End", alias = "end")]
+    pub end: String,
+    #[serde(rename = "Start", alias = "start")]
+    pub start: String,
+    #[serde(rename = "TChange", alias = "tchange")]
+    pub tchange: i32,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Group {
+    pub identifier: String,
+    pub id: String,
+    pub name: String,
+    pub members: Vec<String>,
+    pub master_device_id: String,
+}
+
+/// Links one parsed group with its physical devices.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DeviceGroup {
+    pub group: Group,
+    pub devices: Vec<Device>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct DeviceListWire {
+    #[serde(rename = "device", default)]
+    devices: Vec<DeviceWire>,
+    #[serde(rename = "group", default)]
+    groups: Vec<GroupWire>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct DeviceWire {
+    #[serde(rename = "@identifier", default)]
+    identifier: String,
+    #[serde(rename = "@id", default)]
+    id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    present: i32,
+    #[serde(default)]
+    switch: SwitchWire,
+    #[serde(default)]
+    temperature: TemperatureWire,
+    #[serde(default)]
+    hkr: HkrWire,
+    #[serde(default)]
+    powermeter: PowerMeterWire,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct SwitchWire {
+    #[serde(default)]
+    state: String,
+}
+#[derive(Debug, Default, Deserialize)]
+struct TemperatureWire {
+    #[serde(default)]
+    celsius: String,
+}
+#[derive(Debug, Default, Deserialize)]
+struct HkrWire {
+    #[serde(default)]
+    tist: String,
+    #[serde(default)]
+    tsoll: String,
+    #[serde(default)]
+    batterylow: String,
+    #[serde(default)]
+    battery: String,
+    #[serde(default)]
+    windowopenactiv: String,
+    #[serde(default)]
+    errorcode: String,
+    #[serde(default)]
+    nextchange: NextChangeWire,
+}
+#[derive(Debug, Default, Deserialize)]
+struct NextChangeWire {
+    #[serde(default)]
+    end: String,
+    #[serde(default)]
+    start: String,
+    #[serde(default)]
+    tchange: i32,
+}
+#[derive(Debug, Default, Deserialize)]
+struct PowerMeterWire {
+    #[serde(default)]
+    power: String,
+    #[serde(default)]
+    energy: String,
+}
+#[derive(Debug, Default, Deserialize)]
+struct GroupWire {
+    #[serde(rename = "@identifier", default)]
+    identifier: String,
+    #[serde(rename = "@id", default)]
+    id: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    groupinfo: GroupInfoWire,
+}
+#[derive(Debug, Default, Deserialize)]
+struct GroupInfoWire {
+    #[serde(default)]
+    masterdeviceid: String,
+    #[serde(default)]
+    members: String,
+}
+
+/// Parse an AHA `devicelist` XML response using the Go field mapping.
+pub fn parse_device_list(body: &[u8]) -> Result<DeviceList, ClientError> {
+    let wire: DeviceListWire = quick_xml::de::from_reader(body)
+        .map_err(|error| ClientError::Transport(format!("aha: parsing device list: {error}")))?;
+    let devices = wire
+        .devices
+        .into_iter()
+        .map(|device| Device {
+            identifier: device.identifier,
+            id: device.id,
+            name: device.name,
+            present: device.present,
+            switch: Switch {
+                state: device.switch.state,
+            },
+            temperature: Temperature {
+                celsius: device.temperature.celsius,
+            },
+            hkr: Hkr {
+                tist: device.hkr.tist,
+                tsoll: device.hkr.tsoll,
+                batterylow: device.hkr.batterylow,
+                battery: device.hkr.battery,
+                windowopenactiv: device.hkr.windowopenactiv,
+                errorcode: device.hkr.errorcode,
+                nextchange: NextChange {
+                    end: device.hkr.nextchange.end,
+                    start: device.hkr.nextchange.start,
+                    tchange: device.hkr.nextchange.tchange,
+                },
+            },
+            powermeter: PowerMeter {
+                power: device.powermeter.power,
+                energy: device.powermeter.energy,
+            },
+        })
+        .collect();
+    let groups = wire
+        .groups
+        .into_iter()
+        .map(|group| Group {
+            identifier: group.identifier,
+            id: group.id,
+            name: group.name,
+            members: if group.groupinfo.members.is_empty() {
+                Vec::new()
+            } else {
+                group
+                    .groupinfo
+                    .members
+                    .split(',')
+                    .map(str::to_owned)
+                    .collect()
+            },
+            master_device_id: group.groupinfo.masterdeviceid,
+        })
+        .collect();
+    Ok(DeviceList { devices, groups })
+}
+
+impl DeviceList {
+    /// Return the Go-compatible name-to-AIN map; later duplicate names win.
+    pub fn names_and_ains(&self) -> BTreeMap<String, String> {
+        self.devices
+            .iter()
+            .map(|device| (&device.name, &device.identifier))
+            .chain(
+                self.groups
+                    .iter()
+                    .map(|group| (&group.name, &group.identifier)),
+            )
+            .map(|(name, ain)| (name.clone(), ain.clone()))
+            .collect()
+    }
+}
+
+/// Adapt the AHA request/response boundary to the production TR-064 HTTP adapter.
+impl Transport for symfritz_tr064::BlockingHttpTransport {
+    fn send(&mut self, request: Request) -> Result<Response, TransportError> {
+        let method = match request.method {
+            Method::Get => symfritz_tr064::Method::Get,
+            Method::Post => symfritz_tr064::Method::Post,
+        };
+        let response = <symfritz_tr064::BlockingHttpTransport as symfritz_tr064::Transport>::send(
+            self,
+            symfritz_tr064::Request {
+                method,
+                url: request.url,
+                headers: request.headers,
+                body: request.body,
+                response_limit: request.response_limit,
+            },
+        )
+        .map_err(|error| TransportError(error.0))?;
+        Ok(Response {
+            status: response.status,
+            headers: response.headers,
+            body: response.body,
+        })
     }
 }
 

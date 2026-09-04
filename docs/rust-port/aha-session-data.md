@@ -1,8 +1,8 @@
 # Rust SID and `data.lua` boundary
 
-`crates/symfritz-aha` owns the session-id lifecycle and the raw web-UI
-scraper foundation. It intentionally does not contain typed AHA/Homeauto
-models; those belong to a later vertical slice.
+`crates/symfritz-aha` owns the session-id lifecycle, typed AHA/Homeauto
+models, and the raw web-UI scraper boundary. AHA-HTTP is the stable smart-home
+surface; `data.lua` remains best-effort and version-fragile.
 
 ## Side-effect boundary
 
@@ -13,14 +13,10 @@ a deterministic clock.
 
 `Transport::send` receives a complete request, including its method, URL,
 headers, body, and response limit. A transport must honor the requested limit
-or return an error. The `data.lua` limit is **5 MiB** (`5 << 20`), while the
-`login_sid.lua` XML limit is 64 KiB.
-
-The existing TR-064 concrete transport currently has a 4 MiB global ceiling.
-It must be made configurable or raised to at least 5 MiB before this client is
-connected to that adapter; silently routing `data.lua` through the 4 MiB cap
-would break the Go contract. Keeping this crate transport-generic avoids that
-loss in this slice.
+or return an error. The `data.lua` limit is **5 MiB** (`5 << 20`), the AHA
+response limit is **1 MiB**, and the `login_sid.lua` XML limit is 64 KiB.
+The shared concrete TR-064 transport ceiling is **5 MiB** so it can carry the
+`data.lua` request without truncating it.
 
 ## SID lifecycle
 
@@ -33,8 +29,21 @@ loss in this slice.
    and positive `BlockTime` are reported separately.
 6. Cached SIDs expire after the configurable TTL (15 minutes by default) and
    can be explicitly invalidated.
-7. A `data.lua` HTTP 403 clears the SID, logs in once, and retries once. A
-   second 403 is returned as `ForbiddenAfterRelogin`; there is no retry loop.
+7. An AHA HTTP 403 clears the SID, logs in once, and retries once. A second 403
+   is returned as `AhaForbiddenAfterRelogin`; there is no retry loop.
+8. `data.lua` does **not** retry or invalidate the SID on HTTP 403, matching Go
+   `ScrapeDataLUA`; it returns `DataLuaHttpStatus(403)`.
+
+## AHA/Homeauto contract
+
+`home` sends `GET /webservices/homeautoswitch.lua` with `sid`, `switchcmd`,
+and caller parameters encoded with Go `url.Values.Encode` ordering. It trims
+successful response text, bounds the body at 1 MiB, and performs exactly one
+SID invalidation/re-login retry for HTTP 403. `devices`, `groups`,
+`device_list`, `switch_on`, `switch_off`, and `set_hkr_temp` preserve the Go
+XML field mapping, group-member splitting, and 253/254 thermostat values.
+TR-064 `homeauto_devices` enumerates `GetGenericDeviceInfos` from index zero
+until the first error, and `homeauto_switch` uses `SetSwitch` with `ON`/`OFF`.
 
 ## `data.lua` contract
 
