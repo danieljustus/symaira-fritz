@@ -12,9 +12,10 @@ production adapter supplies a transport; tests use a recording transport and
 a deterministic clock.
 
 `Transport::send` receives a complete request, including its method, URL,
-headers, body, and response limit. A transport must honor the requested limit
-or return an error. The `data.lua` limit is **5 MiB** (`5 << 20`), the AHA
-response limit is **1 MiB**, and the `login_sid.lua` XML limit is 64 KiB.
+headers, body, and response limit. A transport must retain no more than the
+requested limit; excess response bytes are silently truncated. The `data.lua`
+limit is **5 MiB** (`5 << 20`), the AHA response limit is **1 MiB**, and the
+`login_sid.lua` XML limit is 64 KiB.
 The shared concrete TR-064 transport ceiling is **5 MiB** so it can carry the
 `data.lua` request without truncating it.
 
@@ -52,8 +53,9 @@ until the first error, and `homeauto_switch` uses `SetSwitch` with `ON`/`OFF`.
 keys are sorted, spaces use `+`, and repeated values are preserved. The body
 contains `page`, `sid`, and caller parameters. A successful response must be
 valid JSON; its original bytes (including surrounding whitespace) are returned
-as text. HTTP status errors, HTML login pages, other non-JSON bodies, malformed
-login XML, and over-limit bodies are explicit errors.
+as text. HTTP status errors, HTML login pages, and other non-JSON bodies retain
+Go's exact scrape error strings. Login parsing errors remain explicit when the
+bounded prefix is malformed.
 
 This endpoint is best-effort and version-fragile. Prefer TR-064 or AHA APIs
 when a stable capability exists, and do not infer a typed schema from this raw

@@ -155,10 +155,18 @@ fn device_xml_maps_fields_and_splits_group_members() {
 
 #[test]
 fn aha_response_body_is_bounded_like_go_limit_reader() {
+    let prefix = b"OK\n";
+    let mut body = prefix.to_vec();
+    body.resize((1 << 20) + 10, b'x');
     let mut client = client([
         Ok(login("sid")),
-        Ok(response(200, &"x".repeat((1 << 20) + 10))),
+        Ok(Response {
+            status: 200,
+            body,
+            ..Response::default()
+        }),
     ]);
     let result = client.home("getswitchlist", &BTreeMap::new()).unwrap();
     assert_eq!(result.len(), 1 << 20);
+    assert!(result.starts_with("OK\n"));
 }

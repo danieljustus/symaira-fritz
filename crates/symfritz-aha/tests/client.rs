@@ -178,13 +178,13 @@ fn invalid_sid_and_block_time_are_distinct_errors() {
 }
 
 #[test]
-fn login_xml_is_bounded_and_malformed_input_is_rejected() {
-    assert_eq!(
-        parse_session_info(b"<SessionInfo><SID>sid</SID><Challenge>x</Challenge></SessionInfo>")
-            .unwrap()
-            .block_time,
-        0
-    );
+fn login_xml_is_bounded_and_truncates_after_valid_prefix() {
+    let valid = b"<SessionInfo><SID>sid</SID><Challenge>x</Challenge></SessionInfo>";
+    let mut body = valid.to_vec();
+    body.resize(LOGIN_RESPONSE_LIMIT, b' ');
+    body.extend_from_slice(b"ignored suffix");
+    assert_eq!(parse_session_info(&body).unwrap().sid, "sid");
+
     assert!(matches!(
         parse_session_info(b"<SessionInfo><SID>oops"),
         Err(ClientError::MalformedLoginXml(_))
@@ -193,10 +193,23 @@ fn login_xml_is_bounded_and_malformed_input_is_rejected() {
         parse_session_info(b"<Other><SID>sid</SID></Other>"),
         Err(ClientError::MalformedLoginXml(_))
     ));
+    let mut truncated = b"<SessionInfo><SID>sid</SID>".to_vec();
+    truncated.resize(LOGIN_RESPONSE_LIMIT + 1, b' ');
     assert!(matches!(
-        parse_session_info(&vec![b'x'; LOGIN_RESPONSE_LIMIT + 1]),
-        Err(ClientError::ResponseTooLarge { .. })
+        parse_session_info(&truncated),
+        Err(ClientError::MalformedLoginXml(_))
     ));
+
+    let clock = TestClock::new();
+    let mut client = make_client(
+        &clock,
+        [Ok(Response {
+            status: 200,
+            headers: BTreeMap::new(),
+            body,
+        })],
+    );
+    assert_eq!(client.sid().unwrap(), "sid");
 }
 
 #[test]
@@ -253,10 +266,9 @@ fn data_lua_posts_exact_form_and_preserves_valid_json() {
 fn data_lua_validates_status_json_and_html_login_responses() {
     let clock = TestClock::new();
     let mut status = make_client(&clock, [Ok(login("sid")), Ok(response(500, "error"))]);
-    assert_eq!(
-        status.data_lua("overview", &BTreeMap::new()),
-        Err(ClientError::DataLuaHttpStatus(500))
-    );
+    let error = status.data_lua("overview", &BTreeMap::new()).unwrap_err();
+    assert_eq!(error, ClientError::DataLuaHttpStatus(500));
+    assert_eq!(error.to_string(), "scrape: data.lua returned HTTP 500");
 
     let mut html = make_client(
         &clock,
@@ -269,9 +281,11 @@ fn data_lua_validates_status_json_and_html_login_responses() {
             )),
         ],
     );
+    let error = html.data_lua("overview", &BTreeMap::new()).unwrap_err();
+    assert_eq!(error, ClientError::HtmlLoginPage);
     assert_eq!(
-        html.data_lua("overview", &BTreeMap::new()),
-        Err(ClientError::HtmlLoginPage)
+        error.to_string(),
+        "scrape: data.lua returned an HTML login page instead of JSON; run 'symfritz auth test' to verify credentials and retry"
     );
 
     let mut plain = make_client(
@@ -281,30 +295,36 @@ fn data_lua_validates_status_json_and_html_login_responses() {
             Ok(response_with_type(200, "text/plain", "offline")),
         ],
     );
+    let error = plain.data_lua("overview", &BTreeMap::new()).unwrap_err();
     assert_eq!(
-        plain.data_lua("overview", &BTreeMap::new()),
-        Err(ClientError::NonJsonResponse {
+        error,
+        ClientError::NonJsonResponse {
             content_type: "text/plain".to_owned()
-        })
+        }
+    );
+    assert_eq!(
+        error.to_string(),
+        "scrape: data.lua returned a non-JSON response (content type \"text/plain\")"
     );
 }
 
 #[test]
-fn data_lua_rejects_unbounded_body() {
+fn data_lua_truncates_after_valid_json_prefix() {
+    let prefix = br#"{"data":[]}"#;
+    let mut body = prefix.to_vec();
+    body.resize(DATA_LUA_RESPONSE_LIMIT, b' ');
+    body.extend_from_slice(b"ignored suffix");
     let clock = TestClock::new();
-    let oversized = Response {
-        status: 200,
-        headers: BTreeMap::new(),
-        body: vec![b'0'; DATA_LUA_RESPONSE_LIMIT + 1],
-    };
-    let mut client = make_client(&clock, [Ok(login("sid")), Ok(oversized)]);
-    assert!(matches!(
-        client.data_lua("overview", &BTreeMap::new()),
-        Err(ClientError::ResponseTooLarge {
-            endpoint: "data.lua",
-            ..
-        })
-    ));
+    let mut client = make_client(
+        &clock,
+        [
+            Ok(login("sid")),
+            Ok(response(200, std::str::from_utf8(&body).unwrap())),
+        ],
+    );
+    let result = client.data_lua("overview", &BTreeMap::new()).unwrap();
+    assert_eq!(result.len(), DATA_LUA_RESPONSE_LIMIT);
+    assert_eq!(&result.as_bytes()[..prefix.len()], prefix);
 }
 
 #[test]

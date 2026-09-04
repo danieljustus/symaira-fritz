@@ -18,9 +18,9 @@ use symfritz_core::auth::{ChallengeError, challenge_response};
 
 /// The sentinel returned by `login_sid.lua` when no authenticated SID exists.
 pub const INVALID_SID: &str = "0000000000000000";
-/// Maximum response body accepted from `login_sid.lua`.
+/// Maximum response body prefix retained and parsed from `login_sid.lua`.
 pub const LOGIN_RESPONSE_LIMIT: usize = 1 << 16;
-/// Maximum response body accepted from `data.lua` (5 MiB).
+/// Maximum response body prefix retained and parsed from `data.lua` (5 MiB).
 pub const DATA_LUA_RESPONSE_LIMIT: usize = 5 << 20;
 /// Default local cache lifetime for a SID.
 pub const DEFAULT_SID_TTL: Duration = Duration::from_secs(15 * 60);
@@ -109,25 +109,15 @@ pub enum ClientError {
     NoCredential,
     Transport(String),
     LoginHttpStatus(u16),
-    ResponseTooLarge {
-        endpoint: &'static str,
-        limit: usize,
-        actual: usize,
-    },
     MalformedLoginXml(String),
     Challenge(ChallengeError),
     InvalidCredentials,
     RateLimited(i64),
     AhaForbiddenAfterRelogin,
-    AhaHttpStatus {
-        switchcmd: String,
-        status: u16,
-    },
+    AhaHttpStatus { switchcmd: String, status: u16 },
     DataLuaHttpStatus(u16),
     HtmlLoginPage,
-    NonJsonResponse {
-        content_type: String,
-    },
+    NonJsonResponse { content_type: String },
 }
 
 impl fmt::Display for ClientError {
@@ -138,14 +128,6 @@ impl fmt::Display for ClientError {
             Self::LoginHttpStatus(status) => {
                 write!(formatter, "login_sid.lua returned HTTP {status}")
             }
-            Self::ResponseTooLarge {
-                endpoint,
-                limit,
-                actual,
-            } => write!(
-                formatter,
-                "{endpoint} response exceeds {limit}-byte limit: {actual} bytes"
-            ),
             Self::MalformedLoginXml(message) => {
                 write!(formatter, "parsing login_sid.lua response: {message}")
             }
@@ -162,14 +144,14 @@ impl fmt::Display for ClientError {
                 write!(formatter, "aha: {switchcmd} returned HTTP {status}")
             }
             Self::DataLuaHttpStatus(status) => {
-                write!(formatter, "data.lua returned HTTP {status}")
+                write!(formatter, "scrape: data.lua returned HTTP {status}")
             }
             Self::HtmlLoginPage => formatter.write_str(
-                "data.lua returned an HTML login page instead of JSON; run 'symfritz auth test' to verify credentials and retry",
+                "scrape: data.lua returned an HTML login page instead of JSON; run 'symfritz auth test' to verify credentials and retry",
             ),
             Self::NonJsonResponse { content_type } => write!(
                 formatter,
-                "data.lua returned a non-JSON response (content type {content_type:?})"
+                "scrape: data.lua returned a non-JSON response (content type {content_type:?})"
             ),
         }
     }
@@ -345,17 +327,11 @@ impl<T: Transport, C: Clock> Client<T, C> {
             body: Vec::new(),
             response_limit: LOGIN_RESPONSE_LIMIT,
         };
-        let response = self
+        let mut response = self
             .transport
             .send(request)
             .map_err(|error| ClientError::Transport(format!("contacting FRITZ!Box: {error}")))?;
-        if response.body.len() > LOGIN_RESPONSE_LIMIT {
-            return Err(ClientError::ResponseTooLarge {
-                endpoint: "login_sid.lua",
-                limit: LOGIN_RESPONSE_LIMIT,
-                actual: response.body.len(),
-            });
-        }
+        response.body.truncate(LOGIN_RESPONSE_LIMIT);
         if response.status != 200 {
             return Err(ClientError::LoginHttpStatus(response.status));
         }
@@ -395,14 +371,8 @@ impl<T: Transport, C: Clock> Client<T, C> {
         })
     }
 
-    fn validate_data_response(&self, response: Response) -> Result<String, ClientError> {
-        if response.body.len() > DATA_LUA_RESPONSE_LIMIT {
-            return Err(ClientError::ResponseTooLarge {
-                endpoint: "data.lua",
-                limit: DATA_LUA_RESPONSE_LIMIT,
-                actual: response.body.len(),
-            });
-        }
+    fn validate_data_response(&self, mut response: Response) -> Result<String, ClientError> {
+        response.body.truncate(DATA_LUA_RESPONSE_LIMIT);
         if response.status != 200 {
             return Err(ClientError::DataLuaHttpStatus(response.status));
         }
@@ -808,13 +778,7 @@ impl Transport for symfritz_tr064::BlockingHttpTransport {
 
 /// Parse a bounded `login_sid.lua` XML body.
 pub fn parse_session_info(body: &[u8]) -> Result<SessionInfo, ClientError> {
-    if body.len() > LOGIN_RESPONSE_LIMIT {
-        return Err(ClientError::ResponseTooLarge {
-            endpoint: "login_sid.lua",
-            limit: LOGIN_RESPONSE_LIMIT,
-            actual: body.len(),
-        });
-    }
+    let body = &body[..body.len().min(LOGIN_RESPONSE_LIMIT)];
     let text = std::str::from_utf8(body)
         .map_err(|error| ClientError::MalformedLoginXml(error.to_string()))?;
     let document = roxmltree::Document::parse(text)
