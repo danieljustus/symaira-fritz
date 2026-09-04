@@ -58,9 +58,19 @@ origins with the existing SID flow. The focused CLI tests cover handler dispatch
 and completion generation. CLI-008 remains **PENDING** for a full CLI-level
 fake-box differential suite; protocol-level service and session fixtures remain
 in CAP-001–003 and SCRAPE-001. Real-router checks, live GitHub update responses,
-signal handling, and MCP remain intentionally out of this slice. Mutation
-commands (`dial`, `hangup`, WOL, guest on/off, home switch/temp, reboot), config
-init/auth writes, and `traffic --watch` remain unimplemented.
+signal handling, and MCP remain intentionally out of this slice.
+
+## Mutation/config/auth handler slice
+
+Issue #190 subtask 3a wires the mutation handlers (`dial`, `hangup`, WOL, guest
+on/off, home switch/temp, and confirmed reboot), config initialization, and
+credential trust/test/login/store paths. The handlers use the shared Rust
+TR-064/AHA/core implementations; interactive credential capture keeps the
+password out of argv and configured secret backends fail closed. CLI-008 remains
+**PENDING** and CLI-009 remains **FROZEN** until full CLI-level differential
+coverage is added; these handlers have no live-router test dependency in this
+slice. `traffic --watch`, MCP, signals, and real-router checks remain
+intentionally out of scope.
 
 ## Rules
 

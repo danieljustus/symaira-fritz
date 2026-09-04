@@ -53,6 +53,11 @@ rust-diagnostic:
 	$(CARGO) test -p symfritz-cli --test cli_contract --locked
 	$(CARGO) clippy -p symfritz-cli --all-targets --locked -- -D warnings
 
+.PHONY: rust-mutating
+rust-mutating:
+	$(CARGO) test -p symfritz-cli --locked
+	$(CARGO) clippy -p symfritz-cli --all-targets --locked -- -D warnings
+
 .PHONY: rust-check
 rust-check: rust-lint rust-test
 

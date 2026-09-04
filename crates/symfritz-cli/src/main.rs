@@ -15,9 +15,10 @@ use symfritz_aha::{Client as AhaClient, Device as AhaDevice, Group as AhaGroup, 
 use symfritz_cli::{
     OutputFormat, TOOL,
     cli::{
-        CallArgs, CallsArgs, Cli, Command, CompletionCommand, DiagnoseArgs, DiagnoseSubcommand,
-        HomeCommand, HomeListArgs, HostGetArgs, LogArgs, ScrapeArgs, StatusArgs, TrafficArgs,
-        VersionArgs, WlanSubcommand,
+        AuthCommand, AuthStoreArgs, AuthSubcommand, CallArgs, CallsArgs, Cli, Command,
+        CompletionCommand, ConfigCommand, DiagnoseArgs, DiagnoseSubcommand, HomeCommand,
+        HomeListArgs, HomeSwitchArgs, HomeTempArgs, HostGetArgs, LogArgs, RebootArgs, ScrapeArgs,
+        StatusArgs, TrafficArgs, TrustArgs, VersionArgs, WlanGuestCommand, WlanSubcommand, WolArgs,
     },
     output, render_version, resolve_output_format,
 };
@@ -194,13 +195,17 @@ fn execute(cli: Cli, format: OutputFormat) -> Result<(), HandlerError> {
         Some(Command::Services(_)) => execute_services(format),
         Some(Command::Call(args)) => execute_call(args, format),
         Some(Command::Detect(_)) => execute_detect(format),
-        Some(Command::Config(symfritz_cli::cli::ConfigCommand::Detect(_))) => {
-            execute_detect(format)
-        }
+        Some(Command::Config(ConfigCommand::Detect(_))) => execute_detect(format),
+        Some(Command::Config(ConfigCommand::Init(args))) => execute_config_init(args),
         Some(Command::Diagnose(args)) => execute_diagnose(args, format),
         Some(Command::Doctor) => execute_doctor(format),
         Some(Command::Mesh(_)) => execute_mesh(format),
         Some(Command::Home(command)) => execute_home(command, format),
+        Some(Command::Dial(args)) => execute_dial(args),
+        Some(Command::Hangup) => execute_hangup(),
+        Some(Command::Reboot(args)) => execute_reboot(args),
+        Some(Command::Wol(args)) => execute_wol(args),
+        Some(Command::Auth(command)) => execute_auth(command),
         Some(Command::Scrape(args)) => execute_scrape(args),
         Some(Command::Completion(command)) => execute_completion(command),
         Some(command) => Err(HandlerError::operation(format!(
@@ -487,7 +492,7 @@ fn execute_wlan(
             Ok(())
         }
         WlanSubcommand::Guest(guest) => match guest {
-            symfritz_cli::cli::WlanGuestCommand::Status => {
+            WlanGuestCommand::Status => {
                 let radio = client
                     .guest_wlan_status(usize::from(command.guest_index))
                     .map_err(|error| HandlerError::from_client("guest status failed", &error))?;
@@ -502,10 +507,17 @@ fn execute_wlan(
                 }
                 Ok(())
             }
-            symfritz_cli::cli::WlanGuestCommand::On | symfritz_cli::cli::WlanGuestCommand::Off => {
-                Err(HandlerError::operation(
-                    "internal handler for WLAN mutation is not implemented",
-                ))
+            WlanGuestCommand::On | WlanGuestCommand::Off => {
+                let enable = matches!(guest, WlanGuestCommand::On);
+                client
+                    .set_guest_wlan(usize::from(command.guest_index), enable)
+                    .map_err(|error| HandlerError::from_client("guest toggle failed", &error))?;
+                println!(
+                    "Guest WLAN (index {}) {}.",
+                    command.guest_index,
+                    if enable { "enabled" } else { "disabled" }
+                );
+                Ok(())
             }
         },
     }
@@ -763,6 +775,310 @@ fn service_by_shortcut(name: &str) -> Option<Service> {
         }),
         _ => None,
     }
+}
+
+fn execute_dial(args: symfritz_cli::cli::OneArg) -> Result<(), HandlerError> {
+    let (config, password) = load_connection()?;
+    let mut client = make_tr064(&config.box_config, &password)?;
+    client
+        .dial(&args.number)
+        .map_err(|error| HandlerError::from_client("dial failed", &error))?;
+    println!("Dialing {}...", args.number);
+    Ok(())
+}
+
+fn execute_hangup() -> Result<(), HandlerError> {
+    let (config, password) = load_connection()?;
+    let mut client = make_tr064(&config.box_config, &password)?;
+    client
+        .hangup()
+        .map_err(|error| HandlerError::from_client("hangup failed", &error))?;
+    println!("Hanging up...");
+    Ok(())
+}
+
+fn execute_reboot(args: RebootArgs) -> Result<(), HandlerError> {
+    if !args.yes {
+        return Err(HandlerError::config("refusing to reboot without --yes"));
+    }
+    let (config, password) = load_connection()?;
+    let mut client = make_tr064(&config.box_config, &password)?;
+    client
+        .reboot()
+        .map_err(|error| HandlerError::from_client("reboot failed", &error))?;
+    println!("Reboot triggered.");
+    Ok(())
+}
+
+fn execute_wol(args: WolArgs) -> Result<(), HandlerError> {
+    if args.mac.is_none() && args.host.is_none() {
+        return Err(HandlerError::config("provide a host argument or --mac"));
+    }
+    let (config, password) = load_connection()?;
+    let mut client = make_tr064(&config.box_config, &password)?;
+    let mac = if let Some(mac) = args.mac {
+        mac
+    } else {
+        let reference = args
+            .host
+            .ok_or_else(|| HandlerError::config("provide a host argument or --mac"))?;
+        client
+            .resolve_host(&reference)
+            .map_err(|error| HandlerError::from_client("host lookup failed", &error))?
+            .mac
+    };
+    if mac.is_empty() {
+        return Err(HandlerError::operation(
+            "no MAC address resolved for target",
+        ));
+    }
+    client
+        .wake_on_lan(&mac)
+        .map_err(|error| HandlerError::from_client("wol failed", &error))?;
+    println!("Wake-on-LAN packet sent to {mac}.");
+    Ok(())
+}
+
+fn execute_config_init(args: symfritz_cli::cli::InitArgs) -> Result<(), HandlerError> {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .ok_or_else(|| HandlerError::config("cannot determine home directory"))?;
+    let path = symfritz_core::config::default_config_path(&home);
+    let outcome = symfritz_core::config::init_config(&path, args.force).map_err(config_error)?;
+    let stdout = outcome.stdout();
+    if !stdout.is_empty() {
+        print!("{stdout}");
+    }
+    let stderr = outcome.stderr();
+    if !stderr.is_empty() {
+        eprint!("{stderr}");
+    }
+    Ok(())
+}
+
+fn execute_auth(command: AuthCommand) -> Result<(), HandlerError> {
+    match command.command {
+        None => print_help(&[String::from("auth")]),
+        Some(AuthSubcommand::Test) => execute_auth_test(),
+        Some(AuthSubcommand::Trust(args)) => execute_auth_trust(args),
+        Some(AuthSubcommand::Login(args)) => execute_auth_login(args),
+        Some(AuthSubcommand::Store(args)) => execute_auth_store(args),
+    }
+}
+
+fn execute_auth_trust(args: TrustArgs) -> Result<(), HandlerError> {
+    let Some(host) = args.reset.filter(|host| !host.is_empty()) else {
+        return print_help(&[String::from("auth"), String::from("trust")]);
+    };
+    let path = PinStore::default_path()
+        .ok_or_else(|| HandlerError::config("cannot determine home directory"))?;
+    let store = PinStore::new(path);
+    let reset = store
+        .reset(&host)
+        .map_err(|error| HandlerError::operation(format!("failed to reset pin: {error}")))?;
+    if reset {
+        println!(
+            "Reset certificate pin for {host}.\nNext TLS connection will pin the current certificate."
+        );
+    } else {
+        println!("No pin recorded for {host}.");
+    }
+    Ok(())
+}
+
+fn execute_auth_test() -> Result<(), HandlerError> {
+    let config = symfritz_core::config::load_config().map_err(config_error)?;
+    let result = resolve(&SecretOptions::from(&config.box_config)).map_err(secret_error)?;
+    if result.source == CredentialSource::None || result.password.is_empty() {
+        return Err(HandlerError::config(
+            "no password configured (run 'symfritz auth login')",
+        ));
+    }
+    println!("Credential source: {}", result.source);
+    println!(
+        "Box:               {} (user {:?})",
+        config.box_config.host, config.box_config.user
+    );
+    let (session_ok, tr064_ok) = verify_credential(&config.box_config, &result.password);
+    println!(
+        "  {} Web session login (login_sid.lua)",
+        bool_glyph(session_ok)
+    );
+    println!("  {} TR-064 access (DeviceInfo)", bool_glyph(tr064_ok));
+    if !tr064_ok {
+        println!(
+            "\nNote: TR-064 must be enabled on the box: Home Network → Network →\nNetwork Settings → \"Allow access for applications\"."
+        );
+    }
+    if !session_ok {
+        return Err(HandlerError::operation("credential rejected by box"));
+    }
+    println!("\nOK: credential is valid.");
+    Ok(())
+}
+
+fn verify_credential(box_config: &BoxConfig, password: &str) -> (bool, bool) {
+    let session_ok = make_web(box_config, password)
+        .and_then(|mut client| {
+            client
+                .sid()
+                .map(|_| ())
+                .map_err(|_| HandlerError::operation("session"))
+        })
+        .is_ok();
+    let tr064_ok = make_tr064(box_config, password)
+        .and_then(|mut client| {
+            client
+                .call(&Service::device_info(), "GetInfo", &BTreeMap::new())
+                .map(|_| ())
+                .map_err(|_| HandlerError::operation("tr064"))
+        })
+        .is_ok();
+    (session_ok, tr064_ok)
+}
+
+fn execute_auth_login(args: AuthStoreArgs) -> Result<(), HandlerError> {
+    let config = symfritz_core::config::load_config().map_err(config_error)?;
+    let password = prompt_hidden(&format!(
+        "FRITZ!Box password for {}@{}: ",
+        or_dash(&config.box_config.user),
+        config.box_config.host
+    ))?;
+    if password.is_empty() {
+        return Err(HandlerError::config("empty password"));
+    }
+    let (session_ok, tr064_ok) = verify_credential(&config.box_config, &password);
+    if !session_ok {
+        return Err(HandlerError::operation("box rejected the password"));
+    }
+    println!(
+        "Verified: web login ✓  TR-064 {}",
+        if tr064_ok {
+            "✓"
+        } else {
+            "✗ (disabled or unavailable)"
+        }
+    );
+    let (backend, hint) = store_credential(&config.box_config, &password, &args)?;
+    println!("Stored in {backend}.");
+    if !hint.is_empty() {
+        println!("{hint}");
+    }
+    Ok(())
+}
+
+fn execute_auth_store(args: AuthStoreArgs) -> Result<(), HandlerError> {
+    let config = symfritz_core::config::load_config().map_err(config_error)?;
+    let password = match std::env::var("SYMFRITZ_PASSWORD") {
+        Ok(password) if !password.is_empty() => password,
+        _ => prompt_hidden(&format!(
+            "Password to store for {}: ",
+            config.box_config.host
+        ))?,
+    };
+    if password.is_empty() {
+        return Err(HandlerError::config("empty password"));
+    }
+    let (backend, hint) = store_credential(&config.box_config, &password, &args)?;
+    println!("Stored in {backend}.");
+    if !hint.is_empty() {
+        println!("{hint}");
+    }
+    Ok(())
+}
+
+fn store_credential(
+    box_config: &BoxConfig,
+    password: &str,
+    args: &AuthStoreArgs,
+) -> Result<(String, String), HandlerError> {
+    if let Some(reference) = args.symvault.as_deref() {
+        symfritz_core::secret::symvault_set(reference, password)
+            .map_err(|error| HandlerError::operation(format!("store failed: {error}")))?;
+        return Ok((
+            format!("symvault ({reference})"),
+            format!(
+                "Set 'password_ref = \"{reference}\"' in ~/.config/symfritz/config.toml to use it."
+            ),
+        ));
+    }
+    if args.keychain || symfritz_core::secret::keychain_available() {
+        let account = if box_config.keychain_account.is_empty() {
+            box_config.host.as_str()
+        } else {
+            box_config.keychain_account.as_str()
+        };
+        symfritz_core::secret::keychain_set(
+            symfritz_core::secret::KEYCHAIN_SERVICE,
+            Some(account),
+            password,
+        )
+        .map_err(|error| HandlerError::operation(format!("store failed: {error}")))?;
+        return Ok((
+            format!(
+                "macOS Keychain (service {:?}, account {:?})",
+                symfritz_core::secret::KEYCHAIN_SERVICE,
+                account
+            ),
+            String::from("Set 'keychain = true' in ~/.config/symfritz/config.toml to use it."),
+        ));
+    }
+    Err(HandlerError::operation(
+        "no storage backend available; use --symvault <path> (symvault not required to be running for storage on macOS Keychain)",
+    ))
+}
+
+fn prompt_hidden(prompt: &str) -> Result<String, HandlerError> {
+    use std::io::IsTerminal;
+    eprint!("{prompt}");
+    let stdin = std::io::stdin();
+    if !stdin.is_terminal() {
+        return Err(HandlerError::operation(
+            "cannot prompt for password: stdin is not a terminal (set SYMFRITZ_PASSWORD instead)",
+        ));
+    }
+    #[cfg(unix)]
+    {
+        let saved = ProcessCommand::new("stty")
+            .arg("-g")
+            .output()
+            .map_err(|error| {
+                HandlerError::operation(format!("cannot read terminal settings: {error}"))
+            })?;
+        if !saved.status.success() {
+            return Err(HandlerError::operation("cannot read terminal settings"));
+        }
+        let saved = String::from_utf8_lossy(&saved.stdout).trim().to_owned();
+        let disabled = ProcessCommand::new("stty")
+            .arg("-echo")
+            .status()
+            .map_err(|error| {
+                HandlerError::operation(format!("cannot disable password echo: {error}"))
+            })?;
+        if !disabled.success() {
+            return Err(HandlerError::operation("cannot disable password echo"));
+        }
+        let mut value = String::new();
+        let read_result = stdin.read_line(&mut value);
+        let _ = ProcessCommand::new("stty").arg(&saved).status();
+        eprintln!();
+        read_result
+            .map_err(|error| HandlerError::operation(format!("reading password: {error}")))?;
+        Ok(value.trim().to_owned())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = stdin;
+        let _ = std::io::stdout().flush();
+        Err(HandlerError::operation(
+            "cannot prompt for password: hidden terminal input is unsupported on this platform",
+        ))
+    }
+}
+
+fn bool_glyph(value: bool) -> &'static str {
+    if value { "✓" } else { "✗" }
 }
 
 fn load_connection() -> Result<(Config, String), HandlerError> {
@@ -1427,10 +1743,59 @@ fn model_suffix(model: &str) -> String {
 fn execute_home(command: HomeCommand, format: OutputFormat) -> Result<(), HandlerError> {
     match command {
         HomeCommand::List(args) => execute_home_list(args, format),
-        HomeCommand::Switch(_) | HomeCommand::Temp(_) => Err(HandlerError::operation(
-            "internal handler for home mutation is not implemented",
-        )),
+        HomeCommand::Switch(args) => execute_home_switch(args),
+        HomeCommand::Temp(args) => execute_home_temp(args),
     }
+}
+
+fn execute_home_switch(args: HomeSwitchArgs) -> Result<(), HandlerError> {
+    let state = match args.state.to_ascii_lowercase().as_str() {
+        "on" => true,
+        "off" => false,
+        _ => return Err(HandlerError::config("state must be on or off")),
+    };
+    let (config, password) = load_connection()?;
+    if args.tr064 {
+        let mut client = make_tr064(&config.box_config, &password)?;
+        client
+            .homeauto_switch(&args.ain, state)
+            .map_err(|error| HandlerError::from_client("switch failed", &error))?;
+    } else {
+        let mut client = make_web(&config.box_config, &password)?;
+        if state {
+            client
+                .switch_on(&args.ain)
+                .map_err(|error| HandlerError::from_operation("switch failed", error))?;
+        } else {
+            client
+                .switch_off(&args.ain)
+                .map_err(|error| HandlerError::from_operation("switch failed", error))?;
+        }
+    }
+    println!("OK: {} -> {}", args.ain, if state { "on" } else { "off" });
+    Ok(())
+}
+
+fn execute_home_temp(args: HomeTempArgs) -> Result<(), HandlerError> {
+    let value = match args.temperature.to_ascii_lowercase().as_str() {
+        "on" => 254.0,
+        "off" => 253.0,
+        _ => args.temperature.parse::<f64>().map_err(|_| {
+            HandlerError::config("temperature must be 'on', 'off', or a number (e.g. 20.5)")
+        })?,
+    };
+    if !value.is_finite() {
+        return Err(HandlerError::config(
+            "temperature must be 'on', 'off', or a number (e.g. 20.5)",
+        ));
+    }
+    let (config, password) = load_connection()?;
+    let mut client = make_web(&config.box_config, &password)?;
+    client
+        .set_hkr_temp(&args.ain, value)
+        .map_err(|error| HandlerError::from_operation("set temp failed", error))?;
+    println!("OK: {} -> {}", args.ain, args.temperature);
+    Ok(())
 }
 fn execute_home_list(args: HomeListArgs, format: OutputFormat) -> Result<(), HandlerError> {
     let (config, password) = load_connection()?;
