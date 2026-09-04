@@ -4,8 +4,8 @@ use std::{
 };
 
 use symfritz_aha::{
-    Client, ClientError, Clock, Method, QUERY_RESPONSE_LIMIT, Request, Response, Transport,
-    TransportError, parse_device_list,
+    Client, ClientError, Clock, Method, Request, Response, Transport, TransportError,
+    parse_device_list,
 };
 
 #[derive(Clone, Copy, Debug, Default)]
