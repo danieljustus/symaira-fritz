@@ -2,6 +2,7 @@
 
 //! SOAP/TR-064 protocol engine for the staged Rust port.
 
+mod capabilities;
 mod client;
 mod discovery;
 mod homeauto;
@@ -9,6 +10,13 @@ mod safeurl;
 mod soap;
 mod transport;
 
+pub use capabilities::{
+    Check, CheckStatus, DiagnoseOptions, Diagnosis, ErrorKind, Host, MeshInterface, MeshLink,
+    MeshNode, MeshTopology, PortProbe, Radio, ResolveHostInfo, Status, StatusError, WLANClient,
+    WLANHost, WlanClient, all_public, classify_resolved_host, default_probes, dial_ssh, dial_tcp,
+    error_kind, is_private_ip, parse_linux_default_gateway, parse_windows_default_gateway,
+    probe_tr064,
+};
 pub use client::{
     Client, ClientError, CnonceSource, Method, Request, Response, Transport, TransportError,
 };

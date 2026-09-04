@@ -27,6 +27,9 @@ Implemented slices:
   SPKI TOFU persistence, strict internal-only fallback, and URL redaction;
 - typed AHA-HTTP device/group/switch/thermostat behavior and TR-064 Homeauto
   enumeration/switch control, with Go-generated fixtures and injectable tests;
+- typed TR-064 status, host/Wake-on-LAN, WLAN/guest WLAN, mesh, router
+  classification, and bounded TCP diagnosis capabilities, with a Go oracle
+  fixture and fake-transport tests;
 - `data.lua` raw JSON behavior without the incorrect automatic 403 retry.
 
 ## Measured Go baseline

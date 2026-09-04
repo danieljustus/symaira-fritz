@@ -239,6 +239,79 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
         self.transport
     }
 
+    pub(crate) fn authenticated_get(&mut self, url: &str) -> Result<Response, ClientError> {
+        self.authenticated_get_with_limit(url, 1 << 20)
+    }
+
+    pub(crate) fn authenticated_get_with_limit(
+        &mut self,
+        url: &str,
+        response_limit: usize,
+    ) -> Result<Response, ClientError> {
+        let parsed = url::Url::parse(url)
+            .map_err(|error| ClientError::Transport(format!("invalid GET URL {url}: {error}")))?;
+        let mut uri = parsed.path().to_owned();
+        if let Some(query) = parsed.query() {
+            uri.push('?');
+            uri.push_str(query);
+        }
+        let mut headers = BTreeMap::new();
+        if let Some(authorization) = self.cached_authorization(Method::Get, &uri)? {
+            headers.insert("Authorization".to_owned(), authorization);
+        }
+        let request = Request {
+            method: Method::Get,
+            url: url.to_owned(),
+            headers,
+            body: Vec::new(),
+            response_limit,
+        };
+        let mut response = self
+            .transport
+            .send(request)
+            .map_err(|error| ClientError::Transport(error.0))?;
+        response.body.truncate(response_limit);
+        if response.status == 401 {
+            let (challenge, valid) = response
+                .header("WWW-Authenticate")
+                .map(parse_digest_challenge)
+                .unwrap_or_default();
+            if !valid {
+                return Err(ClientError::UnauthorizedChallenge);
+            }
+            self.digest = Some(CachedDigest {
+                challenge,
+                nonce_count: 0,
+            });
+            let authorization = self
+                .cached_authorization(Method::Get, &uri)?
+                .ok_or(ClientError::UnauthorizedChallenge)?;
+            let request = Request {
+                method: Method::Get,
+                url: url.to_owned(),
+                headers: BTreeMap::from([(String::from("Authorization"), authorization)]),
+                body: Vec::new(),
+                response_limit: SOAP_RESPONSE_LIMIT,
+            };
+            response = self
+                .transport
+                .send(request)
+                .map_err(|error| ClientError::Transport(error.0))?;
+            response.body.truncate(response_limit);
+        }
+        if response.status != 200 {
+            return Err(ClientError::Transport(format!(
+                "GET {url} returned HTTP {}",
+                response.status
+            )));
+        }
+        Ok(response)
+    }
+
+    pub(crate) fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
     fn send_soap(
         &mut self,
         url: &str,
