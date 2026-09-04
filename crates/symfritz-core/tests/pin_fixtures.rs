@@ -125,6 +125,7 @@ fn assert_mode(path: &Path, expected: &str) {
 #[cfg(not(unix))]
 fn assert_mode(_path: &Path, _expected: &str) {}
 
+#[cfg(unix)]
 fn symbolic_mode(value: &str) -> u32 {
     let permissions = value.as_bytes();
     assert_eq!(permissions.len(), 10);
