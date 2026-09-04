@@ -38,17 +38,28 @@ type Diagnosis struct {
 
 // PortProbe names a TCP port to check during diagnosis.
 type PortProbe struct {
-	Port  int
-	Label string
-	Type  string // "tcp" or "ssh"
+	Port     int
+	Label    string
+	Type     string // "tcp" or "ssh"
+	Optional bool   // a failed optional probe is a warning, not a diagnosis failure
 }
 
 // DefaultProbes are the ports commonly relevant for a Mac host (SSH, screen
 // sharing/VNC, Paperless). Override via DiagnoseOptions.Ports.
 var DefaultProbes = []PortProbe{
-	{22, "SSH", "ssh"},
-	{5900, "VNC/Screen Sharing", "tcp"},
-	{8001, "Paperless", "tcp"},
+	{Port: 22, Label: "SSH", Type: "ssh"},
+	{Port: 5900, Label: "VNC/Screen Sharing", Type: "tcp"},
+	{Port: 8001, Label: "Paperless", Type: "tcp"},
+}
+
+// RouterProbes cover the FRITZ!Box administration interfaces. A box may expose
+// only the HTTP or HTTPS variant, so an unavailable individual endpoint is a
+// warning when the authenticated host-table query itself succeeds.
+var RouterProbes = []PortProbe{
+	{Port: 49000, Label: "TR-064 HTTP", Type: "tcp", Optional: true},
+	{Port: 49443, Label: "TR-064 HTTPS", Type: "tcp", Optional: true},
+	{Port: 80, Label: "web UI HTTP", Type: "tcp", Optional: true},
+	{Port: 443, Label: "web UI HTTPS", Type: "tcp", Optional: true},
 }
 
 // DiagnoseOptions tunes a diagnosis run.
@@ -155,17 +166,21 @@ func probePort(ctx context.Context, target string, p PortProbe, timeout time.Dur
 		typ = "tcp"
 	}
 	name := fmt.Sprintf("%s %d (%s)", strings.ToUpper(typ), p.Port, p.Label)
+	failureStatus := StatusFail
+	if p.Optional {
+		failureStatus = StatusWarn
+	}
 
 	if typ == "ssh" {
 		if dialSSH(ctx, target, p.Port, timeout) {
 			return probeResult{name, StatusOK, "ssh handshake ok"}
 		}
-		return probeResult{name, StatusFail, "closed or no ssh banner"}
+		return probeResult{name, failureStatus, "closed or no ssh banner"}
 	}
 	if dialTCP(ctx, target, p.Port, timeout) {
 		return probeResult{name, StatusOK, "open"}
 	}
-	return probeResult{name, StatusFail, "closed or filtered"}
+	return probeResult{name, failureStatus, "closed or filtered"}
 }
 
 func (d *Diagnosis) add(name string, status CheckStatus, detail string) {
