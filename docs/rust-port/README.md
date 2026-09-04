@@ -19,6 +19,8 @@ Implemented slices:
 - byte-exact CLI `version` behavior;
 - legacy MD5 and modern PBKDF2 session challenge responses;
 - HTTP Digest challenge parsing and deterministic Authorization headers;
+- configuration defaults, TOML/environment precedence, secure initialization,
+  and fail-closed credential resolution;
 - SOAP request/response/fault handling and nested service discovery through a
   bounded, injected transport.
 

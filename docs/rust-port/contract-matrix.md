@@ -16,10 +16,10 @@ fixtures; **FROZEN** is covered by the Go oracle but has no Rust implementation;
 | CLI-008 | Structured output | text/JSON/YAML for every command | fake-box scenarios | snake_case, omission, ordering where stable | command parity suite | all | parsed/bytes per row | PENDING |
 | CLI-009 | Error taxonomy | auth/config/not-found/transport/timeout/cancel | Go binary | exit codes, kind, message, hint, output stream | negative command suite | all | bytes | FROZEN |
 | CLI-010 | Signals | SIGINT/SIGTERM during request/watch/MCP | Go binary | cancellation and interrupted exit code | process tests | macOS/Linux | semantic | PENDING |
-| CFG-001 | Defaults | no file/env | Go loader | host, TLS and 15 s timeout defaults | config tests | all | semantic | FROZEN |
-| CFG-002 | Precedence | TOML plus `SYMFRITZ_*` | Go loader | env overrides file overrides defaults | fixture table | all | semantic | FROZEN |
-| CFG-003 | Init file | isolated HOME, first/second/force writes | `config init` | exact bytes, path, mode, overwrite behavior | filesystem parity | all | bytes + metadata | PENDING |
-| SEC-001 | Credential order | env/ref/keychain/plaintext combinations | Go resolver | env → symvault → Keychain → config; configured backend failure stops | backend-stub suite | all/macOS | semantic | FROZEN |
+| CFG-001 | Defaults | no file/env and timeout matrix | Go loader via generated fixture | host, TLS and 15 s timeout defaults | `symfritz-core/tests/config_fixtures.rs` | all | semantic | PASS |
+| CFG-002 | Precedence | global/project TOML plus nested/shorthand env matrix | Go configkit via generated fixture | env overrides project file overrides global file overrides defaults; file zero-values stay ignored | `symfritz-core/tests/config_fixtures.rs` | all | semantic | PASS |
+| CFG-003 | Init file | isolated fresh/existing/force writes | Go `initConfigFile` via generated fixture | exact bytes, path-dependent streams, mode and overwrite behavior | `symfritz-core/tests/config_fixtures.rs` | all | bytes + metadata | PASS |
+| SEC-001 | Credential order | env/ref/keychain/plaintext success and failure combinations | Go resolver via generated fixture | env → symvault → Keychain → config; configured backend failure stops | `symfritz-core/tests/secret_fixtures.rs` | all/macOS | semantic | PASS |
 | SEC-002 | Secret redaction | backend/network failures | Go binary | no password/SID in logs or errors | leak assertions | all | semantic | PENDING |
 | TLS-001 | SPKI TOFU | test certificates + isolated pins | Go `PinStore` | exact SHA-256 SPKI base64 and pin JSON | certificate fixtures | all | bytes | FROZEN |
 | TLS-002 | Pin persistence | missing/corrupt/read-only/concurrent store | Go `PinStore` | modes, refusal to overwrite corrupt data, reset recovery | filesystem suite | all | bytes + metadata | FROZEN |

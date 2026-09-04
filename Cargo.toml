@@ -19,3 +19,4 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.11.0"
 symfritz-core = { path = "crates/symfritz-core", version = "=0.0.0" }
+toml = "1.1.5"
