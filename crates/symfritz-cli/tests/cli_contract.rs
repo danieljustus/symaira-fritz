@@ -253,3 +253,33 @@ fn documented_command_list_does_not_drift_from_fixture() {
         "docs/cli.md command list drifted"
     );
 }
+
+#[test]
+fn help_flags_precede_positional_validation_and_exit_successfully() {
+    let binary = env!("CARGO_BIN_EXE_symfritz-rust");
+    for args in [
+        vec!["status", "--help"],
+        vec!["status", "-h"],
+        vec!["call", "--help"],
+        vec!["call", "-h"],
+        vec!["hosts", "get", "--help"],
+        vec!["wlan", "guest", "status", "--help"],
+        vec!["--help"],
+        vec!["-h"],
+    ] {
+        let output = ProcessCommand::new(binary)
+            .args(args.iter().copied())
+            .output()
+            .unwrap_or_else(|error| panic!("run help {:?}: {error}", args));
+        assert_eq!(output.status.code(), Some(0), "help failed: {args:?}");
+        assert!(
+            !output.stdout.is_empty(),
+            "help emitted no stdout: {args:?}"
+        );
+        assert!(output.stderr.is_empty(), "help emitted stderr: {args:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("Usage:"),
+            "help has no usage line: {args:?}"
+        );
+    }
+}

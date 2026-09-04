@@ -37,26 +37,59 @@ DESC_XML = b'''<?xml version="1.0"?><root xmlns="urn:dslforum-org:device-1-0"><d
 <service><serviceType>urn:dslforum-org:service:WANCommonInterfaceConfig:1</serviceType><controlURL>/upnp/control/wancommonifconfig1</controlURL></service>
 <service><serviceType>urn:dslforum-org:service:DeviceInfo:1</serviceType><controlURL>/upnp/control/deviceinfo</controlURL></service>
 </serviceList></device></root>'''
+HOSTS_JSON = b'''[{"name":"laptop","ip":"192.168.1.20","mac":"AA:BB:CC:DD:EE:FF","wlan":true,"active":true}]'''
+MESH_JSON = b'''{"nodes":[{"device_name":"fritz.box","device_model":"FRITZ!Box","mesh_role":"master","node_interfaces":[]}]}'''
+LOG_XML = b'''<?xml version="1.0"?><Logs><Log><Time>01.01.26 12:00</Time><Message>Started</Message><Group>sys</Group></Log></Logs>'''
+CALLS_XML = b'''<?xml version="1.0"?><CallList><Call><Type>1</Type><Caller>123</Caller><Called>456</Called><Name>Alice</Name><Date>01.01.26 12:00</Date><Duration>00:01</Duration></Call></CallList>'''
 
 # This is the allow-list, not a response fall-through. Adding a command requires
 # adding its exact route/action here and a fixture response for that action.
 EXPECTED_ACTIONS = {
-    "/upnp/control/deviceinfo": {"GetInfo"},
+    "/upnp/control/deviceinfo": {"GetInfo", "X_AVM-DE_GetDeviceLogPath"},
     "/upnp/control/userif": {"GetInfo"},
     "/upnp/control/wanipconnection1": {"GetInfo", "GetExternalIPAddress"},
     "/upnp/control/wanpppconn1": {"GetInfo", "GetExternalIPAddress"},
-    "/upnp/control/wancommonifconfig1": {"X_AVM-DE_GetOnlineMonitor"},
+    "/upnp/control/wancommonifconfig1": {
+        "X_AVM-DE_GetOnlineMonitor", "GetCommonLinkProperties", "GetAddonInfos",
+    },
+    "/upnp/control/wandslifconfig1": {"X_AVM-DE_GetDSLLinkInfo", "GetInfo"},
     "/upnp/control/hosts": {
-        "X_AVM-DE_GetHostListPath", "GetHostNumberOfEntries", "GetGenericHostEntry",
-        "GetSpecificHostEntry", "X_AVM-DE_GetSpecificHostEntryByIP",
-        "X_AVM-DE_WakeOnLANByMACAddress",
+        "X_AVM-DE_GetHostListPath", "X_AVM-DE_GetMeshListPath", "X_AVM-DE_GetDeviceLogPath",
+        "GetHostNumberOfEntries", "GetGenericHostEntry", "GetSpecificHostEntry",
+        "X_AVM-DE_GetSpecificHostEntryByIP", "X_AVM-DE_WakeOnLANByMACAddress",
     },
-    "/upnp/control/wandslifconfig1": {"X_AVM-DE_GetDSLLinkInfo"},
     "/upnp/control/x_voip": {
-        "X_AVM-DE_Dial", "X_AVM-DE_DialHangup",
+        "X_AVM-DE_Dial", "X_AVM-DE_DialNumber", "X_AVM-DE_DialHangup",
     },
-    "/upnp/control/x_contact": {"X_AVM-DE_GetCallList"},
+    "/upnp/control/x_contact": {"X_AVM-DE_GetCallList", "GetCallList"},
+    "/upnp/control/x_homeauto": {"GetGenericDeviceInfos", "SetSwitch"},
+    "/upnp/control/wlanconfig1": {
+        "GetInfo", "GetTotalAssociations", "GetGenericAssociatedDeviceInfo",
+    },
+    "/upnp/control/wlanconfig2": {
+        "GetInfo", "GetTotalAssociations", "GetGenericAssociatedDeviceInfo",
+    },
+    "/upnp/control/wlanconfig3": {
+        "GetInfo", "GetTotalAssociations", "GetGenericAssociatedDeviceInfo", "SetEnable",
+    },
     "/upnp/control/deviceconfig": {"Reboot"},
+}
+
+EXPECTED_SERVICES = {
+    "/upnp/control/deviceinfo": "DeviceInfo:1",
+    "/upnp/control/userif": "UserInterface:1",
+    "/upnp/control/wanipconnection1": "WANIPConnection:1",
+    "/upnp/control/wanpppconn1": "WANPPPConnection:1",
+    "/upnp/control/wancommonifconfig1": "WANCommonInterfaceConfig:1",
+    "/upnp/control/wandslifconfig1": "WANDSLInterfaceConfig:1",
+    "/upnp/control/hosts": "Hosts:1",
+    "/upnp/control/x_voip": "X_VoIP:1",
+    "/upnp/control/x_contact": "X_AVM-DE_OnTel:1",
+    "/upnp/control/x_homeauto": "X_AVM-DE_Homeauto:1",
+    "/upnp/control/wlanconfig1": "WLANConfiguration:1",
+    "/upnp/control/wlanconfig2": "WLANConfiguration:2",
+    "/upnp/control/wlanconfig3": "WLANConfiguration:3",
+    "/upnp/control/deviceconfig": "DeviceConfig:1",
 }
 
 
@@ -75,12 +108,47 @@ class StrictHandler(http.server.BaseHTTPRequestHandler):
     server: StrictFakeBox  # type: ignore[reportIncompatibleVariableOverride]
 
     def do_GET(self) -> None:
-        if self.path != "/tr64desc.xml":
+        path = self.path.split("?", 1)[0]
+        bodies = {
+            "/tr64desc.xml": (DESC_XML, "text/xml"),
+            "/hosts.json": (HOSTS_JSON, "application/json"),
+            "/mesh.json": (MESH_JSON, "application/json"),
+            "/log.xml": (LOG_XML, "text/xml"),
+            "/calls.xml": (CALLS_XML, "text/xml"),
+        }
+        if path == "/login_sid.lua":
+            query = self.path.split("?", 1)[1] if "?" in self.path else ""
+            if "response=" in query:
+                body = b"<?xml version=\"1.0\"?><SessionInfo><SID>1234567890abcdef</SID><Challenge>fixed-challenge</Challenge><BlockTime>0</BlockTime></SessionInfo>"
+            else:
+                body = b"<?xml version=\"1.0\"?><SessionInfo><SID>0000000000000000</SID><Challenge>fixed-challenge</Challenge><BlockTime>0</BlockTime></SessionInfo>"
+            self.server.requests.append(("GET", self.path, "", b""))
+            self.reply(body, "text/xml")
+            return
+        if path.startswith("/webservices/homeautoswitch.lua"):
+            query = self.path.split("?", 1)[1] if "?" in self.path else ""
+            if "sid=1234567890abcdef" not in query:
+                self.server.failures.append("AHA request omitted valid SID")
+                self.send_error(401)
+                return
+            if "switchcmd=getdevicelistinfos" in query:
+                body = b"<devicelist><device><name>Desk</name><ain>16-000000000000</ain><present>1</present><switch><state>1</state></switch></device></devicelist>"
+            else:
+                body = b"1"
+            self.server.requests.append(("GET", self.path, "", b""))
+            self.reply(body, "text/plain")
+            return
+        if path == "/query.lua":
+            self.server.requests.append(("POST", self.path, "", b""))
+            self.reply(b"{\"CPUTEMP\":[42]}", "application/json")
+            return
+        if path not in bodies:
             self.server.failures.append(f"GET unexpected path {self.path!r}")
             self.send_error(404)
             return
         self.server.requests.append(("GET", self.path, "", b""))
-        self.reply(DESC_XML, "text/xml")
+        body, content_type = bodies[path]
+        self.reply(body, content_type)
 
     def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length", "-1"))
@@ -89,6 +157,15 @@ class StrictHandler(http.server.BaseHTTPRequestHandler):
             self.send_error(400)
             return
         body = self.rfile.read(length)
+        if self.path == "/data.lua":
+            fields = body.decode("utf-8", "replace")
+            if "page=" not in fields or "sid=1234567890abcdef" not in fields:
+                self.server.failures.append("data.lua omitted page or valid SID")
+                self.send_error(401)
+                return
+            self.server.requests.append(("POST", self.path, "", body))
+            self.reply(b"{\"ok\":true,\"page\":\"test\"}", "application/json")
+            return
         soap_action = self.headers.get("SOAPAction", "")
         action = soap_action.strip('"').rsplit("#", 1)[-1]
         key = (self.path, action)
@@ -98,46 +175,99 @@ class StrictHandler(http.server.BaseHTTPRequestHandler):
             self.server.failures.append(f"POST unexpected route/action {self.path!r} {soap_action!r}")
             self.send_error(404)
             return
+        expected_service = EXPECTED_SERVICES[self.path]
+        normalized_soap_action = soap_action.strip('"')
+        if not normalized_soap_action.startswith("urn:") or f":{expected_service}#" not in normalized_soap_action:
+            self.server.failures.append(f"SOAPAction used wrong service: {soap_action!r}")
+            self.send_error(400)
+            return
         if f"{action}" not in body.decode("utf-8", "replace"):
             self.server.failures.append(f"SOAP body omitted action {action!r}")
             self.send_error(400)
             return
-        if action == "X_AVM-DE_GetOnlineMonitor" and (
-            body.count(b"<NewSyncGroupIndex>") != 1
-            or b"<NewSyncGroupIndex>0</NewSyncGroupIndex>" not in body
+        required = {
+            "X_AVM-DE_GetOnlineMonitor": b"<NewSyncGroupIndex>0</NewSyncGroupIndex>",
+            "X_AVM-DE_DialNumber": b"<NewX_AVM-DE_PhoneNumber>123</NewX_AVM-DE_PhoneNumber>",
+            "X_AVM-DE_WakeOnLANByMACAddress": b"<NewMACAddress>AA:BB:CC:DD:EE:FF</NewMACAddress>",
+            "GetGenericHostEntry": b"<NewIndex>0</NewIndex>",
+            "GetSpecificHostEntry": b"<NewMACAddress>AA:BB:CC:DD:EE:FF</NewMACAddress>",
+            "X_AVM-DE_GetSpecificHostEntryByIP": b"<NewIPAddress>192.168.1.20</NewIPAddress>",
+            "SetEnable": b"<NewEnable>1</NewEnable>",
+        }
+        if action in required and required[action] not in body:
+            self.server.failures.append(f"{action} carried wrong arguments: {body!r}")
+            self.send_error(400)
+            return
+        if action == "SetSwitch" and (
+            b"<NewAIN>16-000000000000</NewAIN>" not in body
+            or b"<NewSwitchState>ON</NewSwitchState>" not in body
         ):
-            # The traffic action requires the fixed sync-group argument. This
-            # catches a route that returns the right fixture with wrong input.
-            self.server.failures.append("traffic action carried wrong arguments")
+            self.server.failures.append("SetSwitch carried wrong arguments")
             self.send_error(400)
             return
 
         authorization = self.headers.get("Authorization", "")
         if key not in self.server.authenticated:
-            if authorization:
-                self.server.failures.append("first SOAP request was authenticated")
-                self.send_error(400)
+            if not authorization:
+                self.reply(b"", "text/xml", status=401,
+                           extra={"WWW-Authenticate": f'Digest realm="{REALM}", nonce="{NONCE}"'})
+                self.server.authenticated.add(key)
                 return
-            self.reply(b"", "text/xml", status=401,
-                       extra={"WWW-Authenticate": f'Digest realm="{REALM}", nonce="{NONCE}"'})
+            if not authorization.startswith("Digest "):
+                self.server.failures.append("SOAP request used non-Digest authorization")
+                self.send_error(401)
+                return
+            # A client may reuse a digest challenge obtained for another
+            # action. Accept that preemptive authenticated request, but still
+            # require the scheme and record this route/action as authenticated.
             self.server.authenticated.add(key)
-            return
-        if not authorization.startswith("Digest "):
+        elif not authorization.startswith("Digest "):
             self.server.failures.append("retry SOAP request omitted Digest authorization")
             self.send_error(401)
             return
 
         if action == "X_AVM-DE_GetOnlineMonitor":
             self.reply(TRAFFIC_XML, "text/xml")
-        else:
-            # Only explicitly allow-listed actions reach this response. The
-            # body is action-specific so a wrong action cannot silently pass.
-            response = (
-                f'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>'
-                f'<u:{action}Response xmlns:u="urn:dslforum-org:service:test:1">'
-                f'</u:{action}Response></s:Body></s:Envelope>'
-            ).encode()
-            self.reply(response, "text/xml")
+            return
+        values: dict[str, str] = {}
+        if action == "GetInfo" and self.path == "/upnp/control/deviceinfo":
+            values = {"NewModelName": "FRITZ!Box 7590", "NewSoftwareVersion": "8.0", "NewUpTime": "42"}
+        elif action == "GetInfo" and self.path.startswith("/upnp/control/wan"):
+            values = {"NewConnectionStatus": "Connected", "NewExternalIPAddress": "198.51.100.10"}
+        elif action == "GetInfo" and self.path.startswith("/upnp/control/wlanconfig"):
+            index = self.path.rsplit("wlanconfig", 1)[1]
+            values = {"NewSSID": f"Test-{index}", "NewEnable": "1", "NewChannel": index, "NewRadioStandard": "802.11ax"}
+        elif action == "GetInfo" and self.path == "/upnp/control/userif":
+            values = {"NewUpgradeAvailable": "0"}
+        elif action == "GetCommonLinkProperties":
+            values = {"NewLayer1UpstreamMaxBitRate": "1000000", "NewLayer1DownstreamMaxBitRate": "10000000"}
+        elif action in {"X_AVM-DE_GetDSLLinkInfo", "GetInfo"} and self.path == "/upnp/control/wandslifconfig1":
+            values = {"NewUpstreamNoiseMargin": "100", "NewDownstreamNoiseMargin": "120", "NewUpstreamAttenuation": "50", "NewDownstreamAttenuation": "60"}
+        elif action == "X_AVM-DE_GetHostListPath":
+            values = {"NewX_AVM-DE_HostListPath": "/hosts.json"}
+        elif action == "X_AVM-DE_GetMeshListPath":
+            values = {"NewX_AVM-DE_MeshListPath": "/mesh.json"}
+        elif action == "X_AVM-DE_GetDeviceLogPath":
+            values = {"NewX_AVM-DE_DeviceLogPath": "/log.xml"}
+        elif action == "GetCallList":
+            values = {"NewCallListURL": "http://127.0.0.1:49000/calls.xml"}
+        elif action == "GetHostNumberOfEntries":
+            values = {"NewHostNumberOfEntries": "1"}
+        elif action in {"GetGenericHostEntry", "GetSpecificHostEntry", "X_AVM-DE_GetSpecificHostEntryByIP"}:
+            values = {"NewHostName": "laptop", "NewIPAddress": "192.168.1.20", "NewMACAddress": "AA:BB:CC:DD:EE:FF", "NewActive": "1", "NewInterfaceType": "Ethernet"}
+        elif action == "GetTotalAssociations":
+            values = {"NewTotalAssociations": "1"}
+        elif action == "GetGenericAssociatedDeviceInfo":
+            values = {"NewAssociatedDeviceMACAddress": "AA:BB:CC:DD:EE:FF", "NewAssociatedDeviceIPAddress": "192.168.1.20", "NewX_AVM-DE_SignalStrength": "-40", "NewX_AVM-DE_Speed": "866"}
+        elif action == "GetGenericDeviceInfos":
+            values = {"NewAIN": "16-000000000000", "NewFunctionBitMask": "32768", "NewManufacturer": "AVM", "NewProductName": "FRITZ!DECT 200", "NewFirmwareVersion": "1.0"}
+        response_values = "".join(f"<{key}>{value}</{key}>" for key, value in values.items())
+        response = (
+            f'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>'
+            f'<u:{action}Response xmlns:u="urn:dslforum-org:service:test:1">{response_values}'
+            f'</u:{action}Response></s:Body></s:Envelope>'
+        ).encode()
+        self.reply(response, "text/xml")
 
     def reply(self, body: bytes, content_type: str, *, status: int = 200,
               extra: dict[str, str] | None = None) -> None:
@@ -294,6 +424,54 @@ def run_suite(go: str, rust: str, root: Path) -> None:
                 assert_structured(f"traffic-{fmt}", left, right, kind)
             print(f"PASS traffic-{fmt}")
 
+        real_cases = [
+            ("status-real", ["status"], "text", True),
+            ("status-real-json", ["status", "--output", "json"], "json", True),
+            ("hosts-list-real", ["hosts", "list"], "text", True),
+            ("hosts-active-real", ["hosts", "active"], "text", True),
+            ("hosts-get-name-real", ["hosts", "get", "laptop"], "text", True),
+            ("hosts-get-mac-real", ["hosts", "get", "--mac", "AA:BB:CC:DD:EE:FF"], "json", True),
+            ("hosts-get-ip-real", ["hosts", "get", "--ip", "192.168.1.20"], "json", True),
+            ("wlan-radios-real", ["wlan", "radios"], "json", True),
+            ("wlan-clients-real", ["wlan", "clients"], "json", True),
+            ("wlan-guest-status-real", ["wlan", "guest", "status"], "json", True),
+            ("dsl-real", ["dsl"], "json", True),
+            ("calls-real", ["calls"], "json", True),
+            ("log-real", ["log"], "json", True),
+            ("raw-call-real", ["call", "deviceinfo", "GetInfo"], "json", True),
+        ]
+        non_pass_cases = {
+            "detect-real": "non-deterministic local network discovery",
+            "diagnose-real": "non-deterministic local host probing",
+            "doctor-real": "non-deterministic local diagnostics",
+        }
+        for label, reason in non_pass_cases.items():
+            print(f"NON-PASS {label}: {reason}")
+        for label, args, kind, required in real_cases:
+            effective_args = (
+                args
+                if kind == "text" or "--output" in args or "--json" in args
+                else [*args, "--output", kind]
+            )
+            server.authenticated.clear()
+            server.failures.clear()
+            try:
+                left = run(go, effective_args, fake=True, timeout=5)
+                server.authenticated.clear()
+                right = run(rust, effective_args, fake=True, timeout=5)
+            except (AssertionError, OSError, subprocess.SubprocessError) as exc:
+                raise AssertionError(f"{label}: required case failed: {exc}") from exc
+            if server.failures:
+                raise AssertionError("; ".join(server.failures))
+            if kind == "json":
+                assert_structured(label, left, right, "json")
+            elif kind == "yaml":
+                assert_structured(label, left, right, "yaml")
+            else:
+                assert_bytes(label, left, right)
+            if server.failures:
+                raise AssertionError("; ".join(server.failures))
+            print(f"PASS {label}")
         if os.name != "nt":
             server.authenticated.clear()
             left = run_watch(go, fmt="json")

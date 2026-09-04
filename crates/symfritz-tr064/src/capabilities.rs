@@ -32,6 +32,7 @@ pub enum ErrorKind {
 pub fn error_kind(error: &ClientError) -> ErrorKind {
     match error {
         ClientError::UnauthorizedChallenge => ErrorKind::Unauthorized,
+        ClientError::SoapFault { status: 401, .. } => ErrorKind::Unauthorized,
         ClientError::SoapFault {
             code, description, ..
         } => match code {
@@ -49,7 +50,9 @@ pub fn error_kind(error: &ClientError) -> ErrorKind {
         },
         ClientError::Transport(message) => {
             let message = message.to_ascii_lowercase();
-            if message.contains("timeout") || message.contains("timed out") {
+            if message.contains("http 401") {
+                ErrorKind::Unauthorized
+            } else if message.contains("timeout") || message.contains("timed out") {
                 ErrorKind::Timeout
             } else {
                 ErrorKind::Transport

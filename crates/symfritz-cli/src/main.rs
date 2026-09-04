@@ -13,7 +13,10 @@ use std::{
 use clap::CommandFactory;
 use clap_complete::{generate, shells};
 use serde::{Deserialize, Serialize};
-use symfritz_aha::{Client as AhaClient, Device as AhaDevice, Group as AhaGroup, SystemClock};
+use symfritz_aha::{
+    Client as AhaClient, ClientError as AhaClientError, Device as AhaDevice, Group as AhaGroup,
+    SystemClock,
+};
 use symfritz_cli::{
     OutputFormat, TOOL,
     cli::{
@@ -42,13 +45,15 @@ const VERSION: &str = match option_env!("SYMFRITZ_VERSION") {
 };
 const EXIT_CONFIG: u8 = 9;
 const EXIT_OPERATION: u8 = 1;
+const EXIT_NO_AUTH: u8 = 2;
 static CANCEL_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug)]
 struct HandlerError {
     message: String,
-    config: bool,
+    exit_code: u8,
     kind: String,
+    hint: Option<String>,
     status: bool,
 }
 
@@ -56,8 +61,19 @@ impl HandlerError {
     fn operation(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
-            config: false,
+            exit_code: EXIT_OPERATION,
             kind: "unavailable".to_owned(),
+            hint: None,
+            status: false,
+        }
+    }
+
+    fn auth(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            exit_code: EXIT_NO_AUTH,
+            kind: "auth".to_owned(),
+            hint: Some("Run: symfritz auth login".to_owned()),
             status: false,
         }
     }
@@ -65,19 +81,33 @@ impl HandlerError {
     fn config(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
-            config: true,
+            exit_code: EXIT_CONFIG,
             kind: "validation".to_owned(),
+            hint: None,
             status: false,
         }
     }
 
     fn from_operation(context: &str, error: impl Display) -> Self {
-        let message = format!("{context}: {error}");
         Self {
-            message,
-            config: false,
+            message: format!("{context}: {error}"),
+            exit_code: EXIT_OPERATION,
             kind: "unavailable".to_owned(),
+            hint: None,
             status: false,
+        }
+    }
+
+    fn from_aha(context: &str, error: &AhaClientError) -> Self {
+        match error {
+            AhaClientError::NoCredential
+            | AhaClientError::InvalidCredentials
+            | AhaClientError::RateLimited(_)
+            | AhaClientError::AhaForbiddenAfterRelogin
+            | AhaClientError::AhaHttpStatus { status: 401, .. } => {
+                Self::auth(format!("{context}: {error}"))
+            }
+            _ => Self::from_operation(context, error),
         }
     }
 
@@ -91,10 +121,16 @@ impl HandlerError {
             ErrorKind::Internal => "internal",
             ErrorKind::Unknown => "unavailable",
         };
+        let unauthorized = symfritz_tr064::error_kind(error) == ErrorKind::Unauthorized;
         Self {
             message: format!("{context}: {error}"),
-            config: false,
+            exit_code: if unauthorized {
+                EXIT_NO_AUTH
+            } else {
+                EXIT_OPERATION
+            },
             kind: kind.to_owned(),
+            hint: unauthorized.then(|| "Run: symfritz auth login".to_owned()),
             status: false,
         }
     }
@@ -141,7 +177,14 @@ fn main() -> ExitCode {
     }
     let cli = match symfritz_cli::cli::parse_args(&args) {
         Ok(cli) => cli,
-        Err(message) => {
+        Err(symfritz_cli::cli::ParseError::Help(message)) => {
+            print!("{message}");
+            if !message.ends_with('\n') {
+                println!();
+            }
+            return ExitCode::SUCCESS;
+        }
+        Err(symfritz_cli::cli::ParseError::Invalid(message)) => {
             eprintln!("Error: {message}");
             return ExitCode::from(EXIT_OPERATION);
         }
@@ -177,7 +220,7 @@ fn main() -> ExitCode {
             if CANCEL_REQUESTED.load(Ordering::SeqCst) {
                 return ExitCode::from(130);
             }
-            if format != OutputFormat::Text && !error.config && !error.status {
+            if format != OutputFormat::Text && error.exit_code != EXIT_CONFIG && !error.status {
                 let payload = ErrorOutput {
                     error: ErrorDetails {
                         kind: &error.kind,
@@ -189,12 +232,11 @@ fn main() -> ExitCode {
                 }
             } else {
                 eprintln!("Error: {}", error.message);
+                if let Some(hint) = &error.hint {
+                    eprintln!("Hint: {hint}");
+                }
             }
-            if error.config {
-                ExitCode::from(EXIT_CONFIG)
-            } else {
-                ExitCode::from(EXIT_OPERATION)
-            }
+            ExitCode::from(error.exit_code)
         }
     }
 }
@@ -981,8 +1023,8 @@ fn execute_auth_trust(args: TrustArgs) -> Result<(), HandlerError> {
 fn execute_auth_test() -> Result<(), HandlerError> {
     let config = symfritz_core::config::load_config().map_err(config_error)?;
     let result = resolve(&SecretOptions::from(&config.box_config)).map_err(secret_error)?;
-    if result.source == CredentialSource::None || result.password.is_empty() {
-        return Err(HandlerError::config(
+    if result.source == CredentialSource::None || result.password.trim().is_empty() {
+        return Err(HandlerError::auth(
             "no password configured (run 'symfritz auth login')",
         ));
     }
@@ -1036,12 +1078,12 @@ fn execute_auth_login(args: AuthStoreArgs) -> Result<(), HandlerError> {
         or_dash(&config.box_config.user),
         config.box_config.host
     ))?;
-    if password.is_empty() {
+    if password.trim().is_empty() {
         return Err(HandlerError::config("empty password"));
     }
     let (session_ok, tr064_ok) = verify_credential(&config.box_config, &password);
     if !session_ok {
-        return Err(HandlerError::operation("box rejected the password"));
+        return Err(HandlerError::auth("box rejected the password"));
     }
     println!(
         "Verified: web login ✓  TR-064 {}",
@@ -1068,7 +1110,7 @@ fn execute_auth_store(args: AuthStoreArgs) -> Result<(), HandlerError> {
             config.box_config.host
         ))?,
     };
-    if password.is_empty() {
+    if password.trim().is_empty() {
         return Err(HandlerError::config("empty password"));
     }
     let (backend, hint) = store_credential(&config.box_config, &password, &args)?;
@@ -1196,6 +1238,11 @@ fn bool_glyph(value: bool) -> &'static str {
 fn load_connection() -> Result<(Config, String), HandlerError> {
     let config = symfritz_core::config::load_config().map_err(config_error)?;
     let result = resolve(&SecretOptions::from(&config.box_config)).map_err(secret_error)?;
+    if result.source == CredentialSource::None || result.password.trim().is_empty() {
+        return Err(HandlerError::auth(
+            "no password configured (run 'symfritz auth login')",
+        ));
+    }
     if result.source == CredentialSource::Config {
         eprintln!(
             "warning: password loaded from plaintext config. Consider 'symfritz auth login' for Keychain/symvault storage."
@@ -1884,11 +1931,11 @@ fn execute_home_switch(args: HomeSwitchArgs) -> Result<(), HandlerError> {
         if state {
             client
                 .switch_on(&args.ain)
-                .map_err(|error| HandlerError::from_operation("switch failed", error))?;
+                .map_err(|error| HandlerError::from_aha("switch failed", &error))?;
         } else {
             client
                 .switch_off(&args.ain)
-                .map_err(|error| HandlerError::from_operation("switch failed", error))?;
+                .map_err(|error| HandlerError::from_aha("switch failed", &error))?;
         }
     }
     println!("OK: {} -> {}", args.ain, if state { "on" } else { "off" });
@@ -1912,7 +1959,7 @@ fn execute_home_temp(args: HomeTempArgs) -> Result<(), HandlerError> {
     let mut client = make_web(&config.box_config, &password)?;
     client
         .set_hkr_temp(&args.ain, value)
-        .map_err(|error| HandlerError::from_operation("set temp failed", error))?;
+        .map_err(|error| HandlerError::from_aha("set temp failed", &error))?;
     println!("OK: {} -> {}", args.ain, args.temperature);
     Ok(())
 }
@@ -1949,7 +1996,7 @@ fn execute_home_list(args: HomeListArgs, format: OutputFormat) -> Result<(), Han
     let mut web = make_web(&config.box_config, &password)?;
     let devices = web
         .devices()
-        .map_err(|error| HandlerError::operation(format!("device list failed: {error}")))?;
+        .map_err(|error| HandlerError::from_aha("device list failed", &error))?;
     let groups = web.groups().unwrap_or_default();
     if format != OutputFormat::Text {
         let payload = AhaCombinedOutput {

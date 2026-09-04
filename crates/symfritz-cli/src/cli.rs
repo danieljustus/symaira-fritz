@@ -5,7 +5,7 @@
 //! This module owns parsing and help metadata only. Network, credential, MCP,
 //! and filesystem handlers belong to later port slices.
 
-use clap::{Args, CommandFactory, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand, error::ErrorKind};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -484,11 +484,33 @@ fn parse_duration(value: &str) -> Result<std::time::Duration, String> {
 /// The Go CLI reports validation failures as a single `Error:` line and exits
 /// with status 1. Keeping parsing as a value-level operation lets the binary
 /// preserve that contract and lets tests compare the complete streams.
-pub fn parse_args(args: &[String]) -> Result<Cli, String> {
-    if let Some(message) = go_validation_error(args) {
-        return Err(message.to_owned());
+#[derive(Debug)]
+pub enum ParseError {
+    Help(String),
+    Invalid(String),
+}
+
+/// Parse command-line arguments without allowing clap to terminate the process.
+/// Help is returned separately so the binary can preserve Cobra's stdout/zero
+/// exit contract instead of treating clap's `DisplayHelp` as an error.
+pub fn parse_args(args: &[String]) -> Result<Cli, ParseError> {
+    // Cobra recognizes help before validating required positionals, including
+    // for trailing-argument commands such as `call --help`.
+    let asks_for_help = args
+        .iter()
+        .skip(1)
+        .any(|arg| arg == "--help" || arg == "-h");
+    if !asks_for_help {
+        if let Some(message) = go_validation_error(args) {
+            return Err(ParseError::Invalid(message.to_owned()));
+        }
     }
-    Cli::try_parse_from(args).map_err(|error| error.to_string())
+    Cli::try_parse_from(args).map_err(|error| match error.kind() {
+        ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
+            ParseError::Help(error.render().to_string())
+        }
+        _ => ParseError::Invalid(error.to_string()),
+    })
 }
 
 fn go_validation_error(args: &[String]) -> Option<&'static str> {
@@ -518,10 +540,19 @@ fn go_validation_error(args: &[String]) -> Option<&'static str> {
         [command, subcommand] if command == "home" && subcommand == "temp" => {
             "accepts 2 arg(s), received 0"
         }
-        [command, subcommand, _, _] if command == "hosts" && subcommand == "get" => {
+        [command, subcommand, name, extra]
+            if command == "hosts"
+                && subcommand == "get"
+                && !name.starts_with('-')
+                && !extra.starts_with('-') =>
+        {
             "accepts at most 1 arg(s), received 2"
         }
-        [command, _, _] if command == "wol" => "accepts at most 1 arg(s), received 2",
+        [command, host, extra]
+            if command == "wol" && !host.starts_with('-') && !extra.starts_with('-') =>
+        {
+            "accepts at most 1 arg(s), received 2"
+        }
         [command, subcommand, extra]
             if command == "completion" && subcommand == "bash" && extra == "extra" =>
         {
