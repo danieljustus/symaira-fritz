@@ -1,14 +1,15 @@
 package fritz
 
 // getCachedDigestAuth returns a cached Authorization header for the given
-// method and URI, or empty string if no cached challenge exists.
+// method and URI, or empty string if no cached challenge exists. Entropy
+// failures are returned before any authenticated request is sent.
 // The nc counter is incremented under the mutex so concurrent callers
 // each get a unique nc.
-func (c *Client) getCachedDigestAuth(method, uri string) string {
+func (c *Client) getCachedDigestAuth(method, uri string) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.digestCache == nil || c.digestCache.challenge.nonce == "" {
-		return ""
+		return "", nil
 	}
 	c.digestCache.nc++
 	dc := c.digestCache.challenge
@@ -23,8 +24,8 @@ func (c *Client) setCachedDigestChallenge(dc digestChallenge) {
 }
 
 // buildDigestAuth builds an Authorization header for the given challenge,
-// incrementing and returning the cached nc counter.
-func (c *Client) buildDigestAuth(dc digestChallenge, method, uri string) string {
+// incrementing the cached nc counter and propagating cnonce entropy failures.
+func (c *Client) buildDigestAuth(dc digestChallenge, method, uri string) (string, error) {
 	c.mu.Lock()
 	c.digestCache = &cachedDigest{challenge: dc, nc: 0}
 	nc := c.digestCache.nc + 1

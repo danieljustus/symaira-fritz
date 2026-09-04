@@ -24,6 +24,8 @@ type cachedDigest struct {
 	nc        int
 }
 
+var randRead = rand.Read
+
 // parseDigestChallenge parses a "Digest realm=…, nonce=…, …" header value.
 func parseDigestChallenge(header string) (digestChallenge, bool) {
 	const prefix = "Digest "
@@ -89,12 +91,18 @@ func splitDigestFields(s string) []string {
 // The client nonce is generated freshly per request from crypto/rand
 // (RFC 7616 §4.7: "the client nonce SHOULD be unique"). The nc parameter
 // is the nonce count (1-based), incremented when reusing a cached server nonce.
-func digestAuthHeader(dc digestChallenge, user, password, method, uri string, nc int) string {
+func digestAuthHeader(dc digestChallenge, user, password, method, uri string, nc int) (string, error) {
 	cnonce, err := generateCnonce()
 	if err != nil {
-		// On crypto/rand failure, surface the error — never silently fall back.
-		cnonce = ""
+		return "", err
 	}
+	return digestAuthHeaderWithCnonce(dc, user, password, method, uri, nc, cnonce), nil
+}
+
+// digestAuthHeaderWithCnonce builds a deterministic Authorization header. The
+// production path supplies a fresh crypto/rand cnonce; the explicit value lets
+// parity fixtures freeze the wire contract without weakening production entropy.
+func digestAuthHeaderWithCnonce(dc digestChallenge, user, password, method, uri string, nc int, cnonce string) string {
 	ncStr := fmt.Sprintf("%08x", nc)
 	ha1 := md5hex(user + ":" + dc.realm + ":" + password)
 	ha2 := md5hex(method + ":" + uri)
@@ -150,7 +158,7 @@ func md5hex(s string) string {
 // chars) provides sufficient entropy for digest auth.
 func generateCnonce() (string, error) {
 	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
+	if _, err := randRead(b); err != nil {
 		return "", fmt.Errorf("generating client nonce: %w", err)
 	}
 	return hex.EncodeToString(b), nil

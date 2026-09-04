@@ -1,6 +1,10 @@
 package fritz
 
-import "testing"
+import (
+	"errors"
+	"strings"
+	"testing"
+)
 
 func TestParseDigestChallenge(t *testing.T) {
 	header := `Digest realm="F!Box", nonce="abc123", qop="auth", algorithm=MD5`
@@ -27,7 +31,10 @@ func TestParseDigestChallenge_NotDigest(t *testing.T) {
 
 func TestDigestAuthHeader_Auth(t *testing.T) {
 	dc := digestChallenge{realm: "F!Box", nonce: "abc123", qop: "auth"}
-	got := digestAuthHeader(dc, "user", "pass", "POST", "/upnp/control/deviceinfo", 1)
+	got, err := digestAuthHeader(dc, "user", "pass", "POST", "/upnp/control/deviceinfo", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, want := range []string{
 		`username="user"`, `realm="F!Box"`, `nonce="abc123"`,
 		`uri="/upnp/control/deviceinfo"`, `qop=auth`, `nc=00000001`, `response="`,
@@ -41,7 +48,10 @@ func TestDigestAuthHeader_Auth(t *testing.T) {
 func TestDigestAuthHeader_QopList(t *testing.T) {
 	// Servers may advertise "auth,auth-int" — we must still select auth.
 	dc := digestChallenge{realm: "F!Box", nonce: "n", qop: "auth,auth-int"}
-	got := digestAuthHeader(dc, "u", "p", "POST", "/ctrl", 1)
+	got, err := digestAuthHeader(dc, "u", "p", "POST", "/ctrl", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !contains(got, "qop=auth") || !contains(got, "nc=00000001") {
 		t.Errorf("qop list not handled: %s", got)
 	}
@@ -94,8 +104,14 @@ func TestGenerateCnonce_Uniqueness(t *testing.T) {
 // the Authorization header.
 func TestDigestAuthHeader_DifferentCnoncePerRequest(t *testing.T) {
 	dc := digestChallenge{realm: "F!Box", nonce: "abc123", qop: "auth"}
-	h1 := digestAuthHeader(dc, "user", "pass", "POST", "/ctrl", 1)
-	h2 := digestAuthHeader(dc, "user", "pass", "POST", "/ctrl", 1)
+	h1, err := digestAuthHeader(dc, "user", "pass", "POST", "/ctrl", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h2, err := digestAuthHeader(dc, "user", "pass", "POST", "/ctrl", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if h1 == h2 {
 		t.Errorf("two consecutive auth headers should differ (cnonce should be random)")
 	}
@@ -117,7 +133,10 @@ func TestDigestAuthHeader_NcFormat(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := digestAuthHeader(dc, "user", "pass", "POST", "/ctrl", tt.nc)
+			got, err := digestAuthHeader(dc, "user", "pass", "POST", "/ctrl", tt.nc)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if !contains(got, tt.want) {
 				t.Errorf("nc=%d: expected %q in header, got: %s", tt.nc, tt.want, got)
 			}
@@ -128,15 +147,17 @@ func TestDigestAuthHeader_NcFormat(t *testing.T) {
 // TestGenerateCnonce_ErrorPath verifies Issue #121 acceptance criterion:
 // if the random source fails, generateCnonce returns an error.
 func TestGenerateCnonce_ErrorPath(t *testing.T) {
-	// generateCnonce uses crypto/rand which is always available on supported
-	// platforms. We verify the function signature and error contract by
-	// calling it and checking no error occurs in normal operation.
-	cn, err := generateCnonce()
-	if err != nil {
-		t.Fatalf("generateCnonce() should not error on supported platforms: %v", err)
+	original := randRead
+	randRead = func([]byte) (int, error) { return 0, errors.New("entropy unavailable") }
+	t.Cleanup(func() { randRead = original })
+
+	dc := digestChallenge{realm: "F!Box", nonce: "abc123", qop: "auth"}
+	header, err := digestAuthHeader(dc, "user", "pass", "POST", "/ctrl", 1)
+	if err == nil || !strings.Contains(err.Error(), "generating client nonce") {
+		t.Fatalf("digestAuthHeader error = %v, want client nonce error", err)
 	}
-	if cn == "" {
-		t.Error("generateCnonce() should never return empty string on success")
+	if header != "" {
+		t.Fatalf("digestAuthHeader returned header %q after entropy failure", header)
 	}
 }
 
