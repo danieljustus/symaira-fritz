@@ -11,6 +11,13 @@ dist/
 *.out
 vendor/
 
+# Rust
+/target/
+
+# Python tooling
+__pycache__/
+*.pyc
+
 # Config / secrets
 .env
 *.local

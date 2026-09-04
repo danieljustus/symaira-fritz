@@ -261,6 +261,10 @@ tools could embed it later.
 
 ## Development
 
+The staged, non-production Rust port is documented in
+[`docs/rust-port/`](docs/rust-port/). Go remains the released implementation
+and executable oracle until the differential contract matrix is complete.
+
 Build:
 
 ```bash

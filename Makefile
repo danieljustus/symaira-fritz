@@ -1,5 +1,8 @@
 GO ?= go
+CARGO ?= cargo
+PYTHON ?= python3
 BINARY_NAME = symfritz
+RUST_BINARY = target/debug/symfritz-rust
 # version is a package-level var in `main`, so inject into main.version
 # (matches .goreleaser.yml). Injecting into the full import path silently no-ops.
 VERSION_PKG = main
@@ -26,6 +29,30 @@ test-verbose:
 .PHONY: test-race
 test-race:
 	$(GO) test -race ./...
+
+.PHONY: rust-build
+rust-build:
+	$(CARGO) build --workspace --locked
+
+.PHONY: rust-test
+rust-test:
+	$(CARGO) test --workspace --all-features --locked
+
+.PHONY: rust-lint
+rust-lint:
+	$(CARGO) fmt --all --check
+	$(CARGO) clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+.PHONY: rust-check
+rust-check: rust-lint rust-test
+
+.PHONY: port-fixtures
+port-fixtures: build
+	$(PYTHON) scripts/capture-port-fixtures.py --oracle ./$(BINARY_NAME)
+
+.PHONY: port-parity-version
+port-parity-version: build rust-build
+	$(PYTHON) scripts/port-parity.py --reference ./$(BINARY_NAME) --candidate ./$(RUST_BINARY)
 
 .PHONY: lint
 lint:

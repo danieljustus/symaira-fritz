@@ -73,3 +73,62 @@ jobs:
             exit 1
           fi
 
+  rust-port:
+    name: Rust port (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go oracle
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.6'
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --component clippy,rustfmt
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Check
+        run: cargo check --workspace --all-targets --all-features --locked
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --all-features --locked
+
+      - name: Install cargo-deny
+        if: runner.os == 'Linux'
+        run: cargo install cargo-deny --version 0.20.2 --locked
+
+      - name: Dependency policy
+        if: runner.os == 'Linux'
+        run: cargo deny check
+
+      - name: Version differential parity
+        shell: bash
+        run: |
+          suffix=""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            suffix=".exe"
+          fi
+          CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=dev" \
+            -o "target/debug/symfritz-go${suffix}" ./cmd/symfritz
+          cargo build --workspace --locked
+          if command -v python3 >/dev/null 2>&1; then
+            python_cmd=python3
+          else
+            python_cmd=python
+          fi
+          "$python_cmd" scripts/port-parity.py \
+            --reference "./target/debug/symfritz-go${suffix}" \
+            --candidate "./target/debug/symfritz-rust${suffix}"
+
