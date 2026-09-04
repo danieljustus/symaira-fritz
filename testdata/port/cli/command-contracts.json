@@ -1,0 +1,772 @@
+{
+  "schema_version": 1,
+  "oracle": "Go symfritz built with version=dev",
+  "environment": {
+    "HOME/XDG/TMP": "isolated temporary directories",
+    "LC_ALL/LANG": "C",
+    "SYMFRITZ_*": "unset",
+    "TZ": "UTC"
+  },
+  "commands": [
+    {
+      "path": "symfritz",
+      "help_args": [
+        "--help"
+      ],
+      "exit_code": 0,
+      "stdout": "symfritz talks to a FRITZ!Box over its documented interfaces:\n\n  TR-064  (SOAP)  administration: status, WAN/IP, WLAN, hosts, mesh, reboot\n  AHA-HTTP        DECT smart-home actors (switches, thermostats)\n  Session login   for AHA and (later) web-UI data scraping\n\nConfigure the box once with 'symfritz config init', then set the password via\nthe SYMFRITZ_PASSWORD environment variable.\n\nUsage:\n  symfritz [command]\n\nAvailable Commands:\n  auth        Manage FRITZ!Box credentials (test, login, store)\n  call        Invoke a raw TR-064 action (power user)\n  calls       Show FRITZ!Box call list\n  completion  Generate the autocompletion script for the specified shell\n  config      Manage symfritz configuration\n  detect      Detect the local FRITZ!Box on the network\n  diagnose    End-to-end reachability check for a host (name, MAC, or IP)\n  dial        Instruct the FRITZ!Box to dial a phone number\n  doctor      Check symfritz configuration, credentials, and box connectivity\n  dsl         Show DSL line statistics (noise margin, attenuation, max bit rate)\n  hangup      Hang up any active call initiated by dial\n  help        Help about any command\n  home        DECT smart-home actors (switches, thermostats)\n  hosts       FRITZ!Box host table (LAN/WLAN devices)\n  log         Show FRITZ!Box system event log\n  mcp         Start the MCP stdio server\n  mesh        Show the mesh topology (nodes, repeaters, links)\n  reboot      Reboot the FRITZ!Box\n  scrape      Fetch a data.lua page (best-effort, fragile)\n  services    Discover TR-064 services advertised by the box (tr64desc.xml)\n  status      Show a box overview (model, firmware, connection, external IP, CPU temperature)\n  traffic     Show WAN traffic statistics\n  version     Print version\n  wlan        WLAN radios, clients, and guest network\n  wol         Send a Wake-on-LAN packet via the FRITZ!Box\n\nFlags:\n  -h, --help            help for symfritz\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n  -v, --version         version for symfritz\n\nUse \"symfritz [command] --help\" for more information about a command.\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz auth",
+      "help_args": [
+        "help",
+        "auth"
+      ],
+      "exit_code": 0,
+      "stdout": "Resolve, verify, and store the FRITZ!Box password.\n\nResolution order: SYMFRITZ_PASSWORD env → symvault (password_ref) → macOS\nKeychain → plaintext config. 'auth login' captures the password once, verifies\nit against the box, and stores it in the Keychain or symvault so nothing sits in\na dotfile.\n\nUsage:\n  symfritz auth [command]\n\nAvailable Commands:\n  login       Prompt for the password, verify it, and store it securely\n  store       Store a password (from prompt or SYMFRITZ_PASSWORD) without verifying\n  test        Resolve the password and verify it against the box\n  trust       Manage trusted TLS certificate pins (TOFU)\n\nFlags:\n  -h, --help   help for auth\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n\nUse \"symfritz auth [command] --help\" for more information about a command.\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz auth login",
+      "help_args": [
+        "help",
+        "auth",
+        "login"
+      ],
+      "exit_code": 0,
+      "stdout": "Prompt for the password, verify it, and store it securely\n\nUsage:\n  symfritz auth login [flags]\n\nFlags:\n  -h, --help              help for login\n      --keychain          Store in the macOS Keychain (default on macOS)\n      --symvault string   Store in symvault at this entry path (e.g. fritz.password)\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz auth store",
+      "help_args": [
+        "help",
+        "auth",
+        "store"
+      ],
+      "exit_code": 0,
+      "stdout": "Store a password (from prompt or SYMFRITZ_PASSWORD) without verifying\n\nUsage:\n  symfritz auth store [flags]\n\nFlags:\n  -h, --help              help for store\n      --keychain          Store in the macOS Keychain (default on macOS)\n      --symvault string   Store in symvault at this entry path\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz auth test",
+      "help_args": [
+        "help",
+        "auth",
+        "test"
+      ],
+      "exit_code": 0,
+      "stdout": "Resolve the password and verify it against the box\n\nUsage:\n  symfritz auth test [flags]\n\nFlags:\n  -h, --help   help for test\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz auth trust",
+      "help_args": [
+        "help",
+        "auth",
+        "trust"
+      ],
+      "exit_code": 0,
+      "stdout": "Display or reset trusted host TLS public key pins.\n\nUsage:\n  symfritz auth trust [flags]\n\nFlags:\n  -h, --help           help for trust\n      --reset string   Reset the pinned TLS certificate for the specified host\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz call",
+      "help_args": [
+        "help",
+        "call"
+      ],
+      "exit_code": 0,
+      "stdout": "Invoke any TR-064 action by service shortcut and action name.\n\nKnown shortcuts: deviceinfo, wanip, wanppp, wancommon, hosts, wlan1. Any other service\nname is resolved via tr64desc.xml discovery (e.g. \"WLANConfiguration:2\").\nArguments are passed as Key=Value pairs (TR-064 input arguments).\n\nExamples:\n  symfritz call deviceinfo GetInfo\n  symfritz call wanip GetExternalIPAddress\n  symfritz call hosts GetGenericHostEntry NewIndex=0\n\nUsage:\n  symfritz call \u003cservice\u003e \u003caction\u003e [Key=Value ...] [flags]\n\nFlags:\n  -h, --help   help for call\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz calls",
+      "help_args": [
+        "help",
+        "calls"
+      ],
+      "exit_code": 0,
+      "stdout": "Show FRITZ!Box call list\n\nUsage:\n  symfritz calls [flags]\n\nFlags:\n      --days int      Limit to calls in the last N days\n  -h, --help          help for calls\n      --json          Output as JSON\n      --limit int     Limit the number of returned calls\n      --type string   Filter by type (incoming, missed, outgoing, rejected, all) (default \"all\")\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz completion",
+      "help_args": [
+        "help",
+        "completion"
+      ],
+      "exit_code": 0,
+      "stdout": "Generate the autocompletion script for symfritz for the specified shell.\nSee each sub-command's help for details on how to use the generated script.\n\nUsage:\n  symfritz completion [command]\n\nAvailable Commands:\n  bash        Generate the autocompletion script for bash\n  fish        Generate the autocompletion script for fish\n  powershell  Generate the autocompletion script for powershell\n  zsh         Generate the autocompletion script for zsh\n\nFlags:\n  -h, --help   help for completion\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n\nUse \"symfritz completion [command] --help\" for more information about a command.\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz completion bash",
+      "help_args": [
+        "help",
+        "completion",
+        "bash"
+      ],
+      "exit_code": 0,
+      "stdout": "Generate the autocompletion script for the bash shell.\n\nThis script depends on the 'bash-completion' package.\nIf it is not installed already, you can install it via your OS's package manager.\n\nTo load completions in your current shell session:\n\n\tsource \u003c(symfritz completion bash)\n\nTo load completions for every new session, execute once:\n\n#### Linux:\n\n\tsymfritz completion bash \u003e /etc/bash_completion.d/symfritz\n\n#### macOS:\n\n\tsymfritz completion bash \u003e $(brew --prefix)/etc/bash_completion.d/symfritz\n\nYou will need to start a new shell for this setup to take effect.\n\nUsage:\n  symfritz completion bash\n\nFlags:\n  -h, --help              help for bash\n      --no-descriptions   disable completion descriptions\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz completion fish",
+      "help_args": [
+        "help",
+        "completion",
+        "fish"
+      ],
+      "exit_code": 0,
+      "stdout": "Generate the autocompletion script for the fish shell.\n\nTo load completions in your current shell session:\n\n\tsymfritz completion fish | source\n\nTo load completions for every new session, execute once:\n\n\tsymfritz completion fish \u003e ~/.config/fish/completions/symfritz.fish\n\nYou will need to start a new shell for this setup to take effect.\n\nUsage:\n  symfritz completion fish [flags]\n\nFlags:\n  -h, --help              help for fish\n      --no-descriptions   disable completion descriptions\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz completion powershell",
+      "help_args": [
+        "help",
+        "completion",
+        "powershell"
+      ],
+      "exit_code": 0,
+      "stdout": "Generate the autocompletion script for powershell.\n\nTo load completions in your current shell session:\n\n\tsymfritz completion powershell | Out-String | Invoke-Expression\n\nTo load completions for every new session, add the output of the above command\nto your powershell profile.\n\nUsage:\n  symfritz completion powershell [flags]\n\nFlags:\n  -h, --help              help for powershell\n      --no-descriptions   disable completion descriptions\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz completion zsh",
+      "help_args": [
+        "help",
+        "completion",
+        "zsh"
+      ],
+      "exit_code": 0,
+      "stdout": "Generate the autocompletion script for the zsh shell.\n\nIf shell completion is not already enabled in your environment you will need\nto enable it.  You can execute the following once:\n\n\techo \"autoload -U compinit; compinit\" \u003e\u003e ~/.zshrc\n\nTo load completions in your current shell session:\n\n\tsource \u003c(symfritz completion zsh)\n\nTo load completions for every new session, execute once:\n\n#### Linux:\n\n\tsymfritz completion zsh \u003e \"${fpath[1]}/_symfritz\"\n\n#### macOS:\n\n\tsymfritz completion zsh \u003e $(brew --prefix)/share/zsh/site-functions/_symfritz\n\nYou will need to start a new shell for this setup to take effect.\n\nUsage:\n  symfritz completion zsh [flags]\n\nFlags:\n  -h, --help              help for zsh\n      --no-descriptions   disable completion descriptions\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz config",
+      "help_args": [
+        "help",
+        "config"
+      ],
+      "exit_code": 0,
+      "stdout": "Manage symfritz configuration\n\nUsage:\n  symfritz config [command]\n\nAvailable Commands:\n  detect      Detect the local FRITZ!Box on the network\n  init        Write default config to ~/.config/symfritz/config.toml\n\nFlags:\n  -h, --help   help for config\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n\nUse \"symfritz config [command] --help\" for more information about a command.\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz config detect",
+      "help_args": [
+        "help",
+        "config",
+        "detect"
+      ],
+      "exit_code": 0,
+      "stdout": "Detect attempts to find a FRITZ!Box on the local network by:\n  1. Checking if the configured host resolves to a private IP\n  2. Probing the system default gateway\n  3. Trying common FRITZ!Box default IPs\n\nThis is useful when 'fritz.box' resolves to a public IP instead of your local\nFRITZ!Box, causing connection timeouts.\n\nUsage:\n  symfritz config detect [flags]\n\nFlags:\n  -h, --help   help for detect\n      --json   Output as JSON\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz config init",
+      "help_args": [
+        "help",
+        "config",
+        "init"
+      ],
+      "exit_code": 0,
+      "stdout": "Write default config to ~/.config/symfritz/config.toml\n\nUsage:\n  symfritz config init [flags]\n\nFlags:\n      --force   overwrite existing config file\n  -h, --help    help for init\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz detect",
+      "help_args": [
+        "help",
+        "detect"
+      ],
+      "exit_code": 0,
+      "stdout": "Detect attempts to find a FRITZ!Box on the local network by:\n  1. Checking if the configured host resolves to a private IP\n  2. Probing the system default gateway\n  3. Trying common FRITZ!Box default IPs\n\nThis is useful when 'fritz.box' resolves to a public IP instead of your local\nFRITZ!Box, causing connection timeouts.\n\nUsage:\n  symfritz detect [flags]\n\nFlags:\n  -h, --help   help for detect\n      --json   Output as JSON\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz diagnose",
+      "help_args": [
+        "help",
+        "diagnose"
+      ],
+      "exit_code": 0,
+      "stdout": "Diagnose resolves a host via the FRITZ!Box host table, then checks it\nend-to-end from this machine: is it known, active, on LAN or WLAN, does its name\nresolve via DNS, and are the relevant TCP ports reachable.\n\nDefault ports probed: 22 (SSH), 5900 (VNC/Screen Sharing), 8001 (Paperless).\nOverride with --port (repeatable).\n\nUsage:\n  symfritz diagnose \u003chost\u003e [flags]\n  symfritz diagnose [command]\n\nAvailable Commands:\n  router      Detect and diagnose the local FRITZ!Box router\n\nFlags:\n  -h, --help        help for diagnose\n      --json        Output as JSON\n      --port ints   TCP port to probe (repeatable; replaces default ports 22, 5900, 8001)\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n\nUse \"symfritz diagnose [command] --help\" for more information about a command.\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz diagnose router",
+      "help_args": [
+        "help",
+        "diagnose",
+        "router"
+      ],
+      "exit_code": 0,
+      "stdout": "Detect the local FRITZ!Box and run end-to-end diagnosis on it.\n\nWhen SYMFRITZ_HOST is set, skips discovery and diagnoses that explicit host\ndirectly.\n\nUsage:\n  symfritz diagnose router [flags]\n\nFlags:\n  -h, --help        help for router\n      --json        Output as JSON\n      --port ints   TCP port to probe (repeatable; replaces router defaults 49000, 49443, 80, 443)\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz dial",
+      "help_args": [
+        "help",
+        "dial"
+      ],
+      "exit_code": 0,
+      "stdout": "Instruct the FRITZ!Box to dial a phone number\n\nUsage:\n  symfritz dial \u003cnummer\u003e [flags]\n\nFlags:\n  -h, --help   help for dial\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz doctor",
+      "help_args": [
+        "help",
+        "doctor"
+      ],
+      "exit_code": 0,
+      "stdout": "Check the local symfritz setup and its FRITZ!Box connection.\n\nThe command verifies the global config file, credential resolution, TR-064\nservice discovery, and session login. Smart-home availability is probed when\nthe authenticated AHA endpoint reports actors.\n\nUsage:\n  symfritz doctor [flags]\n\nFlags:\n  -h, --help   help for doctor\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz dsl",
+      "help_args": [
+        "help",
+        "dsl"
+      ],
+      "exit_code": 0,
+      "stdout": "Show DSL line statistics (noise margin, attenuation, max bit rate)\n\nUsage:\n  symfritz dsl [flags]\n\nFlags:\n  -h, --help   help for dsl\n      --json   Output as JSON\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz hangup",
+      "help_args": [
+        "help",
+        "hangup"
+      ],
+      "exit_code": 0,
+      "stdout": "Hang up any active call initiated by dial\n\nUsage:\n  symfritz hangup [flags]\n\nFlags:\n  -h, --help   help for hangup\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz help",
+      "help_args": [
+        "help",
+        "help"
+      ],
+      "exit_code": 0,
+      "stdout": "Help provides help for any command in the application.\nSimply type symfritz help [path to command] for full details.\n\nUsage:\n  symfritz help [command] [flags]\n\nFlags:\n  -h, --help   help for help\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz home",
+      "help_args": [
+        "help",
+        "home"
+      ],
+      "exit_code": 0,
+      "stdout": "DECT smart-home actors (switches, thermostats)\n\nUsage:\n  symfritz home [command]\n\nAvailable Commands:\n  list        List DECT actors with AIN, name, and state\n  switch      Turn a switch actor on or off\n  temp        Set the target temperature for a thermostat\n\nFlags:\n  -h, --help   help for home\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n\nUse \"symfritz home [command] --help\" for more information about a command.\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz home list",
+      "help_args": [
+        "help",
+        "home",
+        "list"
+      ],
+      "exit_code": 0,
+      "stdout": "List DECT actors with AIN, name, and state\n\nUsage:\n  symfritz home list [flags]\n\nFlags:\n  -h, --help    help for list\n      --json    Output as JSON\n      --tr064   Use TR-064 Homeauto API\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz home switch",
+      "help_args": [
+        "help",
+        "home",
+        "switch"
+      ],
+      "exit_code": 0,
+      "stdout": "Turn a switch actor on or off\n\nUsage:\n  symfritz home switch \u003cain\u003e \u003con|off\u003e [flags]\n\nFlags:\n  -h, --help    help for switch\n      --tr064   Use TR-064 Homeauto API\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz home temp",
+      "help_args": [
+        "help",
+        "home",
+        "temp"
+      ],
+      "exit_code": 0,
+      "stdout": "Set the target temperature for a thermostat\n\nUsage:\n  symfritz home temp \u003cain\u003e \u003ccelsius|on|off\u003e [flags]\n\nFlags:\n  -h, --help   help for temp\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz hosts",
+      "help_args": [
+        "help",
+        "hosts"
+      ],
+      "exit_code": 0,
+      "stdout": "FRITZ!Box host table (LAN/WLAN devices)\n\nUsage:\n  symfritz hosts [command]\n\nAvailable Commands:\n  active      List only currently active hosts\n  get         Show one host by name, --mac, or --ip\n  list        List all known hosts\n\nFlags:\n  -h, --help   help for hosts\n      --json   Output as JSON\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n\nUse \"symfritz hosts [command] --help\" for more information about a command.\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz hosts active",
+      "help_args": [
+        "help",
+        "hosts",
+        "active"
+      ],
+      "exit_code": 0,
+      "stdout": "List only currently active hosts\n\nUsage:\n  symfritz hosts active [flags]\n\nFlags:\n  -h, --help   help for active\n\nGlobal Flags:\n      --json            Output as JSON\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz hosts get",
+      "help_args": [
+        "help",
+        "hosts",
+        "get"
+      ],
+      "exit_code": 0,
+      "stdout": "Show one host by name, --mac, or --ip\n\nUsage:\n  symfritz hosts get [name] [flags]\n\nFlags:\n  -h, --help         help for get\n      --ip string    Look up by IP address\n      --mac string   Look up by MAC address\n\nGlobal Flags:\n      --json            Output as JSON\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz hosts list",
+      "help_args": [
+        "help",
+        "hosts",
+        "list"
+      ],
+      "exit_code": 0,
+      "stdout": "List all known hosts\n\nUsage:\n  symfritz hosts list [flags]\n\nFlags:\n  -h, --help   help for list\n\nGlobal Flags:\n      --json            Output as JSON\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz log",
+      "help_args": [
+        "help",
+        "log"
+      ],
+      "exit_code": 0,
+      "stdout": "Show FRITZ!Box system event log\n\nUsage:\n  symfritz log [flags]\n\nFlags:\n      --filter string   Filter by category (all, sys, net, fon, wlan, usb) (default \"all\")\n  -h, --help            help for log\n      --json            Output as JSON\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz mcp",
+      "help_args": [
+        "help",
+        "mcp"
+      ],
+      "exit_code": 0,
+      "stdout": "Start a JSON-RPC 2.0 MCP server over stdin/stdout for use with AI agents.\n\nUsage:\n  symfritz mcp [flags]\n\nAliases:\n  mcp, serve\n\nFlags:\n  -h, --help   help for mcp\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz mesh",
+      "help_args": [
+        "help",
+        "mesh"
+      ],
+      "exit_code": 0,
+      "stdout": "Show the mesh topology (nodes, repeaters, links)\n\nUsage:\n  symfritz mesh [flags]\n\nFlags:\n  -h, --help   help for mesh\n      --json   Output as JSON\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz reboot",
+      "help_args": [
+        "help",
+        "reboot"
+      ],
+      "exit_code": 0,
+      "stdout": "Reboot the FRITZ!Box\n\nUsage:\n  symfritz reboot [flags]\n\nFlags:\n  -h, --help   help for reboot\n      --yes    Confirm the reboot\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz scrape",
+      "help_args": [
+        "help",
+        "scrape"
+      ],
+      "exit_code": 0,
+      "stdout": "Fetch raw JSON from the FRITZ!Box internal data.lua endpoint.\n\nWARNING: This is a best-effort, version-fragile API.\nAVM frequently changes the data.lua structure, endpoints, and variables\nacross FRITZ!OS updates. Use TR-064 or AHA whenever possible instead.\n\nArguments are passed as Key=Value POST parameters.\n\nExamples:\n  symfritz scrape netDev\n  symfritz scrape dslStats\n\nUsage:\n  symfritz scrape \u003cpage\u003e [Key=Value ...] [flags]\n\nFlags:\n  -h, --help   help for scrape\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz services",
+      "help_args": [
+        "help",
+        "services"
+      ],
+      "exit_code": 0,
+      "stdout": "Discover TR-064 services advertised by the box (tr64desc.xml)\n\nUsage:\n  symfritz services [flags]\n\nFlags:\n  -h, --help   help for services\n      --json   Output as JSON\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz status",
+      "help_args": [
+        "help",
+        "status"
+      ],
+      "exit_code": 0,
+      "stdout": "Show a box overview (model, firmware, connection, external IP, CPU temperature)\n\nUsage:\n  symfritz status [flags]\n\nFlags:\n      --cpu    Show CPU temperatures (experimental)\n  -h, --help   help for status\n      --json   Output as JSON\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz traffic",
+      "help_args": [
+        "help",
+        "traffic"
+      ],
+      "exit_code": 0,
+      "stdout": "Show downstream/upstream traffic by category. When --watch is set,\nre-poll and append snapshots at the configured --interval until Ctrl-C.\nIn JSON mode (--json or --output json), --watch streams one compact JSON object\nper line (NDJSON).\n\nExamples:\n  symfritz traffic                     # one-shot snapshot\n  symfritz traffic --watch             # append snapshots periodically (exits on Ctrl-C)\n  symfritz traffic --watch --json      # stream NDJSON objects (one per line)\n  symfritz traffic --watch --interval 5s\n\nUsage:\n  symfritz traffic [flags]\n\nFlags:\n  -h, --help                help for traffic\n      --interval duration   Polling interval for --watch mode (default 2s)\n      --json                Output as JSON\n      --watch               Continuously re-poll and append snapshots until Ctrl-C\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz version",
+      "help_args": [
+        "help",
+        "version"
+      ],
+      "exit_code": 0,
+      "stdout": "Print version\n\nUsage:\n  symfritz version [flags]\n\nFlags:\n      --check   Check for updates on GitHub\n  -h, --help    help for version\n      --json    Emit version as machine-readable JSON\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz wlan",
+      "help_args": [
+        "help",
+        "wlan"
+      ],
+      "exit_code": 0,
+      "stdout": "WLAN radios, clients, and guest network\n\nUsage:\n  symfritz wlan [command]\n\nAvailable Commands:\n  clients     List devices associated with the WLAN radios\n  guest       Guest WLAN status/enable/disable\n  radios      List WLAN radios (SSID, band, channel, state)\n\nFlags:\n      --guest-index int   WLANConfiguration index of the guest radio (default 3)\n  -h, --help              help for wlan\n      --json              Output as JSON\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n\nUse \"symfritz wlan [command] --help\" for more information about a command.\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz wlan clients",
+      "help_args": [
+        "help",
+        "wlan",
+        "clients"
+      ],
+      "exit_code": 0,
+      "stdout": "List devices associated with the WLAN radios\n\nUsage:\n  symfritz wlan clients [flags]\n\nFlags:\n  -h, --help   help for clients\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default 3)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz wlan guest",
+      "help_args": [
+        "help",
+        "wlan",
+        "guest"
+      ],
+      "exit_code": 0,
+      "stdout": "Guest WLAN status/enable/disable\n\nUsage:\n  symfritz wlan guest [command]\n\nAvailable Commands:\n  off         Disable guest WLAN\n  on          Enable guest WLAN\n  status      Show guest WLAN state\n\nFlags:\n  -h, --help   help for guest\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default 3)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n\nUse \"symfritz wlan guest [command] --help\" for more information about a command.\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz wlan guest off",
+      "help_args": [
+        "help",
+        "wlan",
+        "guest",
+        "off"
+      ],
+      "exit_code": 0,
+      "stdout": "Disable guest WLAN\n\nUsage:\n  symfritz wlan guest off [flags]\n\nFlags:\n  -h, --help   help for off\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default 3)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz wlan guest on",
+      "help_args": [
+        "help",
+        "wlan",
+        "guest",
+        "on"
+      ],
+      "exit_code": 0,
+      "stdout": "Enable guest WLAN\n\nUsage:\n  symfritz wlan guest on [flags]\n\nFlags:\n  -h, --help   help for on\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default 3)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz wlan guest status",
+      "help_args": [
+        "help",
+        "wlan",
+        "guest",
+        "status"
+      ],
+      "exit_code": 0,
+      "stdout": "Show guest WLAN state\n\nUsage:\n  symfritz wlan guest status [flags]\n\nFlags:\n  -h, --help   help for status\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default 3)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz wlan radios",
+      "help_args": [
+        "help",
+        "wlan",
+        "radios"
+      ],
+      "exit_code": 0,
+      "stdout": "List WLAN radios (SSID, band, channel, state)\n\nUsage:\n  symfritz wlan radios [flags]\n\nFlags:\n  -h, --help   help for radios\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default 3)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    },
+    {
+      "path": "symfritz wol",
+      "help_args": [
+        "help",
+        "wol"
+      ],
+      "exit_code": 0,
+      "stdout": "Wake a host by name/IP (resolved via the host table) or by explicit --mac.\n\nUsage:\n  symfritz wol [host] [flags]\n\nFlags:\n  -h, --help         help for wol\n      --mac string   Target MAC address\n\nGlobal Flags:\n      --json            Output as JSON (shorthand for --output json)\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stderr": "",
+      "comparison": "semantic-help"
+    }
+  ],
+  "validation": [
+    {
+      "id": "call-missing-service-and-action",
+      "args": [
+        "call"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: requires at least 2 arg(s), only received 0\n",
+      "comparison": "bytes"
+    },
+    {
+      "id": "call-missing-action",
+      "args": [
+        "call",
+        "service"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: requires at least 2 arg(s), only received 1\n",
+      "comparison": "bytes"
+    },
+    {
+      "id": "scrape-missing-page",
+      "args": [
+        "scrape"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: requires at least 1 arg(s), only received 0\n",
+      "comparison": "bytes"
+    },
+    {
+      "id": "diagnose-missing-host",
+      "args": [
+        "diagnose"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: accepts 1 arg(s), received 0\n",
+      "comparison": "bytes"
+    },
+    {
+      "id": "diagnose-excess-host",
+      "args": [
+        "diagnose",
+        "host",
+        "extra"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: accepts 1 arg(s), received 2\n",
+      "comparison": "bytes"
+    },
+    {
+      "id": "diagnose-router-invalid-port",
+      "args": [
+        "diagnose",
+        "router",
+        "--port",
+        "wat"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: invalid argument \"wat\" for \"--port\" flag: strconv.Atoi: parsing \"wat\": invalid syntax\n",
+      "comparison": "bytes"
+    },
+    {
+      "id": "dial-missing-number",
+      "args": [
+        "dial"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: accepts 1 arg(s), received 0\n",
+      "comparison": "bytes"
+    },
+    {
+      "id": "dial-excess-number",
+      "args": [
+        "dial",
+        "123",
+        "456"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: accepts 1 arg(s), received 2\n",
+      "comparison": "bytes"
+    },
+    {
+      "id": "home-switch-missing-args",
+      "args": [
+        "home",
+        "switch"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: accepts 2 arg(s), received 0\n",
+      "comparison": "bytes"
+    },
+    {
+      "id": "home-switch-missing-state",
+      "args": [
+        "home",
+        "switch",
+        "ain"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: accepts 2 arg(s), received 1\n",
+      "comparison": "bytes"
+    },
+    {
+      "id": "home-temp-missing-args",
+      "args": [
+        "home",
+        "temp"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: accepts 2 arg(s), received 0\n",
+      "comparison": "bytes"
+    },
+    {
+      "id": "hosts-get-excess-name",
+      "args": [
+        "hosts",
+        "get",
+        "one",
+        "two"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: accepts at most 1 arg(s), received 2\n",
+      "comparison": "bytes"
+    },
+    {
+      "id": "wol-excess-host",
+      "args": [
+        "wol",
+        "one",
+        "two"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: accepts at most 1 arg(s), received 2\n",
+      "comparison": "bytes"
+    },
+    {
+      "id": "completion-bash-excess-arg",
+      "args": [
+        "completion",
+        "bash",
+        "extra"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: unknown command \"extra\" for \"symfritz completion bash\"\n",
+      "comparison": "bytes"
+    },
+    {
+      "id": "unknown-command",
+      "args": [
+        "not-a-command"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: unknown command \"not-a-command\" for \"symfritz\"\n",
+      "comparison": "bytes"
+    },
+    {
+      "id": "invalid-port",
+      "args": [
+        "diagnose",
+        "host",
+        "--port",
+        "wat"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: invalid argument \"wat\" for \"--port\" flag: strconv.Atoi: parsing \"wat\": invalid syntax\n",
+      "comparison": "bytes"
+    },
+    {
+      "id": "invalid-duration",
+      "args": [
+        "traffic",
+        "--interval",
+        "wat"
+      ],
+      "exit_code": 1,
+      "stdout": "",
+      "stderr": "Error: invalid argument \"wat\" for \"--interval\" flag: time: invalid duration \"wat\"\n",
+      "comparison": "bytes"
+    }
+  ]
+}

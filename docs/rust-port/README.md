@@ -10,12 +10,17 @@ Proceed with a staged port, not a flag-day rewrite. Rust is not a benefit by
 itself, and the migration has not yet demonstrated a production gain. Cutover
 is gated on observable parity plus measured value.
 
-The initial Rust vertical slice implements the deterministic `version`
-contract. It deliberately ships as `symfritz-rust`; `symfritz` remains the Go
-binary and rollback path.
+The Rust CLI layer now freezes the complete documented Cobra command tree
+(command names, `serve` alias, positional arity, flags, defaults, global flags,
+version semantics, and help metadata). It deliberately ships as `symfritz-rust`;
+`version` is the only runtime handler and `symfritz` remains the Go binary and
+rollback path. Non-version commands parse and validate before returning a clear
+internal-handler error.
 
 Implemented slices:
 
+- complete documented clap command tree and parser contracts, with
+  language-neutral Go-generated help/inventory and negative-argument fixtures;
 - byte-exact CLI `version` behavior;
 - legacy MD5 and modern PBKDF2 session challenge responses;
 - HTTP Digest challenge parsing and deterministic Authorization headers;
@@ -97,6 +102,13 @@ make port-parity-version    # Go + Rust + committed golden fixtures
 `make port-parity-version` currently covers only the first vertical slice. It
 runs both binaries with isolated `HOME`, fixed locale/timezone, and all
 `SYMFRITZ_*` variables removed.
+
+The command-tree tests compare the generated inventory semantically. Clap's
+help layout, executable name in usage text, and parse-error wording are not yet
+byte-identical to Cobra; CLI-006 therefore remains FROZEN and CLI-007 remains
+PENDING until a dedicated byte-parity adapter is implemented. Parse failures
+intentionally use clap's exit status 2, while Go's current top-level wrapper
+reports those same Cobra validation failures as status 1.
 
 The remaining typed capabilities are split by protocol boundary: TR-064 owns
 SOAP/digest operations, while `symfritz-aha::Client` owns session-authenticated

@@ -2,6 +2,8 @@
 
 //! Language-neutral CLI contract helpers used during the Rust port.
 
+pub mod cli;
+
 /// Public tool name preserved from the Go binary.
 pub const TOOL: &str = "symfritz";
 

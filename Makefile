@@ -57,8 +57,12 @@ port-capabilities-core-fixtures:
 port-remaining-fixtures:
 	SYMFRITZ_UPDATE_PORT_FIXTURES=1 $(GO) test ./internal/fritz -run '^TestPortRemainingCapabilitiesFixture$$' -count=1
 
+.PHONY: port-cli-fixtures
+port-cli-fixtures: build
+	$(GO) run ./cmd/capture-cli-fixtures -oracle ./$(BINARY_NAME)
+
 .PHONY: port-fixtures
-port-fixtures: build
+port-fixtures: build port-cli-fixtures
 	$(GO) run ./cmd/capture-port-fixtures -oracle ./$(BINARY_NAME)
 	SYMFRITZ_UPDATE_PORT_FIXTURES=1 $(GO) test ./internal/fritz ./internal/config ./internal/secret ./cmd/symfritz -run '^TestPort(Auth|TR064|Config|ConfigInit|Secret|Transport|SessionData|CapabilitiesCore|RemainingCapabilities)Fixture$$' -count=1
 	$(MAKE) port-aha-fixtures

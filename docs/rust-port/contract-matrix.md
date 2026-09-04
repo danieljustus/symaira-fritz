@@ -11,8 +11,8 @@ fixtures; **FROZEN** is covered by the Go oracle but has no Rust implementation;
 | CLI-003 | Version JSON | `version --json`, `--output json`, uppercase format | Go binary | compact schema v1 object | same | all | bytes | PASS |
 | CLI-004 | Version YAML | `version --output yaml` | Go binary | ordered three-line YAML | same | all | bytes | PASS |
 | CLI-005 | Output errors | invalid and conflicting formats | Go binary | exit 9; exact stderr | same | all | bytes | PASS |
-| CLI-006 | Command tree | every command in `docs/cli.md` | `make docs` / `--help` | names, aliases, flags, defaults, inherited flags | snapshot suite | all | bytes | FROZEN |
-| CLI-007 | Argument validation | missing/excess args per command | Go binary | exact exit, stdout, stderr | negative CLI suite | all | bytes | PENDING |
+| CLI-006 | Command tree | every command in `docs/cli.md` | `make docs` / `--help` | names, aliases, flags, defaults, inherited flags | `tests/cli_contract.rs` | all | semantic inventory/help; byte layout pending | FROZEN |
+| CLI-007 | Argument validation | missing/excess args per command | Go binary | exact exit, stdout, stderr | `tests/cli_contract.rs` | all | parse semantics; byte wording pending | PENDING |
 | CLI-008 | Structured output | text/JSON/YAML for every command | fake-box scenarios | snake_case, omission, ordering where stable | command parity suite | all | parsed/bytes per row | PENDING |
 | CLI-009 | Error taxonomy | auth/config/not-found/transport/timeout/cancel | Go binary | exit codes, kind, message, hint, output stream | negative command suite | all | bytes | FROZEN |
 | CLI-010 | Signals | SIGINT/SIGTERM during request/watch/MCP | Go binary | cancellation and interrupted exit code | process tests | macOS/Linux | semantic | PENDING |
