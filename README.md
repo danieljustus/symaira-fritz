@@ -30,7 +30,7 @@ It speaks the FRITZ!Box's documented interfaces, no reverse-engineering required
 |-----------|----------|----------|
 | **TR-064** (SOAP) | Administration: status, WAN/IP, WLAN, host list, mesh, reboot | `:49443` (TLS default) / `:49000` |
 | **AHA-HTTP** | DECT smart-home actors (switches, thermostats) | `/webservices/homeautoswitch.lua` |
-| **Session login** | Auth for AHA and (later) web-UI scraping | `/login_sid.lua` |
+| **Session login** | Auth for AHA and best-effort web-UI scraping | `/login_sid.lua` |
 
 > Inspired by [`fritzconnection`](https://github.com/kbr/fritzconnection) (Python,
 > the best TR-064 reference) and [`fritzctl`](https://github.com/bpicode/fritzctl)
@@ -254,12 +254,10 @@ tools could embed it later.
 
 ## Caveats
 
-- TR-064 + AHA cover the stable ~80%. The remaining bits (some stats, certain
-  logs, guest-WLAN details) are only available via **web-UI `data.lua` scraping**,
-  which is FRITZ!OS-version-dependent and may break on firmware updates. That
-  layer is intentionally not built yet and will be clearly marked "best effort".
-- There is also a best-effort `symfritz scrape` command for the web-UI `data.lua`
-  endpoint (stats TR-064 does not expose).
+- TR-064 + AHA cover the stable ~80%. For remaining data such as some stats,
+  logs, and guest-WLAN details, the best-effort `symfritz scrape` command uses
+  the web-UI `data.lua` endpoint. That interface is FRITZ!OS-version-dependent
+  and may break on firmware updates; prefer TR-064 or AHA whenever possible.
 
 ## Development
 
