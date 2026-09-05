@@ -112,10 +112,10 @@ Run `scripts/benchmark_release.py` with release-built binaries. It measures
 binary bytes, startup p95, a representative `services --output json` command
 against a loopback fake box serving the committed discovery fixture, and max
 RSS. The JSON report passes only when size or RSS improves by at least 20% and
-fake-box command p95 does not regress by more than 10%. Values from a 50-run/10-warmup macOS arm64 run were: Rust 7,282,832 bytes
-vs Go 7,686,114 (5.2% smaller), Rust max RSS 7,503,872 vs Go 12,009,472
-bytes (37.5% lower), startup p95 5.864709 ms vs 6.765708 ms, and fake-box
-fake-box command p95 7.054542 ms vs 10.456833 ms. The measured gate passed because RSS
+fake-box command p95 does not regress by more than 10%. Values from a 50-run/10-warmup macOS arm64 run were: Rust 7,283,184 bytes
+vs Go 8,155,458 (10.7% smaller), Rust max RSS 7,503,872 vs Go 12,566,528
+bytes (40.3% lower), startup p95 5.835500 ms vs 7.218958 ms, and fake-box
+command p95 7.067625 ms vs 10.459709 ms. The measured gate passed because RSS
 improved by more than 20% and command p95 did not regress. The exact report is
 `value-gate-20260905.json`. Re-run this report
 for each release candidate; these values are local evidence, not a promise for
