@@ -599,6 +599,12 @@ def _normalize_structured(value: Any) -> Any:
         return normalized
     if isinstance(value, list):
         return [_normalize_structured(item) for item in value]
+    if isinstance(value, str):
+        normalized_path = value.replace("\\", "/")
+        if "/symfritz-cli-" in normalized_path and normalized_path.endswith(
+            "/.config/symfritz/config.toml"
+        ):
+            return "<HOME>/.config/symfritz/config.toml"
     return value
 
 
