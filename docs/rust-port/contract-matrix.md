@@ -38,10 +38,10 @@ fixtures; **FROZEN** is covered by the Go oracle but has no Rust implementation;
 | CAP-002 | AHA capabilities | device/switch/temp/CPU fixtures | Go AHA tests + `port_aha_fixture_test.go` + `status.go` CPU oracle | SID query behavior, XML types, web-origin CPU query, 403 retry, 1 MiB bound, TR-064 Homeauto calls and capability bits | `symfritz-aha/tests/aha.rs`, `symfritz-aha/tests/fixtures.rs`, `symfritz-tr064/tests/homeauto.rs` | all | semantic/bytes | PASS |
 | CAP-003 | Phone/traffic/DSL/log/reboot | `testdata/port/capabilities-remaining/contracts.json` | Go `internal/fritz/{dsl,phone,traffic,log}` plus reboot command seam | typed models, parsing/filtering, reduced datasets, request actions/arguments and negative behavior | `symfritz-tr064/tests/remaining_capabilities.rs` + Go fixture drift test | all | semantic/bytes | PASS |
 | SCRAPE-001 | `data.lua` | success/error/oversized JSON fixtures | Go scraper tests | best-effort, bounded, version-fragile behavior | `symfritz-aha/tests/client.rs` + `tests/contracts.rs` | all | semantic | PASS |
-| MCP-001 | Initialize | raw framed requests | `symfritz mcp` | server name/version/capabilities | raw-frame harness | all | bytes | PENDING |
-| MCP-002 | Tool surface | `tools/list` | Go MCP server | 9 names, schemas, descriptions, annotations | schema fixture | all | parsed + selected bytes | FROZEN |
-| MCP-003 | Tool calls | success/validation/backend failures | Go fake box | JSON-RPC IDs, content text strings, `isError` behavior | raw-frame suite | all | bytes | FROZEN |
-| MCP-004 | Stdio hygiene | initialize/list/call/cancel/malformed frames | Go MCP server | only protocol frames on stdout; logs on stderr | process suite | all | bytes | PENDING |
+| MCP-001 | Initialize | raw framed requests | Go fixture oracle | server name/version/instructions/capabilities | `testdata/mcp/protocol-fixtures.json` + `scripts/mcp-differential.py` | all | parsed semantic | PASS |
+| MCP-002 | Tool surface | `tools/list` | Go fixture oracle | 9 names, schemas, descriptions, annotations | same | all | parsed semantic | PASS |
+| MCP-003 | Tool calls | success/validation/backend failures | Go fixture oracle + production Go models | JSON-RPC IDs, exact Go `toJSON` content text strings, `isError` behavior | production serializer tests + raw-frame tests | all | content.text bytes; semantic envelope | PASS |
+| MCP-004 | Stdio hygiene | initialize/list/call/notifications/malformed frames | Go corekit oracle | only protocol frames on stdout; logs on stderr; cancellation returns boundedly with exit 130 | raw-frame process harness + cancellation/worker tests | all | raw framing + semantic | PASS |
 | DIST-001 | Artifacts | release snapshot | GoReleaser | same binary/archive names and target set | release manifest diff | all | metadata | FROZEN |
 | DIST-002 | Trust chain | checksums/sign/notarize/SBOM/Homebrew | release workflow | verifiable artifacts and formula smoke test | prerelease gate | all | cryptographic/semantic | PENDING |
 | DOC-001 | Docs/completions | generated CLI docs + four shells | Go/Cobra generation | no command/help drift | `tests/cli_contract.rs` + completion handler tests | all | semantic inventory + executable scripts | PASS |
@@ -89,13 +89,16 @@ semantically, and doctor compares the shared structured report plus stable
 failure status while allowing the language-specific error suffix. Watch mode
 requires valid object-per-line NDJSON, cancellation exit 130, matching stderr,
 and an equivalent final snapshot because poll timing can change the first
-in-flight snapshot. There are no skip or `NON-PASS` paths: a required family failure aborts the
-run. The only intentional exclusions are MCP (issue #191) and interactive
-auth login (terminal-specific; covered by injected/secret tests as described
-above).
+in-flight snapshot. The MCP-specific harness is
+`scripts/mcp-differential.py`: it runs the Go-generated deterministic oracle and
+Rust fixture server against raw Content-Length frames, including initialize,
+tools/list, notifications, tool successes, tool errors, invalid params, and
+parse errors. There are no skip or `NON-PASS` paths: a required family failure aborts the
+run. The only intentional exclusion is interactive auth login (terminal-specific;
+covered by injected/secret tests as described above).
 
 The matrix below still tracks repository-wide work outside this issue,
-including MCP and release/live-box coverage; those rows are not claimed by the
+including release/live-box coverage; those rows are not claimed by the
 non-MCP CLI harness.
 
 ## Rules

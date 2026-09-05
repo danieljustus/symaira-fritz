@@ -91,6 +91,16 @@ port-fixtures: build port-cli-fixtures
 port-parity-version: build rust-build
 	$(GO) run ./cmd/port-parity -reference ./$(BINARY_NAME) -candidate ./$(RUST_BINARY)
 
+.PHONY: mcp-fixtures
+mcp-fixtures:
+	$(GO) run ./cmd/capture-mcp-fixtures -output testdata/mcp/protocol-fixtures.json
+
+.PHONY: mcp-parity
+mcp-parity: mcp-fixtures
+	$(GO) build -o target/debug/mcp-go-fixture ./cmd/capture-mcp-fixtures
+	$(CARGO) build -p symfritz-mcp --bin mcp-fixture-server --locked
+	python3 scripts/mcp-differential.py --go target/debug/mcp-go-fixture --rust target/debug/mcp-fixture-server
+
 .PHONY: lint
 lint:
 	$(GO) fmt ./...

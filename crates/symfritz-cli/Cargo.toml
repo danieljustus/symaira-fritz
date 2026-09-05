@@ -23,6 +23,7 @@ reqwest.workspace = true
 rustls.workspace = true
 symfritz-aha = { path = "../symfritz-aha", version = "=0.0.0" }
 symfritz-core.workspace = true
+symfritz-mcp = { path = "../symfritz-mcp", version = "=0.0.0" }
 symfritz-tr064 = { path = "../symfritz-tr064", version = "=0.0.0" }
 url.workspace = true
 

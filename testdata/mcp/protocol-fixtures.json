@@ -1,0 +1,289 @@
+{
+  "cases": [
+    {
+      "name": "initialize",
+      "request": "Content-Length: 46\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "capabilities": {
+            "tools": {}
+          },
+          "instructions": "Query and control an AVM FRITZ!Box: connection status, the LAN/WLAN host table, mesh topology, WLAN clients, and DECT smart-home actors. For 'is host X reachable' questions use diagnose. Use host_list to find a device's MAC/IP before wake_on_lan or home_switch.",
+          "protocolVersion": "2024-11-05",
+          "serverInfo": {
+            "name": "symfritz",
+            "version": "dev"
+          }
+        }
+      }
+    },
+    {
+      "name": "tools-list",
+      "request": "Content-Length: 51\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":\"list\",\"method\":\"tools/list\"}",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "list",
+        "result": {
+          "tools": [
+            {
+              "annotations": {
+                "readOnlyHint": true,
+                "idempotentHint": true
+              },
+              "description": "FRITZ!Box overview: model, firmware, connection state, external IP.",
+              "inputSchema": {
+                "properties": {},
+                "type": "object"
+              },
+              "name": "status"
+            },
+            {
+              "annotations": {
+                "readOnlyHint": true,
+                "idempotentHint": true
+              },
+              "description": "List devices in the FRITZ!Box host table (name, IP, MAC, active, LAN/WLAN).",
+              "inputSchema": {
+                "properties": {
+                  "active_only": {
+                    "description": "Only return currently active hosts",
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              },
+              "name": "host_list"
+            },
+            {
+              "annotations": {
+                "readOnlyHint": true,
+                "idempotentHint": true
+              },
+              "description": "Look up one host by name, MAC, or IP. Provide exactly one of name/mac/ip.",
+              "inputSchema": {
+                "properties": {
+                  "ip": {
+                    "type": "string"
+                  },
+                  "mac": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "name": "host_get"
+            },
+            {
+              "annotations": {
+                "readOnlyHint": true,
+                "idempotentHint": true
+              },
+              "description": "End-to-end reachability check for a host (name/MAC/IP): known to box, active, LAN/WLAN, DNS, and TCP ports (default 22/5900/8001).",
+              "inputSchema": {
+                "properties": {
+                  "host": {
+                    "type": "string"
+                  },
+                  "ports": {
+                    "items": {
+                      "type": "integer"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "host"
+                ],
+                "type": "object"
+              },
+              "name": "diagnose"
+            },
+            {
+              "annotations": {
+                "readOnlyHint": true,
+                "idempotentHint": true
+              },
+              "description": "Mesh topology: nodes (box, repeaters, clients) and the links between them.",
+              "inputSchema": {
+                "properties": {},
+                "type": "object"
+              },
+              "name": "mesh"
+            },
+            {
+              "annotations": {
+                "readOnlyHint": true,
+                "idempotentHint": true
+              },
+              "description": "List devices associated with the WLAN radios (MAC, IP, signal, speed).",
+              "inputSchema": {
+                "properties": {},
+                "type": "object"
+              },
+              "name": "wlan_clients"
+            },
+            {
+              "annotations": {
+                "openWorldHint": true
+              },
+              "description": "Send a Wake-on-LAN packet via the box. Provide host (name/IP, resolved via host table) or mac.",
+              "inputSchema": {
+                "properties": {
+                  "host": {
+                    "type": "string"
+                  },
+                  "mac": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "name": "wake_on_lan"
+            },
+            {
+              "annotations": {
+                "readOnlyHint": true,
+                "idempotentHint": true
+              },
+              "description": "List DECT smart-home actors (switches, thermostats) with AIN, name, and state.",
+              "inputSchema": {
+                "properties": {},
+                "type": "object"
+              },
+              "name": "home_list"
+            },
+            {
+              "annotations": {
+                "openWorldHint": true
+              },
+              "description": "Turn a DECT switch actor on or off by its AIN.",
+              "inputSchema": {
+                "properties": {
+                  "ain": {
+                    "type": "string"
+                  },
+                  "on": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "ain",
+                  "on"
+                ],
+                "type": "object"
+              },
+              "name": "home_switch"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "ping-null-id",
+      "request": "Content-Length: 43\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":null,\"method\":\"ping\"}",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": null,
+        "result": {}
+      }
+    },
+    {
+      "name": "initialized-notification",
+      "request": "Content-Length: 54\r\n\r\n{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}",
+      "response": null
+    },
+    {
+      "name": "status-success",
+      "request": "Content-Length: 88\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"status\",\"arguments\":{}}}",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": {
+          "content": [
+            {
+              "text": "{\n  \"ModelName\": \"FRITZ!Box 7590\",\n  \"FirmwareVersion\": \"7.57\",\n  \"ExternalIP\": \"203.0.113.1\",\n  \"ConnectionState\": \"Connected\",\n  \"Uptime\": \"3600\",\n  \"UpdateAvailable\": \"\",\n  \"Partial\": false,\n  \"Errors\": null\n}",
+              "type": "text"
+            }
+          ],
+          "isError": false
+        }
+      }
+    },
+    {
+      "name": "home-switch-success",
+      "request": "Content-Length: 114\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"home_switch\",\"arguments\":{\"ain\":\"123\",\"on\":true}}}",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "result": {
+          "content": [
+            {
+              "text": "{\n  \"ain\": \"123\",\n  \"on\": true\n}",
+              "type": "text"
+            }
+          ],
+          "isError": false
+        }
+      }
+    },
+    {
+      "name": "handler-failure",
+      "request": "Content-Length: 90\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"host_get\",\"arguments\":{}}}",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "result": {
+          "content": [
+            {
+              "text": "provide one of name, mac, or ip",
+              "type": "text"
+            }
+          ],
+          "isError": true
+        }
+      }
+    },
+    {
+      "name": "unknown-tool",
+      "request": "Content-Length: 89\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"missing\",\"arguments\":{}}}",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "error": {
+          "code": -32601,
+          "message": "Unknown tool: missing"
+        }
+      }
+    },
+    {
+      "name": "invalid-params",
+      "request": "Content-Length: 63\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":\"wrong\"}",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "error": {
+          "code": -32602,
+          "message": "Invalid params: json: cannot unmarshal string into Go value of type struct { Name string \"json:\\\"name\\\"\"; Arguments json.RawMessage \"json:\\\"arguments\\\"\"; Meta map[string]interface {} \"json:\\\"_meta,omitempty\\\"\" }"
+        }
+      }
+    },
+    {
+      "name": "parse-error",
+      "request": "Content-Length: 5\r\n\r\n{bad}",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": null,
+        "error": {
+          "code": -32700,
+          "message": "Parse error: invalid character 'b' looking for beginning of object key string"
+        }
+      }
+    }
+  ],
+  "format": "symfritz-mcp-fixture-v1"
+}
