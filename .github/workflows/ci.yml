@@ -138,3 +138,18 @@ jobs:
             --go "./target/debug/symfritz-go${suffix}" \
             --rust "./target/debug/symfritz-rust${suffix}"
 
+      - name: MCP raw-frame differential parity
+        shell: bash
+        run: |
+          suffix=""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            suffix=".exe"
+          fi
+          go build -o "target/debug/mcp-go-fixture${suffix}" ./cmd/capture-mcp-fixtures
+          cargo build -p symfritz-mcp --bin mcp-fixture-server --locked
+          go run ./cmd/capture-mcp-fixtures -output testdata/mcp/protocol-fixtures.json
+          python3 scripts/mcp-differential.py \
+            --go "./target/debug/mcp-go-fixture${suffix}" \
+            --rust "./target/debug/mcp-fixture-server${suffix}" \
+            --fixtures testdata/mcp/protocol-fixtures.json
+

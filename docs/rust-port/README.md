@@ -12,10 +12,10 @@ is gated on observable parity plus measured value.
 
 The Rust CLI layer now freezes the complete documented Cobra command tree
 (command names, `serve` alias, positional arity, flags, defaults, global flags,
-version semantics, and help metadata). It deliberately ships as `symfritz-rust`;
-`version` is the only runtime handler and `symfritz` remains the Go binary and
-rollback path. Non-version commands parse and validate before returning a clear
-internal-handler error.
+version semantics, and help metadata) and wires the `mcp`/`serve` aliases to the
+Rust stdio server. It deliberately ships as `symfritz-rust`; `version` and MCP
+are implemented while the remaining command handlers continue to be ported
+behind the existing parity gate.
 
 Implemented slices:
 
@@ -42,7 +42,11 @@ Implemented slices:
   Go-generated fixtures and injected fake-transport tests;
 - session-authenticated `query.lua` CPU temperatures in `symfritz-aha`, using the
   web origin and its own SID lifecycle, with one bounded 403 relogin retry;
-- `data.lua` raw JSON behavior without the incorrect automatic 403 retry.
+- `data.lua` raw JSON behavior without the incorrect automatic 403 retry;
+- Rust MCP stdio parity for the pinned corekit framing contract, including
+  Content-Length and line mode, initialization/instructions/capabilities,
+  notifications, JSON-RPC and tool errors, bounded input, nine tool definitions,
+  indented text results, and a Go-generated raw-frame differential harness.
 
 ## Measured Go baseline
 
@@ -97,7 +101,8 @@ make build
 make rust-check
 make port-fixtures          # deliberate Go-oracle fixture regeneration
 make port-parity-version    # Go + Rust version golden cases
-make port-cli-parity        # isolated fake-box black-box CLI differential
+make mcp-fixtures            # regenerate Go MCP wire fixtures
+make mcp-parity              # raw Go oracle ↔ Rust stdio differential
 ```
 
 `make port-cli-parity` runs both binaries with fresh `HOME`/XDG trees, fixed
@@ -136,7 +141,7 @@ own language-neutral fixtures.
    boxes. *(complete)*
 4. Port the concrete HTTP/TLS adapter and TLS pin persistence. *(complete)*
 5. Port typed capabilities and AHA/session behavior. *(complete)*
-6. Port MCP and run raw-frame differential tests with zero stdout pollution.
+6. Port MCP and run raw-frame differential tests with zero stdout pollution. *(complete: issue #191)*
 7. Validate against a real FRITZ!Box using sanitized recordings.
 8. Ship a prerelease with the last known-good Go binary as the explicit fallback.
 9. Remove Go only after one stable Rust release operates without unexplained
