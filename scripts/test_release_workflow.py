@@ -68,6 +68,7 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
         self.assertNotIn("raw.githubusercontent.com/anchore/syft/v1.51.1/install.sh |", WORKFLOW_TEXT)
 
     def test_release_readback_covers_assets_hashes_and_sboms(self) -> None:
+        self.assertEqual(WORKFLOW_TEXT.count("GH_TOKEN: ${{ github.token }}"), 2)
         self.assertIn("gh release view \"$TAG\" --json assets,isPrerelease,tagName", WORKFLOW_TEXT)
         self.assertIn("gh release download \"$TAG\"", WORKFLOW_TEXT)
         self.assertIn("release-manifest.json", WORKFLOW_TEXT)
