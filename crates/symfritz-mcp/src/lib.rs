@@ -9,8 +9,13 @@
 use std::{
     fmt,
     io::{self, BufRead, BufReader, Read, Write},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Condvar, Mutex,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, TrySendError},
+    },
     thread,
+    time::Duration,
 };
 
 use serde::Serialize;
@@ -22,6 +27,9 @@ pub const PROTOCOL_VERSION: &str = "2024-11-05";
 pub const MAX_LINE_BYTES: usize = 1 << 20;
 /// Maximum Content-Length accepted by the Go server.
 pub const MAX_BODY_BYTES: usize = 1 << 20;
+const MAX_WORKERS: usize = 4;
+const WORK_QUEUE_CAPACITY: usize = 16;
+const CANCEL_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 pub const CODE_PARSE_ERROR: i32 = -32700;
 pub const CODE_INVALID_REQUEST: i32 = -32600;
@@ -79,6 +87,42 @@ pub struct ToolAnnotations {
 
 fn is_false(value: &bool) -> bool {
     !*value
+}
+
+/// Cooperative cancellation shared by the MCP reader and bounded worker pool.
+///
+/// A handler that is already inside a non-cancellable foreign call cannot be
+/// forcefully stopped safely in Rust. The cancelable stdio path therefore stops
+/// reading, suppresses late writes, and returns without waiting for detached
+/// bounded workers; this gives process-level callers a bounded shutdown while
+/// preserving memory safety.
+#[derive(Clone, Debug, Default)]
+pub struct CancellationToken {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl CancellationToken {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+    }
+
+    pub fn reset(&self) {
+        self.cancelled.store(false, Ordering::SeqCst);
+    }
+
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+}
+
+fn cancellation_error() -> io::Error {
+    io::Error::new(io::ErrorKind::Interrupted, "mcp server cancelled")
 }
 
 fn empty_schema() -> Value {
@@ -184,6 +228,16 @@ impl<C: Capabilities + 'static> Server<C> {
         self.serve_io(stdin.lock(), stdout)
     }
 
+    /// Run stdio with bounded cooperative cancellation.
+    pub fn serve_stdio_with_context(&self, cancellation: &CancellationToken) -> io::Result<()> {
+        self.serve_io_with_context(cancellation, io::stdin(), io::stdout())
+    }
+
+    /// Alias emphasizing that cancellation is a deliberate runtime contract.
+    pub fn serve_stdio_cancelable(&self, cancellation: &CancellationToken) -> io::Result<()> {
+        self.serve_stdio_with_context(cancellation)
+    }
+
     /// Run the Content-Length or newline-delimited protocol on arbitrary IO.
     pub fn serve_io<R: Read, W: Write + Send>(&self, reader: R, writer: W) -> io::Result<()> {
         let mut reader = BufReader::new(reader);
@@ -244,6 +298,259 @@ impl<C: Capabilities + 'static> Server<C> {
             }
             Ok(())
         })
+    }
+
+    /// Run the protocol with an isolated reader and a fixed worker pool.
+    ///
+    /// The reader and writer are owned by this call so a blocked stdin read can
+    /// be isolated in a single thread. On cancellation the call returns without
+    /// joining a worker blocked in a foreign operation; all late writes are
+    /// discarded by the cancellation-aware writer.
+    pub fn serve_io_with_context<R, W>(
+        &self,
+        cancellation: &CancellationToken,
+        reader: R,
+        writer: W,
+    ) -> io::Result<()>
+    where
+        R: Read + Send + 'static,
+        W: Write + Send + 'static,
+    {
+        let cancellation = cancellation.clone();
+        let reader_cancellation = cancellation.clone();
+        let (reader_tx, reader_rx) = mpsc::sync_channel(1);
+        let reader_handle = thread::spawn(move || {
+            let mut reader = BufReader::new(reader);
+            loop {
+                if reader_cancellation.is_cancelled() {
+                    break;
+                }
+                match read_request(&mut reader) {
+                    Ok((request, mode)) => {
+                        if reader_tx.send(ReaderEvent::Request(request, mode)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(ReadError::Eof) => break,
+                    Err(error @ ReadError::Parse { .. }) => {
+                        if reader_tx.send(ReaderEvent::Error(error)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(error) => {
+                        let _ = reader_tx.send(ReaderEvent::Error(error));
+                        break;
+                    }
+                }
+            }
+        });
+
+        let writer = Arc::new(Mutex::new(CancellationWriter {
+            inner: writer,
+            cancellation: cancellation.clone(),
+        }));
+        let capabilities = self.capabilities.clone();
+        let name = self.name.clone();
+        let version = self.version.clone();
+        let instructions = self.instructions.clone();
+        let (work_tx, work_rx) = mpsc::sync_channel(WORK_QUEUE_CAPACITY);
+        let work_rx = Arc::new(Mutex::new(work_rx));
+        let pending = Pending::default();
+        let mut workers = Vec::with_capacity(MAX_WORKERS);
+
+        for _ in 0..MAX_WORKERS {
+            let work_rx = work_rx.clone();
+            let capabilities = capabilities.clone();
+            let writer = writer.clone();
+            let cancellation = cancellation.clone();
+            let name = name.clone();
+            let version = version.clone();
+            let instructions = instructions.clone();
+            let pending = pending.clone();
+            workers.push(thread::spawn(move || {
+                loop {
+                    let work = {
+                        let receiver = work_rx.lock().expect("MCP work queue lock poisoned");
+                        receiver.recv()
+                    };
+                    let Ok((request, mode)) = work else { break };
+                    if !cancellation.is_cancelled() {
+                        handle_request(
+                            &capabilities,
+                            &writer,
+                            mode,
+                            request,
+                            &name,
+                            &version,
+                            &instructions,
+                        );
+                    }
+                    pending.complete();
+                }
+            }));
+        }
+
+        let result = 'server: loop {
+            if cancellation.is_cancelled() {
+                break 'server Err(cancellation_error());
+            }
+            match reader_rx.recv_timeout(CANCEL_POLL_INTERVAL) {
+                Ok(ReaderEvent::Request(request, mode)) => {
+                    if request.method == "tools/call" {
+                        pending.add();
+                        let mut work = (request, mode);
+                        loop {
+                            match work_tx.try_send(work) {
+                                Ok(()) => break,
+                                Err(TrySendError::Full(returned)) => {
+                                    work = returned;
+                                    if cancellation.is_cancelled() {
+                                        break 'server Err(cancellation_error());
+                                    }
+                                    thread::sleep(CANCEL_POLL_INTERVAL);
+                                }
+                                Err(TrySendError::Disconnected(_)) => {
+                                    break 'server Err(io::Error::new(
+                                        io::ErrorKind::BrokenPipe,
+                                        "MCP worker pool stopped",
+                                    ));
+                                }
+                            }
+                        }
+                    } else {
+                        handle_request(
+                            &capabilities,
+                            &writer,
+                            mode,
+                            request,
+                            &name,
+                            &version,
+                            &instructions,
+                        );
+                    }
+                }
+                Ok(ReaderEvent::Error(ReadError::Parse { message, mode })) => {
+                    pending.wait_zero(&cancellation)?;
+                    send_error(
+                        &writer,
+                        mode,
+                        None,
+                        CODE_PARSE_ERROR,
+                        &format!("Parse error: {message}"),
+                    );
+                }
+                Ok(ReaderEvent::Error(ReadError::Io(error))) => {
+                    break 'server Err(error);
+                }
+                Ok(ReaderEvent::Error(ReadError::Eof)) => {
+                    if cancellation.is_cancelled() {
+                        break 'server Err(cancellation_error());
+                    }
+                    break 'server Ok(());
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    if cancellation.is_cancelled() {
+                        break 'server Err(cancellation_error());
+                    }
+                    break 'server Ok(());
+                }
+            }
+        };
+
+        if result.is_err() && cancellation.is_cancelled() {
+            // Dropping JoinHandles intentionally detaches only the fixed number
+            // of workers and the one reader. Their shared writer suppresses all
+            // post-cancellation protocol bytes.
+            drop(work_tx);
+            drop(reader_handle);
+            drop(workers);
+            return result;
+        }
+
+        drop(work_tx);
+        let _ = reader_handle.join();
+        for worker in workers {
+            let _ = worker.join();
+        }
+        result
+    }
+
+    /// Alias for callers that name the operation by its cancellation behavior.
+    pub fn serve_io_cancelable<R, W>(
+        &self,
+        cancellation: &CancellationToken,
+        reader: R,
+        writer: W,
+    ) -> io::Result<()>
+    where
+        R: Read + Send + 'static,
+        W: Write + Send + 'static,
+    {
+        self.serve_io_with_context(cancellation, reader, writer)
+    }
+}
+
+#[derive(Debug)]
+enum ReaderEvent {
+    Request(Request, Mode),
+    Error(ReadError),
+}
+
+#[derive(Clone, Default)]
+struct Pending {
+    state: Arc<(Mutex<usize>, Condvar)>,
+}
+
+impl Pending {
+    fn add(&self) {
+        let (count, _) = &*self.state;
+        *count.lock().expect("MCP pending lock poisoned") += 1;
+    }
+
+    fn complete(&self) {
+        let (count, ready) = &*self.state;
+        let mut count = count.lock().expect("MCP pending lock poisoned");
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            ready.notify_all();
+        }
+    }
+
+    fn wait_zero(&self, cancellation: &CancellationToken) -> io::Result<()> {
+        let (count, ready) = &*self.state;
+        let mut count = count.lock().expect("MCP pending lock poisoned");
+        while *count != 0 {
+            if cancellation.is_cancelled() {
+                return Err(cancellation_error());
+            }
+            let (next, _) = ready
+                .wait_timeout(count, CANCEL_POLL_INTERVAL)
+                .expect("MCP pending lock poisoned");
+            count = next;
+        }
+        Ok(())
+    }
+}
+
+struct CancellationWriter<W> {
+    inner: W,
+    cancellation: CancellationToken,
+}
+
+impl<W: Write> Write for CancellationWriter<W> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if self.cancellation.is_cancelled() {
+            return Ok(bytes.len());
+        }
+        self.inner.write(bytes)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        if self.cancellation.is_cancelled() {
+            return Ok(());
+        }
+        self.inner.flush()
     }
 }
 
@@ -376,20 +683,32 @@ fn read_non_empty_line<R: BufRead>(reader: &mut R) -> Result<String, ReadError> 
 }
 
 fn read_line_limited<R: BufRead>(reader: &mut R) -> Result<String, ReadError> {
-    let mut bytes = Vec::new();
-    let count = reader
-        .read_until(b'\n', &mut bytes)
-        .map_err(ReadError::Io)?;
-    if count == 0 {
-        return Err(ReadError::Eof);
+    let mut bytes = Vec::with_capacity(MAX_LINE_BYTES.min(8192));
+    loop {
+        let available = reader.fill_buf().map_err(ReadError::Io)?;
+        if available.is_empty() {
+            if bytes.is_empty() {
+                return Err(ReadError::Eof);
+            }
+            return Ok(String::from_utf8_lossy(&bytes).into_owned());
+        }
+        let take = available
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(available.len(), |position| position + 1);
+        if bytes.len() + take > MAX_LINE_BYTES {
+            return Err(ReadError::Io(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("line exceeds {MAX_LINE_BYTES} bytes"),
+            )));
+        }
+        let has_newline = available[take - 1] == b'\n';
+        bytes.extend_from_slice(&available[..take]);
+        reader.consume(take);
+        if has_newline {
+            return Ok(String::from_utf8_lossy(&bytes).into_owned());
+        }
     }
-    if bytes.len() > MAX_LINE_BYTES {
-        return Err(ReadError::Io(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("line exceeds {MAX_LINE_BYTES} bytes"),
-        )));
-    }
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 fn trim_crlf(line: &str) -> &str {
@@ -660,20 +979,22 @@ fn send_json<W: Write>(writer: &Arc<Mutex<W>>, mode: Mode, value: Value) {
     let Ok(bytes) = serde_json::to_vec(&value) else {
         return;
     };
+    let mut frame = Vec::with_capacity(bytes.len() + 64);
+    match mode {
+        Mode::Line => frame.extend_from_slice(&bytes),
+        Mode::Framed => {
+            frame.extend_from_slice(format!("Content-Length: {}\r\n\r\n", bytes.len()).as_bytes())
+        }
+    }
+    if mode == Mode::Framed {
+        frame.extend_from_slice(&bytes);
+    } else {
+        frame.push(b'\n');
+    }
     let Ok(mut writer) = writer.lock() else {
         return;
     };
-    match mode {
-        Mode::Line => {
-            let _ = writer.write_all(&bytes);
-            let _ = writer.write_all(b"\n");
-        }
-        Mode::Framed => {
-            let header = format!("Content-Length: {}\r\n\r\n", bytes.len());
-            let _ = writer.write_all(header.as_bytes());
-            let _ = writer.write_all(&bytes);
-        }
-    }
+    let _ = writer.write_all(&frame);
     let _ = writer.flush();
 }
 
@@ -734,7 +1055,11 @@ impl fmt::Debug for Server<UnsupportedCapabilities> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
+    use std::{
+        io::{Cursor, Read, Write},
+        sync::atomic::AtomicUsize,
+        time::Instant,
+    };
 
     #[derive(Default)]
     struct Fake;
@@ -918,5 +1243,162 @@ mod tests {
             .unwrap_err();
         assert!(error.to_string().contains("invalid Content-Length"));
         assert!(output.is_empty());
+    }
+
+    #[derive(Clone)]
+    struct SharedWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for SharedWriter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct BlockingReader {
+        first: Option<Vec<u8>>,
+        released: Arc<AtomicBool>,
+    }
+
+    impl Read for BlockingReader {
+        fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+            if let Some(first) = self.first.take() {
+                bytes[..first.len()].copy_from_slice(&first);
+                return Ok(first.len());
+            }
+            while !self.released.load(Ordering::SeqCst) {
+                thread::sleep(Duration::from_millis(1));
+            }
+            Ok(0)
+        }
+    }
+
+    #[derive(Clone)]
+    struct BlockingFake {
+        started: Arc<AtomicBool>,
+        released: Arc<AtomicBool>,
+        active: Arc<AtomicUsize>,
+        max_active: Arc<AtomicUsize>,
+    }
+
+    impl BlockingFake {
+        fn quick(&self) -> Result<Value, String> {
+            let current = self.active.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_active.fetch_max(current, Ordering::SeqCst);
+            self.active.fetch_sub(1, Ordering::SeqCst);
+            Ok(json!({"ok": true}))
+        }
+    }
+
+    impl Capabilities for BlockingFake {
+        fn status(&mut self) -> Result<Value, String> {
+            self.started.store(true, Ordering::SeqCst);
+            while !self.released.load(Ordering::SeqCst) {
+                thread::sleep(Duration::from_millis(1));
+            }
+            self.quick()
+        }
+        fn host_list(&mut self, _: bool) -> Result<Value, String> {
+            self.quick()
+        }
+        fn host_get(
+            &mut self,
+            _: Option<&str>,
+            _: Option<&str>,
+            _: Option<&str>,
+        ) -> Result<Value, String> {
+            self.quick()
+        }
+        fn diagnose(&mut self, _: &str, _: &[i64]) -> Result<Value, String> {
+            self.quick()
+        }
+        fn mesh(&mut self) -> Result<Value, String> {
+            self.quick()
+        }
+        fn wlan_clients(&mut self) -> Result<Value, String> {
+            self.quick()
+        }
+        fn wake_on_lan(&mut self, _: Option<&str>, _: Option<&str>) -> Result<Value, String> {
+            self.quick()
+        }
+        fn home_list(&mut self) -> Result<Value, String> {
+            self.quick()
+        }
+        fn home_switch(&mut self, _: &str, _: bool) -> Result<Value, String> {
+            self.quick()
+        }
+    }
+
+    #[test]
+    fn cancelable_server_returns_boundedly_from_blocked_reader_and_handler() {
+        let request = framed(
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"status","arguments":{}}}"#,
+        )
+        .into_bytes();
+        let released = Arc::new(AtomicBool::new(false));
+        let started = Arc::new(AtomicBool::new(false));
+        let token = CancellationToken::new();
+        let release_for_fake = released.clone();
+        let fake = BlockingFake {
+            started: started.clone(),
+            released: release_for_fake,
+            active: Arc::new(AtomicUsize::new(0)),
+            max_active: Arc::new(AtomicUsize::new(0)),
+        };
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let reader = BlockingReader {
+            first: Some(request),
+            released: released.clone(),
+        };
+        let server = Server::new("symfritz", "dev", fake);
+        let cancel = token.clone();
+        let release = released.clone();
+        let trigger = thread::spawn(move || {
+            while !started.load(Ordering::SeqCst) {
+                thread::yield_now();
+            }
+            cancel.cancel();
+            release.store(true, Ordering::SeqCst);
+        });
+        let began = Instant::now();
+        let result = server.serve_io_with_context(&token, reader, SharedWriter(output.clone()));
+        assert!(result.is_err());
+        assert!(began.elapsed() < Duration::from_secs(1));
+        trigger.join().unwrap();
+        assert!(output.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn cancelable_server_uses_fixed_workers_for_many_calls_and_preserves_ids() {
+        let requests: String = (0..64)
+            .map(|id| {
+                framed(&format!(
+                    r#"{{"jsonrpc":"2.0","id":{id},"method":"tools/call","params":{{"name":"status","arguments":{{}}}}}}"#
+                ))
+            })
+            .collect();
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
+        let fake = BlockingFake {
+            started: Arc::new(AtomicBool::new(false)),
+            released: Arc::new(AtomicBool::new(true)),
+            active,
+            max_active: max_active.clone(),
+        };
+        let token = CancellationToken::new();
+        Server::new("symfritz", "dev", fake)
+            .serve_io_with_context(&token, Cursor::new(requests), SharedWriter(output.clone()))
+            .unwrap();
+        let output = String::from_utf8(output.lock().unwrap().clone()).unwrap();
+        assert_eq!(output.matches("Content-Length:").count(), 64);
+        for id in 0..64 {
+            assert!(output.contains(&format!("\"id\":{id}")));
+        }
+        assert!(max_active.load(Ordering::SeqCst) <= MAX_WORKERS);
     }
 }

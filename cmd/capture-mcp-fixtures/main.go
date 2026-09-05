@@ -106,6 +106,22 @@ func filepathDir(path string) string {
 	return "."
 }
 
+type fixtureStatus struct {
+	ModelName       string
+	FirmwareVersion string
+	ExternalIP      string
+	ConnectionState string
+	Uptime          string
+	UpdateAvailable string
+	Partial         bool
+	Errors          []struct {
+		Service string `json:"service"`
+		Action  string `json:"action"`
+		Message string `json:"message"`
+		Kind    string `json:"kind,omitempty"`
+	}
+}
+
 func fixtureServer() *mcpserver.Server {
 	s := mcpserver.New("symfritz", "dev")
 	s.SetInstructions(instructions)
@@ -115,7 +131,13 @@ func fixtureServer() *mcpserver.Server {
 	read := mcpserver.ToolAnnotations{ReadOnlyHint: true, IdempotentHint: true}
 	write := mcpserver.ToolAnnotations{OpenWorldHint: true}
 	add("status", "FRITZ!Box overview: model, firmware, connection state, external IP.", emptySchema, func(context.Context, json.RawMessage) (any, error) {
-		return fixtureJSON(map[string]any{"ok": true}), nil
+		return fixtureJSON(fixtureStatus{
+			ModelName:       "FRITZ!Box 7590",
+			FirmwareVersion: "7.57",
+			ExternalIP:      "203.0.113.1",
+			ConnectionState: "Connected",
+			Uptime:          "3600",
+		}), nil
 	}, read)
 	add("host_list", "List devices in the FRITZ!Box host table (name, IP, MAC, active, LAN/WLAN).", json.RawMessage(`{"type":"object","properties":{"active_only":{"type":"boolean","description":"Only return currently active hosts"}}}`), func(context.Context, json.RawMessage) (any, error) { return map[string]any{"hosts": []any{}}, nil }, read)
 	add("host_get", "Look up one host by name, MAC, or IP. Provide exactly one of name/mac/ip.", json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"mac":{"type":"string"},"ip":{"type":"string"}}}`), func(_ context.Context, input json.RawMessage) (any, error) {

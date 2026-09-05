@@ -5,7 +5,10 @@ struct Fixture;
 
 impl Capabilities for Fixture {
     fn status(&mut self) -> Result<Value, String> {
-        Ok(json!({"ok": true}))
+        Ok(Value::String(
+            "{\n  \"ModelName\": \"FRITZ!Box 7590\",\n  \"FirmwareVersion\": \"7.57\",\n  \"ExternalIP\": \"203.0.113.1\",\n  \"ConnectionState\": \"Connected\",\n  \"Uptime\": \"3600\",\n  \"UpdateAvailable\": \"\",\n  \"Partial\": false,\n  \"Errors\": null\n}"
+                .to_owned(),
+        ))
     }
 
     fn host_list(&mut self, _active_only: bool) -> Result<Value, String> {

@@ -6,7 +6,10 @@ use std::{
     io::{self, Read, Write},
     net::{IpAddr, ToSocketAddrs},
     process::{Command as ProcessCommand, ExitCode},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 
@@ -32,7 +35,7 @@ use symfritz_core::{
     config::{BoxConfig, Config, ConfigError},
     secret::{CredentialSource, SecretError, SecretOptions, resolve},
 };
-use symfritz_mcp::{Capabilities as McpCapabilities, Server as McpServer};
+use symfritz_mcp::{CancellationToken, Capabilities as McpCapabilities, Server as McpServer};
 use symfritz_tr064::{
     BlockingHttpTransport, Call as TrCall, Client as Tr064Client, CnonceSource, Diagnosis,
     DslLineStats, ErrorKind, Host, HttpTransportConfig, LogEvent, Radio, Service, Status,
@@ -48,6 +51,7 @@ const EXIT_CONFIG: u8 = 9;
 const EXIT_OPERATION: u8 = 1;
 const EXIT_NO_AUTH: u8 = 3;
 static CANCEL_REQUESTED: AtomicBool = AtomicBool::new(false);
+static MCP_CANCELLATION: OnceLock<CancellationToken> = OnceLock::new();
 
 #[derive(Debug)]
 struct HandlerError {
@@ -245,8 +249,11 @@ fn main() -> ExitCode {
 
 fn install_signal_handler() -> Result<(), HandlerError> {
     CANCEL_REQUESTED.store(false, Ordering::Relaxed);
-    ctrlc::set_handler(|| {
+    let cancellation = MCP_CANCELLATION.get_or_init(CancellationToken::new).clone();
+    cancellation.reset();
+    ctrlc::set_handler(move || {
         CANCEL_REQUESTED.store(true, Ordering::SeqCst);
+        cancellation.cancel();
     })
     .map_err(|error| HandlerError::operation(format!("failed to install signal handler: {error}")))
 }
@@ -1244,13 +1251,73 @@ struct FritzMcpCapabilities {
     web: AhaClient<BlockingHttpTransport, SystemClock>,
 }
 
+#[derive(Serialize)]
+struct McpStatusOutput {
+    #[serde(rename = "ModelName")]
+    model_name: String,
+    #[serde(rename = "FirmwareVersion")]
+    firmware_version: String,
+    #[serde(rename = "ExternalIP")]
+    external_ip: String,
+    #[serde(rename = "ConnectionState")]
+    connection_state: String,
+    #[serde(rename = "Uptime")]
+    uptime: String,
+    #[serde(rename = "UpdateAvailable")]
+    update_available: String,
+    #[serde(rename = "Partial")]
+    partial: bool,
+    #[serde(rename = "Errors")]
+    errors: Option<Vec<McpStatusError>>,
+}
+
+#[derive(Serialize)]
+struct McpStatusError {
+    service: String,
+    action: String,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind: Option<ErrorKind>,
+}
+
+fn mcp_serialized<T: Serialize>(value: &T) -> serde_json::Value {
+    serde_json::Value::String(
+        serde_json::to_string_pretty(value).expect("MCP backend output is serializable"),
+    )
+}
+
+fn mcp_status_value(status: &Status) -> serde_json::Value {
+    let errors = (!status.errors.is_empty()).then(|| {
+        status
+            .errors
+            .iter()
+            .map(|error| McpStatusError {
+                service: error.service.clone(),
+                action: error.action.clone(),
+                message: error.message.clone(),
+                kind: (error.kind != ErrorKind::Unknown).then_some(error.kind),
+            })
+            .collect()
+    });
+    mcp_serialized(&McpStatusOutput {
+        model_name: status.model_name.clone(),
+        firmware_version: status.firmware_version.clone(),
+        external_ip: status.external_ip.clone(),
+        connection_state: status.connection_state.clone(),
+        uptime: status.uptime.clone(),
+        update_available: status.update_available.clone(),
+        partial: status.partial,
+        errors,
+    })
+}
+
 impl McpCapabilities for FritzMcpCapabilities {
     fn status(&mut self) -> Result<serde_json::Value, String> {
-        self.tr064
+        let status = self
+            .tr064
             .status()
-            .map(serde_json::to_value)
-            .map_err(|error| format!("status: {error}"))?
-            .map_err(|error| format!("status: {error}"))
+            .map_err(|error| format!("status: {error}"))?;
+        Ok(mcp_status_value(&status))
     }
 
     fn host_list(&mut self, active_only: bool) -> Result<serde_json::Value, String> {
@@ -1260,7 +1327,7 @@ impl McpCapabilities for FritzMcpCapabilities {
             self.tr064.hosts()
         }
         .map_err(|error| format!("host_list: {error}"))?;
-        serde_json::to_value(hosts).map_err(|error| format!("host_list: {error}"))
+        Ok(mcp_serialized(&hosts))
     }
 
     fn host_get(
@@ -1279,7 +1346,7 @@ impl McpCapabilities for FritzMcpCapabilities {
             return Err("provide one of name, mac, or ip".to_owned());
         }
         .map_err(|error| format!("host_get: {error}"))?;
-        serde_json::to_value(host).map_err(|error| format!("host_get: {error}"))
+        Ok(mcp_serialized(&host))
     }
 
     fn diagnose(&mut self, host: &str, ports: &[i64]) -> Result<serde_json::Value, String> {
@@ -1302,7 +1369,7 @@ impl McpCapabilities for FritzMcpCapabilities {
                 dial_timeout_ms: 0,
             },
         );
-        serde_json::to_value(diagnosis).map_err(|error| format!("diagnose: {error}"))
+        Ok(mcp_serialized(&diagnosis))
     }
 
     fn mesh(&mut self) -> Result<serde_json::Value, String> {
@@ -1310,7 +1377,7 @@ impl McpCapabilities for FritzMcpCapabilities {
             .web
             .mesh_topology(&mut self.tr064)
             .map_err(|error| format!("mesh: {error}"))?;
-        serde_json::to_value(mesh).map_err(|error| format!("mesh: {error}"))
+        Ok(mcp_serialized(&mesh))
     }
 
     fn wlan_clients(&mut self) -> Result<serde_json::Value, String> {
@@ -1318,7 +1385,7 @@ impl McpCapabilities for FritzMcpCapabilities {
             .tr064
             .all_wlan_clients(3)
             .map_err(|error| format!("wlan_clients: {error}"))?;
-        serde_json::to_value(clients).map_err(|error| format!("wlan_clients: {error}"))
+        Ok(mcp_serialized(&clients))
     }
 
     fn wake_on_lan(
@@ -1339,7 +1406,7 @@ impl McpCapabilities for FritzMcpCapabilities {
         self.tr064
             .wake_on_lan(&mac)
             .map_err(|error| format!("wake_on_lan: {error}"))?;
-        Ok(serde_json::json!({"woke": mac}))
+        Ok(mcp_serialized(&serde_json::json!({"woke": mac})))
     }
 
     fn home_list(&mut self) -> Result<serde_json::Value, String> {
@@ -1348,7 +1415,7 @@ impl McpCapabilities for FritzMcpCapabilities {
             .devices()
             .map_err(|error| format!("home_list: {error}"))?;
         let payload: Vec<_> = devices.iter().map(AhaDeviceOutput::from).collect();
-        serde_json::to_value(payload).map_err(|error| format!("home_list: {error}"))
+        Ok(mcp_serialized(&payload))
     }
 
     fn home_switch(&mut self, ain: &str, on: bool) -> Result<serde_json::Value, String> {
@@ -1361,7 +1428,7 @@ impl McpCapabilities for FritzMcpCapabilities {
                 .switch_off(ain)
                 .map_err(|error| format!("home_switch: {error}"))?;
         }
-        Ok(serde_json::json!({"ain": ain, "on": on}))
+        Ok(mcp_serialized(&serde_json::json!({"ain": ain, "on": on})))
     }
 }
 
@@ -1369,8 +1436,9 @@ fn execute_mcp() -> Result<(), HandlerError> {
     let (config, password) = load_connection()?;
     let tr064 = make_tr064(&config.box_config, &password)?;
     let web = make_web(&config.box_config, &password)?;
+    let cancellation = MCP_CANCELLATION.get_or_init(CancellationToken::new).clone();
     McpServer::new(TOOL, VERSION, FritzMcpCapabilities { tr064, web })
-        .serve_stdio()
+        .serve_stdio_with_context(&cancellation)
         .map_err(|error| HandlerError::from_operation("mcp server failed", error))
 }
 
@@ -2746,6 +2814,132 @@ fn strip_command_descriptions(command: &mut clap::Command) {
         .long_about(Option::<&str>::None);
     for child in command.get_subcommands_mut() {
         strip_command_descriptions(child);
+    }
+}
+
+#[cfg(test)]
+mod mcp_output_tests {
+    use super::*;
+
+    fn render(value: serde_json::Value) -> String {
+        symfritz_mcp::to_json(&value).unwrap()
+    }
+
+    #[test]
+    fn production_backend_models_match_go_to_json_names_and_bytes() {
+        let status = Status {
+            model_name: "FRITZ!Box 7590".to_owned(),
+            firmware_version: "7.57".to_owned(),
+            external_ip: "203.0.113.1".to_owned(),
+            connection_state: "Connected".to_owned(),
+            uptime: "3600".to_owned(),
+            update_available: String::new(),
+            partial: false,
+            errors: Vec::new(),
+        };
+        assert_eq!(
+            render(mcp_status_value(&status)),
+            "{\n  \"ModelName\": \"FRITZ!Box 7590\",\n  \"FirmwareVersion\": \"7.57\",\n  \"ExternalIP\": \"203.0.113.1\",\n  \"ConnectionState\": \"Connected\",\n  \"Uptime\": \"3600\",\n  \"UpdateAvailable\": \"\",\n  \"Partial\": false,\n  \"Errors\": null\n}"
+        );
+
+        let host = Host {
+            name: "my-host".to_owned(),
+            ip: "192.168.178.20".to_owned(),
+            mac: "00:11:22:33:44:55".to_owned(),
+            active: true,
+            interface_type: "Ethernet".to_owned(),
+            address_source: "DHCP".to_owned(),
+            lease_time_remaining: 120,
+        };
+        assert_eq!(
+            render(mcp_serialized(&host)),
+            "{\n  \"name\": \"my-host\",\n  \"ip\": \"192.168.178.20\",\n  \"mac\": \"00:11:22:33:44:55\",\n  \"active\": true,\n  \"interface_type\": \"Ethernet\",\n  \"address_source\": \"DHCP\",\n  \"lease_time_remaining\": 120\n}"
+        );
+
+        let diagnosis = Diagnosis {
+            reference: "my-host".to_owned(),
+            host: Some(host),
+            target: "192.168.178.20".to_owned(),
+            checks: vec![symfritz_tr064::Check {
+                name: "Host active".to_owned(),
+                status: symfritz_tr064::CheckStatus::Ok,
+                detail: String::new(),
+            }],
+            ok: true,
+        };
+        assert_eq!(
+            render(mcp_serialized(&diagnosis)),
+            "{\n  \"ref\": \"my-host\",\n  \"host\": {\n    \"name\": \"my-host\",\n    \"ip\": \"192.168.178.20\",\n    \"mac\": \"00:11:22:33:44:55\",\n    \"active\": true,\n    \"interface_type\": \"Ethernet\",\n    \"address_source\": \"DHCP\",\n    \"lease_time_remaining\": 120\n  },\n  \"target\": \"192.168.178.20\",\n  \"checks\": [\n    {\n      \"name\": \"Host active\",\n      \"status\": \"ok\"\n    }\n  ],\n  \"ok\": true\n}"
+        );
+
+        let mesh = symfritz_tr064::MeshTopology {
+            schema_version: "1".to_owned(),
+            nodes: Vec::new(),
+        };
+        assert_eq!(
+            render(mcp_serialized(&mesh)),
+            "{\n  \"schema_version\": \"1\",\n  \"nodes\": []\n}"
+        );
+        let wlan = WlanClient {
+            radio_index: 1,
+            mac: "00:11:22:33:44:55".to_owned(),
+            ip: "192.168.178.20".to_owned(),
+            signal: "80".to_owned(),
+            speed: "866".to_owned(),
+            authorized: true,
+        };
+        assert_eq!(
+            render(mcp_serialized(&vec![wlan])),
+            "[\n  {\n    \"radio_index\": 1,\n    \"mac\": \"00:11:22:33:44:55\",\n    \"ip\": \"192.168.178.20\",\n    \"signal_strength\": \"80\",\n    \"speed\": \"866\",\n    \"authorized\": true\n  }\n]"
+        );
+
+        assert_eq!(
+            render(serde_json::json!({"woke": "00:11:22:33:44:55"})),
+            "{\n  \"woke\": \"00:11:22:33:44:55\"\n}"
+        );
+        assert_eq!(
+            render(serde_json::json!({"ain": "123", "on": true})),
+            "{\n  \"ain\": \"123\",\n  \"on\": true\n}"
+        );
+    }
+
+    #[test]
+    fn aha_device_output_uses_exported_go_field_names_recursively() {
+        let device = AhaDevice {
+            identifier: "123".to_owned(),
+            id: "dev-1".to_owned(),
+            name: "Switch 1".to_owned(),
+            present: 1,
+            switch: symfritz_aha::Switch {
+                state: "1".to_owned(),
+            },
+            temperature: symfritz_aha::Temperature {
+                celsius: "215".to_owned(),
+            },
+            hkr: symfritz_aha::Hkr {
+                tist: "42".to_owned(),
+                tsoll: "44".to_owned(),
+                batterylow: "0".to_owned(),
+                battery: "90".to_owned(),
+                windowopenactiv: "0".to_owned(),
+                errorcode: "0".to_owned(),
+                nextchange: symfritz_aha::NextChange {
+                    end: "0".to_owned(),
+                    start: "0".to_owned(),
+                    tchange: 0,
+                },
+            },
+            powermeter: symfritz_aha::PowerMeter {
+                power: "1500".to_owned(),
+                energy: "100".to_owned(),
+            },
+        };
+        let rendered = render(serde_json::to_value(AhaDeviceOutput::from(&device)).unwrap());
+        assert!(rendered.contains("\"Identifier\": \"123\""));
+        assert!(rendered.contains("\"PowerMeter\": {"));
+        assert!(rendered.contains("\"NextChange\": {"));
+        assert!(!rendered.contains("identifier"));
+        assert!(!rendered.contains("power_meter"));
     }
 }
 
