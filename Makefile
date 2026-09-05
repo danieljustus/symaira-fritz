@@ -2,27 +2,38 @@ GO ?= go
 CARGO ?= cargo
 BINARY_NAME = symfritz
 RUST_BINARY = target/debug/symfritz
-# version is a package-level var in `main`, so inject into main.version
-# (matches release version injection). Injecting into the full import path silently no-ops.
-VERSION_PKG = main
+GO_BINARY = target/debug/symfritz-go
 
 .PHONY: all
 all: build test
 
 .PHONY: build
 build:
-	CGO_ENABLED=0 $(GO) build -ldflags "-s -w -X main.version=dev" -o $(BINARY_NAME) ./cmd/symfritz
+	$(CARGO) build -p symfritz-cli --bin symfritz --locked
+	cp $(RUST_BINARY) $(BINARY_NAME)
 
 .PHONY: build-version
 build-version:
-	CGO_ENABLED=0 $(GO) build -ldflags "-s -w -X $(VERSION_PKG).version=$(VERSION)" -o $(BINARY_NAME) ./cmd/symfritz
+	SYMFRITZ_VERSION=$(VERSION) $(CARGO) build -p symfritz-cli --bin symfritz --locked
+	cp $(RUST_BINARY) $(BINARY_NAME)
+
+.PHONY: build-go
+build-go:
+	mkdir -p $(dir $(GO_BINARY))
+	CGO_ENABLED=0 $(GO) build -ldflags "-s -w -X main.version=dev" -o $(GO_BINARY) ./cmd/symfritz
 
 .PHONY: test
-test:
+test: rust-test go-test
+
+.PHONY: go-test
+go-test:
 	CGO_ENABLED=0 $(GO) test ./...
 
 .PHONY: test-verbose
-test-verbose:
+test-verbose: rust-test go-test-verbose
+
+.PHONY: go-test-verbose
+go-test-verbose:
 	CGO_ENABLED=0 $(GO) test -v ./...
 
 .PHONY: test-race
@@ -92,22 +103,22 @@ port-remaining-fixtures:
 	SYMFRITZ_UPDATE_PORT_FIXTURES=1 $(GO) test ./internal/fritz -run '^TestPortRemainingCapabilitiesFixture$$' -count=1
 
 .PHONY: port-cli-fixtures
-port-cli-fixtures: build
-	$(GO) run ./cmd/capture-cli-fixtures -oracle ./$(BINARY_NAME)
+port-cli-fixtures: build-go
+	$(GO) run ./cmd/capture-cli-fixtures -oracle ./$(GO_BINARY)
 
 .PHONY: port-cli-parity
-port-cli-parity: build rust-build
-	python3 scripts/cli-differential.py --go ./$(BINARY_NAME) --rust ./$(RUST_BINARY)
+port-cli-parity: build-go rust-build
+	python3 scripts/cli-differential.py --go ./$(GO_BINARY) --rust ./$(RUST_BINARY)
 
 .PHONY: port-fixtures
-port-fixtures: build port-cli-fixtures
-	$(GO) run ./cmd/capture-port-fixtures -oracle ./$(BINARY_NAME)
+port-fixtures: build-go port-cli-fixtures
+	$(GO) run ./cmd/capture-port-fixtures -oracle ./$(GO_BINARY)
 	SYMFRITZ_UPDATE_PORT_FIXTURES=1 $(GO) test ./internal/fritz ./internal/config ./internal/secret ./cmd/symfritz -run '^TestPort(Auth|TR064|Config|ConfigInit|Secret|Transport|SessionData|CapabilitiesCore|RemainingCapabilities)Fixture$$' -count=1
 	$(MAKE) port-aha-fixtures
 
 .PHONY: port-parity-version
-port-parity-version: build rust-build
-	$(GO) run ./cmd/port-parity -reference ./$(BINARY_NAME) -candidate ./$(RUST_BINARY)
+port-parity-version: build-go rust-build
+	$(GO) run ./cmd/port-parity -reference ./$(GO_BINARY) -candidate ./$(RUST_BINARY)
 
 .PHONY: mcp-fixtures
 mcp-fixtures:
@@ -120,7 +131,10 @@ mcp-parity: mcp-fixtures
 	python3 scripts/mcp-differential.py --go target/debug/mcp-go-fixture --rust target/debug/mcp-fixture-server
 
 .PHONY: lint
-lint:
+lint: rust-lint go-lint
+
+.PHONY: go-lint
+go-lint:
 	$(GO) fmt ./...
 	CGO_ENABLED=0 $(GO) vet ./...
 
@@ -131,8 +145,9 @@ docs:
 .PHONY: clean
 clean:
 	rm -f $(BINARY_NAME)
+	rm -f $(GO_BINARY)
 	rm -rf dist/
 
 .PHONY: install
 install:
-	CGO_ENABLED=0 $(GO) install -ldflags "-s -w -X $(VERSION_PKG).version=dev" ./cmd/symfritz
+	$(CARGO) install --path crates/symfritz-cli --locked
