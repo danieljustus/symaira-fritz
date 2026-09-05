@@ -16,8 +16,10 @@
 //! and never in command-line arguments to prevent leakage in process tables (`ps aux`).
 
 use std::{
-    io::Write,
-    process::{Command, Stdio},
+    io::{Read, Write},
+    process::{Command, ExitStatus, Stdio},
+    thread,
+    time::{Duration, Instant},
 };
 
 use serde::{Deserialize, Serialize};
@@ -304,16 +306,155 @@ impl KeychainCommand {
     }
 }
 
+struct CommandOutput {
+    status: ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+enum CommandError {
+    Spawn(String),
+    Io(String),
+    Wait(String),
+    Timeout,
+}
+
+const SECRET_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
+
+#[cfg(unix)]
+fn terminate_descendants(pid: u32) {
+    let _ = Command::new("pkill")
+        .args(["-TERM", "-P", &pid.to_string()])
+        .status();
+}
+
+#[cfg(not(unix))]
+fn terminate_descendants(_pid: u32) {}
+
+fn run_command(
+    program: &str,
+    args: &[String],
+    stdin_payload: Option<&[u8]>,
+    timeout: Duration,
+) -> Result<CommandOutput, CommandError> {
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(if stdin_payload.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| CommandError::Spawn(error.to_string()))?;
+
+    if let Some(payload) = stdin_payload
+        && let Some(mut stdin) = child.stdin.take()
+        && let Err(error) = stdin.write_all(payload)
+    {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(CommandError::Io(error.to_string()));
+    }
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| CommandError::Io("missing stdout pipe".to_owned()))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| CommandError::Io("missing stderr pipe".to_owned()))?;
+    let stdout_reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stdout.take(1024 * 1024).read_to_end(&mut bytes)?;
+        Ok::<_, std::io::Error>(bytes)
+    });
+    let stderr_reader = thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stderr.take(1024 * 1024).read_to_end(&mut bytes)?;
+        Ok::<_, std::io::Error>(bytes)
+    });
+
+    let started = Instant::now();
+    let (status, timed_out) = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break (status, false),
+            Ok(None) if started.elapsed() >= timeout => {
+                terminate_descendants(child.id());
+                let _ = child.kill();
+                let status = child
+                    .wait()
+                    .map_err(|error| CommandError::Wait(error.to_string()))?;
+                break (status, true);
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(10)),
+            Err(error) => {
+                terminate_descendants(child.id());
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(CommandError::Wait(error.to_string()));
+            }
+        }
+    };
+    if timed_out {
+        // Do not wait on a descendant that inherited stdout/stderr. The
+        // process itself is killed above and the reader threads are bounded by
+        // the one-megabyte capture limit.
+        return Err(CommandError::Timeout);
+    }
+    let stdout = stdout_reader
+        .join()
+        .map_err(|_| CommandError::Io("stdout reader panicked".to_owned()))?
+        .map_err(|error| CommandError::Io(error.to_string()))?;
+    let stderr = stderr_reader
+        .join()
+        .map_err(|_| CommandError::Io("stderr reader panicked".to_owned()))?
+        .map_err(|error| CommandError::Io(error.to_string()))?;
+
+    if started.elapsed() >= timeout && status.success() {
+        // A process that exits exactly at the deadline is still successful.
+        return Ok(CommandOutput {
+            status,
+            stdout,
+            stderr,
+        });
+    }
+    if started.elapsed() >= timeout {
+        return Err(CommandError::Timeout);
+    }
+    Ok(CommandOutput {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
 /// Reads password from `symvault get <ref> --print`.
 pub fn symvault_get(reference: &str) -> Result<String, SecretError> {
     let args = SymvaultCommand::get_args(reference);
-    let output = Command::new("symvault")
-        .args(&args)
-        .output()
-        .map_err(|err| SecretError::NotInstalled(format!("symvault: {}", err)))?;
+    let output =
+        run_command("symvault", &args, None, SECRET_COMMAND_TIMEOUT).map_err(
+            |error| match error {
+                CommandError::Spawn(message) => {
+                    SecretError::NotInstalled(format!("symvault: {message}"))
+                }
+                CommandError::Timeout => {
+                    SecretError::Symvault("symvault command timed out".to_owned())
+                }
+                CommandError::Io(message) | CommandError::Wait(message) => {
+                    SecretError::Symvault(format!("symvault error: {message}"))
+                }
+            },
+        )?;
 
     if !output.status.success() {
-        let msg = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout_value = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        let msg = redact_secret_output(
+            String::from_utf8_lossy(&output.stderr).trim(),
+            &stdout_value,
+        );
         let err_msg = if msg.is_empty() {
             format!("exit status {}", output.status)
         } else {
@@ -340,23 +481,20 @@ pub fn symvault_get(reference: &str) -> Result<String, SecretError> {
 /// Secret value is NEVER included in argv.
 pub fn symvault_set(reference: &str, value: &str) -> Result<(), SecretError> {
     let args = SymvaultCommand::set_args(reference);
-    let mut child = Command::new("symvault")
-        .args(&args)
-        .stdin(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|err| SecretError::NotInstalled(format!("symvault: {}", err)))?;
-
     let payload = SymvaultCommand::set_stdin_payload(value);
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(payload.as_bytes())
-            .map_err(|err| SecretError::Symvault(format!("symvault write error: {}", err)))?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .map_err(|err| SecretError::Symvault(format!("symvault error: {}", err)))?;
+    let output = run_command(
+        "symvault",
+        &args,
+        Some(payload.as_bytes()),
+        SECRET_COMMAND_TIMEOUT,
+    )
+    .map_err(|error| match error {
+        CommandError::Spawn(message) => SecretError::NotInstalled(format!("symvault: {message}")),
+        CommandError::Timeout => SecretError::Symvault("symvault command timed out".to_owned()),
+        CommandError::Io(message) | CommandError::Wait(message) => {
+            SecretError::Symvault(format!("symvault error: {message}"))
+        }
+    })?;
 
     if !output.status.success() {
         let msg = redact_secret_output(String::from_utf8_lossy(&output.stderr).trim(), value);
@@ -387,10 +525,20 @@ pub fn keychain_get(service: &str, account: Option<&str>) -> Result<String, Secr
     #[cfg(target_os = "macos")]
     {
         let args = KeychainCommand::get_args(service, account);
-        let output = Command::new("security")
-            .args(&args)
-            .output()
-            .map_err(|err| SecretError::NotInstalled(format!("security: {}", err)))?;
+        let output =
+            run_command("security", &args, None, SECRET_COMMAND_TIMEOUT).map_err(|error| {
+                match error {
+                    CommandError::Spawn(message) => {
+                        SecretError::NotInstalled(format!("security: {message}"))
+                    }
+                    CommandError::Timeout => {
+                        SecretError::Keychain("keychain command timed out".to_owned())
+                    }
+                    CommandError::Io(message) | CommandError::Wait(message) => {
+                        SecretError::Keychain(format!("keychain error: {message}"))
+                    }
+                }
+            })?;
 
         if !output.status.success() {
             return Err(SecretError::Keychain(format!(
@@ -422,23 +570,22 @@ pub fn keychain_set(service: &str, account: Option<&str>, value: &str) -> Result
     #[cfg(target_os = "macos")]
     {
         let args = KeychainCommand::set_args();
-        let mut child = Command::new("security")
-            .args(&args)
-            .stdin(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|err| SecretError::NotInstalled(format!("security: {}", err)))?;
-
         let payload = KeychainCommand::set_stdin_payload(service, account, value);
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(payload.as_bytes())
-                .map_err(|err| SecretError::Keychain(format!("keychain write error: {}", err)))?;
-        }
-
-        let output = child
-            .wait_with_output()
-            .map_err(|err| SecretError::Keychain(format!("keychain error: {}", err)))?;
+        let output = run_command(
+            "security",
+            &args,
+            Some(payload.as_bytes()),
+            SECRET_COMMAND_TIMEOUT,
+        )
+        .map_err(|error| match error {
+            CommandError::Spawn(message) => {
+                SecretError::NotInstalled(format!("security: {message}"))
+            }
+            CommandError::Timeout => SecretError::Keychain("keychain command timed out".to_owned()),
+            CommandError::Io(message) | CommandError::Wait(message) => {
+                SecretError::Keychain(format!("keychain error: {message}"))
+            }
+        })?;
 
         if !output.status.success() {
             let msg = redact_secret_output(String::from_utf8_lossy(&output.stderr).trim(), value);
@@ -557,6 +704,21 @@ mod tests {
         let redacted = redact_secret_output(&message, secret);
         assert_eq!(redacted, "plain=REDACTED hex=REDACTED upper=REDACTED");
         assert!(!redacted.contains(secret));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hanging_backend_is_killed_within_injected_deadline_without_error_output() {
+        let result = super::run_command(
+            "/bin/sh",
+            &[
+                "-c".to_owned(),
+                "printf super-secret >&2; sleep 10".to_owned(),
+            ],
+            None,
+            std::time::Duration::from_millis(50),
+        );
+        assert!(matches!(result, Err(super::CommandError::Timeout)));
     }
 
     #[cfg(unix)]

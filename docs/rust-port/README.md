@@ -10,12 +10,17 @@ Proceed with a staged port, not a flag-day rewrite. Rust is not a benefit by
 itself, and the migration has not yet demonstrated a production gain. Cutover
 is gated on observable parity plus measured value.
 
-The initial Rust vertical slice implements the deterministic `version`
-contract. It deliberately ships as `symfritz-rust`; `symfritz` remains the Go
-binary and rollback path.
+The Rust CLI layer now freezes the complete documented Cobra command tree
+(command names, `serve` alias, positional arity, flags, defaults, global flags,
+version semantics, and help metadata). It deliberately ships as `symfritz-rust`;
+`version` is the only runtime handler and `symfritz` remains the Go binary and
+rollback path. Non-version commands parse and validate before returning a clear
+internal-handler error.
 
 Implemented slices:
 
+- complete documented clap command tree and parser contracts, with
+  language-neutral Go-generated help/inventory and negative-argument fixtures;
 - byte-exact CLI `version` behavior;
 - legacy MD5 and modern PBKDF2 session challenge responses;
 - HTTP Digest challenge parsing and deterministic Authorization headers;
@@ -91,12 +96,15 @@ be expensive theatre.
 make build
 make rust-check
 make port-fixtures          # deliberate Go-oracle fixture regeneration
-make port-parity-version    # Go + Rust + committed golden fixtures
+make port-parity-version    # Go + Rust version golden cases
+make port-cli-parity        # isolated fake-box black-box CLI differential
 ```
 
-`make port-parity-version` currently covers only the first vertical slice. It
-runs both binaries with isolated `HOME`, fixed locale/timezone, and all
-`SYMFRITZ_*` variables removed.
+`make port-cli-parity` runs both binaries with fresh `HOME`/XDG trees, fixed
+locale/timezone, a local fake TR-064 endpoint, deterministic text/JSON/YAML
+traffic cases, watch NDJSON flushing, confirmation/no-side-effect behavior,
+and SIGINT cancellation. Structured traffic values are compared semantically;
+stable version/configuration/confirmation outputs are compared byte-for-byte.
 
 The remaining typed capabilities are split by protocol boundary: TR-064 owns
 SOAP/digest operations, while `symfritz-aha::Client` owns session-authenticated

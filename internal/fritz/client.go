@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -320,14 +321,21 @@ func (c *Client) invalidateSID() {
 
 // baseHTTP returns the plain-HTTP base URL used for session login and AHA,
 // which always run on the standard web port (80/443), not the TR-064 port.
+// An explicitly configured host port is preserved so local test and proxy
+// endpoints can serve both interfaces from one origin.
 func (c *Client) baseHTTP() string {
 	if c.httpBaseURL != "" {
 		return c.httpBaseURL
 	}
+	scheme := "http"
 	if c.UseTLS {
-		return "https://" + c.Host
+		scheme = "https"
 	}
-	return "http://" + c.Host
+	host, port, explicit := splitConfiguredHost(c.Host)
+	if explicit {
+		return scheme + "://" + net.JoinHostPort(host, port)
+	}
+	return scheme + "://" + hostWithBrackets(host)
 }
 
 // tr064Base returns the TR-064 control base URL (port 49000/49443).
@@ -335,10 +343,39 @@ func (c *Client) tr064Base() string {
 	if c.tr064BaseURL != "" {
 		return c.tr064BaseURL
 	}
+	scheme := "http"
+	defaultPort := "49000"
 	if c.UseTLS {
-		return "https://" + c.Host + ":49443"
+		scheme = "https"
+		defaultPort = "49443"
 	}
-	return "http://" + c.Host + ":49000"
+	host, port, explicit := splitConfiguredHost(c.Host)
+	if !explicit {
+		port = defaultPort
+	}
+	return scheme + "://" + net.JoinHostPort(host, port)
+}
+
+func splitConfiguredHost(raw string) (host, port string, explicit bool) {
+	raw = strings.TrimSpace(raw)
+	if host, port, err := net.SplitHostPort(raw); err == nil && port != "" {
+		return host, port, true
+	}
+	if strings.Count(raw, ":") == 1 {
+		if host, port, ok := strings.Cut(raw, ":"); ok && host != "" {
+			if _, err := strconv.ParseUint(port, 10, 16); err == nil {
+				return host, port, true
+			}
+		}
+	}
+	return strings.Trim(raw, "[]"), "", false
+}
+
+func hostWithBrackets(host string) string {
+	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
+		return "[" + host + "]"
+	}
+	return host
 }
 
 // SetMockURLs overrides the base URLs for testing.

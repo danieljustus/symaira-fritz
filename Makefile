@@ -42,6 +42,22 @@ rust-lint:
 	$(CARGO) fmt --all --check
 	$(CARGO) clippy --workspace --all-targets --all-features --locked -- -D warnings
 
+.PHONY: rust-readonly
+rust-readonly:
+	$(CARGO) test -p symfritz-cli --test cli_contract --locked
+	$(CARGO) test -p symfritz-cli --locked
+	$(CARGO) clippy -p symfritz-cli --all-targets --locked -- -D warnings
+
+.PHONY: rust-diagnostic
+rust-diagnostic:
+	$(CARGO) test -p symfritz-cli --test cli_contract --locked
+	$(CARGO) clippy -p symfritz-cli --all-targets --locked -- -D warnings
+
+.PHONY: rust-mutating
+rust-mutating:
+	$(CARGO) test -p symfritz-cli --locked
+	$(CARGO) clippy -p symfritz-cli --all-targets --locked -- -D warnings
+
 .PHONY: rust-check
 rust-check: rust-lint rust-test
 
@@ -57,8 +73,16 @@ port-capabilities-core-fixtures:
 port-remaining-fixtures:
 	SYMFRITZ_UPDATE_PORT_FIXTURES=1 $(GO) test ./internal/fritz -run '^TestPortRemainingCapabilitiesFixture$$' -count=1
 
+.PHONY: port-cli-fixtures
+port-cli-fixtures: build
+	$(GO) run ./cmd/capture-cli-fixtures -oracle ./$(BINARY_NAME)
+
+.PHONY: port-cli-parity
+port-cli-parity: build rust-build
+	python3 scripts/cli-differential.py --go ./$(BINARY_NAME) --rust ./$(RUST_BINARY)
+
 .PHONY: port-fixtures
-port-fixtures: build
+port-fixtures: build port-cli-fixtures
 	$(GO) run ./cmd/capture-port-fixtures -oracle ./$(BINARY_NAME)
 	SYMFRITZ_UPDATE_PORT_FIXTURES=1 $(GO) test ./internal/fritz ./internal/config ./internal/secret ./cmd/symfritz -run '^TestPort(Auth|TR064|Config|ConfigInit|Secret|Transport|SessionData|CapabilitiesCore|RemainingCapabilities)Fixture$$' -count=1
 	$(MAKE) port-aha-fixtures
