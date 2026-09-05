@@ -22,8 +22,8 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
     def test_cross_targets_are_packaged_without_execution(self) -> None:
         self.assertEqual(WORKFLOW_TEXT.count("runtime_validation: false"), 2)
         self.assertEqual(WORKFLOW_TEXT.count("runtime_validation: true"), 4)
-        self.assertIn('validation_args+=(--skip-runtime-validation)', WORKFLOW_TEXT)
-        self.assertIn('"${validation_args[@]}"', WORKFLOW_TEXT)
+        self.assertIn('--runtime-validation "$RUNTIME_VALIDATION"', WORKFLOW_TEXT)
+        self.assertNotIn("validation_args=()", WORKFLOW_TEXT)
 
     def test_artifact_actions_are_immutable_and_never_empty(self) -> None:
         self.assertIn("actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4", WORKFLOW_TEXT)

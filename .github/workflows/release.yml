@@ -222,16 +222,12 @@ jobs:
           set -euo pipefail
           suffix=''
           case "$TARGET" in windows/*) suffix='.exe';; esac
-          validation_args=()
-          if [ "$RUNTIME_VALIDATION" != true ]; then
-            validation_args+=(--skip-runtime-validation)
-          fi
           python3 scripts/release_snapshot.py \
             --version "$VERSION" \
             --out dist \
             --target "$TARGET" \
             --skip-build \
-            "${validation_args[@]}" \
+            --runtime-validation "$RUNTIME_VALIDATION" \
             --rust-bin "$(pwd)/dist/.build/symfritz${suffix}" \
             --go-bin "$(pwd)/dist/.build/symfritz-go${suffix}"
           rm -rf dist/.build

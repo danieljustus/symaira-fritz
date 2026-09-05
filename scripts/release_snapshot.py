@@ -117,9 +117,10 @@ def main() -> int:
     parser.add_argument("--target", help="OS/ARCH; defaults to the current host")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument(
-        "--skip-runtime-validation",
-        action="store_true",
-        help="package a cross-compiled target without executing foreign binaries",
+        "--runtime-validation",
+        choices=("true", "false"),
+        default="true",
+        help="execute version/config checks only when target binaries run on this host",
     )
     parser.add_argument("--rust-bin", type=Path)
     parser.add_argument("--go-bin", type=Path)
@@ -157,7 +158,7 @@ def main() -> int:
     for binary in (rust, go):
         if not binary.is_file():
             raise RuntimeError(f"missing input binary: {binary}")
-    if not args.skip_runtime_validation:
+    if args.runtime_validation == "true":
         env = os.environ.copy()
         with tempfile.TemporaryDirectory(prefix="symfritz-cutover-") as temp:
             temp_path = Path(temp)
