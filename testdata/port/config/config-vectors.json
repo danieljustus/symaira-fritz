@@ -14,7 +14,7 @@
   },
   "path_suffix": ".config/symfritz/config.toml",
   "project_file_name": ".symfritz.toml",
-  "template_toml": "# symfritz configuration\n\n[box]\n# FRITZ!Box address (hostname or IP), without scheme.\nhost = \"fritz.box\"\n\n# FRITZ!Box username. Leave empty for legacy password-only boxes.\nuser = \"\"\n\n# Credential resolution order (highest first):\n#   1. SYMFRITZ_PASSWORD environment variable\n#   2. password_ref  — a symvault entry, resolved at runtime via 'symvault get'\n#   3. keychain      — the macOS Keychain (service \"symfritz\")\n#   4. password      — plaintext below (least secure)\n#\n# Recommended: store the password once with 'symfritz auth login', which writes\n# it to the Keychain (macOS) or symvault, and leave 'password' empty here.\n\n# symvault entry path, e.g. \"fritz.password\". Empty = disabled.\npassword_ref = \"\"\n\n# Read the password from the macOS Keychain (service \"symfritz\").\nkeychain = false\n\n# Keychain account name; defaults to the box host when empty.\nkeychain_account = \"\"\n\n# Plaintext password (least secure — prefer the options above).\npassword = \"\"\n\n# Use the TLS TR-064 endpoint (https, port 49443).\nuse_tls = true\n\n# Skip TLS certificate verification (disables TOFU certificate pinning;\n# optional opt-out for legacy setups).\ninsecure_tls = false\n\n# Per-request HTTP timeout in seconds.\ntimeout_seconds = 15\n",
+  "template_toml": "# symfritz configuration\n\n[box]\n# FRITZ!Box address (hostname or IP), without scheme.\nhost = \"fritz.box\"\n\n# FRITZ!Box username. Leave empty for legacy password-only boxes.\nuser = \"\"\n\n# Credential resolution order (highest first):\n#   1. SYMFRITZ_PASSWORD environment variable\n#   2. password_ref  — a symvault entry, resolved at runtime via 'symvault get'\n#   3. keychain      — the macOS Keychain (service \"symfritz\")\n#   4. password      — plaintext below (least secure)\n#\n# Recommended: store the password once with 'symfritz auth login', which writes\n# it to the Keychain (macOS) or symvault, and leave 'password' empty here.\n\n# symvault entry path, e.g. \"fritz.password\". Empty = disabled.\npassword_ref = \"\"\n\n# Read the password from the macOS Keychain (service \"symfritz\").\nkeychain = false\n\n# Keychain account name; defaults to the box host when empty.\nkeychain_account = \"\"\n\n# Plaintext password (least secure — prefer the options above).\npassword = \"\"\n\n# Use the TLS TR-064 endpoint (https, port 49443).\nuse_tls = true\n\n# Allow retrying an unavailable TLS endpoint over unencrypted HTTP.\n# Keep disabled unless this legacy compatibility fallback is required.\nallow_http_fallback = false\n\n# Skip TLS certificate verification (disables TOFU certificate pinning;\n# optional opt-out for legacy setups).\ninsecure_tls = false\n\n# Per-request HTTP timeout in seconds.\ntimeout_seconds = 15\n",
   "timeout_cases": [
     {
       "input_seconds": 0,
@@ -120,7 +120,7 @@
         "password_ref": "",
         "keychain": false,
         "keychain_account": "",
-        "use_tls": true,
+        "use_tls": false,
         "insecure_tls": false,
         "timeout_seconds": 15
       },
