@@ -194,7 +194,12 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
             name: "home_switch".to_owned(),
             description: "Turn a DECT switch actor on or off by its AIN.".to_owned(),
             input_schema: schema(json!({"ain": {"type": "string"}, "on": {"type": "boolean"}}), &["ain", "on"]),
-            annotations: ToolAnnotations { open_world_hint: true, ..Default::default() },
+            annotations: ToolAnnotations {
+                open_world_hint: true,
+                idempotent_hint: true,
+                destructive_hint: true,
+                ..Default::default()
+            },
         },
     ]
 }
@@ -894,7 +899,11 @@ fn dispatch_tool<C: Capabilities + 'static>(
             if ain.is_empty() {
                 return Err("ain is required".to_owned());
             }
-            let on = args.get("on").and_then(Value::as_bool).unwrap_or(false);
+            let on = match args.get("on") {
+                Some(Value::Bool(value)) => *value,
+                None => return Err("on is required".to_owned()),
+                Some(_) => return Err("on must be a boolean".to_owned()),
+            };
             capabilities.home_switch(ain, on)
         }
         _ => Err(format!("Unknown tool: {name}")),
@@ -1103,6 +1112,8 @@ mod tests {
         );
         assert!(tools[0].annotations.read_only_hint);
         assert!(tools[6].annotations.open_world_hint);
+        assert!(tools[8].annotations.idempotent_hint);
+        assert!(tools[8].annotations.destructive_hint);
     }
 
     #[test]
@@ -1160,6 +1171,41 @@ mod tests {
         let response = body(&output);
         assert_eq!(response["result"]["isError"], true);
         assert!(response["error"].is_null());
+    }
+
+    #[test]
+    fn home_switch_rejects_invalid_on_without_calling_capability() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
+        let fake = BlockingFake {
+            started: Arc::new(AtomicBool::new(false)),
+            released: Arc::new(AtomicBool::new(true)),
+            active,
+            max_active: max_active.clone(),
+        };
+        let cases = [
+            (r#"{"ain":"12345"}"#, "on is required"),
+            (r#"{"ain":"12345","on":"false"}"#, "on must be a boolean"),
+        ];
+
+        for (arguments, expected_error) in cases {
+            let request = json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "home_switch", "arguments": serde_json::from_str::<Value>(arguments).unwrap()},
+            });
+            let mut output = Vec::new();
+            Server::new("symfritz", "dev", fake.clone())
+                .serve_io(Cursor::new(framed(&request.to_string())), &mut output)
+                .unwrap();
+            let response = body(&output);
+            let text = response["result"]["content"][0]["text"].as_str().unwrap();
+            assert_eq!(response["result"]["isError"], true);
+            assert!(text.contains(expected_error));
+        }
+
+        assert_eq!(max_active.load(Ordering::SeqCst), 0);
     }
 
     #[test]
