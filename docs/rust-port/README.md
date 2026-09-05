@@ -146,7 +146,7 @@ own language-neutral fixtures.
 8. Ship a prerelease and stable release with the last known-good Go binary as
    the explicit fallback. *(complete: v0.7.0)*
 9. Remove Go source and current-release fallback while retaining v0.7.0 as the
-   immutable rollback point. *(complete by explicit maintainer decision)*
+   immutable rollback point. *(complete; v0.8.0 Rust-only release verified)*
 
 See [`architecture.md`](architecture.md) for boundaries and
 [`contract-matrix.md`](contract-matrix.md) for the executable acceptance map.

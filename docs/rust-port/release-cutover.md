@@ -128,6 +128,10 @@ that run; no numbers are inferred or copied from a debug build.
 - DIST executable snapshot: **PASS** only after `release_snapshot.py` builds
   the Rust binary, packages the host archive, and validates version/config
   behavior.
+- DIST Rust-only trust chain: **PASS** for v0.8.0. All six native archives
+  contain only `symfritz`, `LICENSE`, and `README.md`; six CycloneDX SBOMs,
+  checksums, manifest schema v2, exact public readback, macOS signing and
+  notarization, and the remote Homebrew Formula/install smoke were verified.
 - DIST release trust chain: **PASS** for v0.7.0. Six signed migration
   archives, six CycloneDX SBOMs, the manifest, and checksums were downloaded
   and verified; the remote Homebrew Formula installed both `symfritz` and
