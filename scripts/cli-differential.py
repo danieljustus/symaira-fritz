@@ -453,11 +453,7 @@ def parse_help(path: str, output: bytes | str) -> HelpContract:
     text = output.decode() if isinstance(output, bytes) else output
     # Windows console rendering preserves some non-ASCII clap text as JSON-style
     # Unicode escapes. Normalize that representation before semantic comparison.
-    text = re.sub(
-        r"\u([0-9a-fA-F]{4})",
-        lambda match: chr(int(match.group(1), 16)),
-        text,
-    )
+    text = text.replace(chr(92) + "u2192", "→")
     lines = text.replace("\r\n", "\n").splitlines()
     usage_index = next((index for index, line in enumerate(lines) if line.startswith("Usage:")), len(lines))
     description = _clean_help_text(lines[:usage_index])
