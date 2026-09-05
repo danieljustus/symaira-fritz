@@ -60,6 +60,9 @@ struct HandlerError {
     kind: String,
     hint: Option<String>,
     status: bool,
+    service: String,
+    action: String,
+    raw: String,
 }
 
 impl HandlerError {
@@ -70,6 +73,9 @@ impl HandlerError {
             kind: "unavailable".to_owned(),
             hint: None,
             status: false,
+            service: String::new(),
+            action: String::new(),
+            raw: String::new(),
         }
     }
 
@@ -80,6 +86,9 @@ impl HandlerError {
             kind: "auth".to_owned(),
             hint: Some("Run: symfritz auth login".to_owned()),
             status: false,
+            service: String::new(),
+            action: String::new(),
+            raw: String::new(),
         }
     }
 
@@ -90,6 +99,9 @@ impl HandlerError {
             kind: "validation".to_owned(),
             hint: None,
             status: false,
+            service: String::new(),
+            action: String::new(),
+            raw: String::new(),
         }
     }
 
@@ -100,6 +112,9 @@ impl HandlerError {
             kind: "unavailable".to_owned(),
             hint: None,
             status: false,
+            service: String::new(),
+            action: String::new(),
+            raw: String::new(),
         }
     }
 
@@ -127,6 +142,7 @@ impl HandlerError {
             ErrorKind::Unknown => "unavailable",
         };
         let unauthorized = symfritz_tr064::error_kind(error) == ErrorKind::Unauthorized;
+        let (service, action, raw) = error.structured_fields();
         Self {
             message: format!("{context}: {error}"),
             exit_code: if unauthorized {
@@ -137,6 +153,9 @@ impl HandlerError {
             kind: kind.to_owned(),
             hint: unauthorized.then(|| "Run: symfritz auth login".to_owned()),
             status: false,
+            service,
+            action,
+            raw,
         }
     }
 }
@@ -155,6 +174,13 @@ struct ErrorOutput<'a> {
 #[derive(Serialize)]
 struct ErrorDetails<'a> {
     kind: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    service: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    action: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    raw: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
     message: &'a str,
 }
 
@@ -230,6 +256,9 @@ fn main() -> ExitCode {
                 let payload = ErrorOutput {
                     error: ErrorDetails {
                         kind: &error.kind,
+                        service: &error.service,
+                        action: &error.action,
+                        raw: &error.raw,
                         message: &error.message,
                     },
                 };

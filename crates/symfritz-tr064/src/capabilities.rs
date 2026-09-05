@@ -32,6 +32,7 @@ pub enum ErrorKind {
 pub fn error_kind(error: &ClientError) -> ErrorKind {
     match error {
         ClientError::UnauthorizedChallenge => ErrorKind::Unauthorized,
+        ClientError::Call { source, .. } => error_kind(source),
         ClientError::SoapFault { status: 401, .. } => ErrorKind::Unauthorized,
         ClientError::SoapFault {
             code, description, ..

@@ -125,7 +125,11 @@ fn cnonce_failure_stops_before_authenticated_retry() {
     };
     assert_eq!(
         client.call(&service, "Run", &BTreeMap::new()),
-        Err(ClientError::Cnonce("no cnonce queued".to_owned()))
+        Err(ClientError::Call {
+            service: "Thing".to_owned(),
+            action: "Run".to_owned(),
+            source: Box::new(ClientError::Cnonce("no cnonce queued".to_owned())),
+        })
     );
     assert_eq!(client.into_transport().requests.len(), 1);
 }
@@ -150,7 +154,11 @@ fn invalid_digest_challenge_fails_without_retry() {
     };
     assert_eq!(
         client.call(&service, "Run", &BTreeMap::new()),
-        Err(ClientError::UnauthorizedChallenge)
+        Err(ClientError::Call {
+            service: "Thing".to_owned(),
+            action: "Run".to_owned(),
+            source: Box::new(ClientError::UnauthorizedChallenge),
+        })
     );
     assert_eq!(client.into_transport().requests.len(), 1);
 }
@@ -175,10 +183,16 @@ fn soap_fault_preserves_status_code_and_description() {
     };
     assert_eq!(
         client.call(&service, "Run", &BTreeMap::new()),
-        Err(ClientError::SoapFault {
-            status: 500,
-            code: 606,
-            description: "Not authorized".to_owned(),
+        Err(ClientError::Call {
+            service: "Thing".to_owned(),
+            action: "Run".to_owned(),
+            source: Box::new(ClientError::SoapFault {
+                service: "Thing".to_owned(),
+                action: "Run".to_owned(),
+                status: 500,
+                code: 606,
+                description: "Not authorized".to_owned(),
+            }),
         })
     );
 }

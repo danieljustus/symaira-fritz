@@ -11,6 +11,10 @@ use crate::{
 const SOAP_RESPONSE_LIMIT: usize = 1 << 20;
 const DISCOVERY_RESPONSE_LIMIT: usize = 4 << 20;
 
+fn short_service(urn: &str) -> &str {
+    urn.split(':').nth(3).unwrap_or(urn)
+}
+
 /// HTTP method required by the transport adapter.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Method {
@@ -73,8 +77,15 @@ pub enum ClientError {
     Transport(String),
     Cnonce(String),
     UnauthorizedChallenge,
+    Call {
+        service: String,
+        action: String,
+        source: Box<ClientError>,
+    },
     DiscoveryHttpStatus(u16),
     SoapFault {
+        service: String,
+        action: String,
         status: u16,
         code: i32,
         description: String,
@@ -90,6 +101,7 @@ impl std::fmt::Display for ClientError {
             Self::UnauthorizedChallenge => {
                 formatter.write_str("401 without a parseable digest challenge")
             }
+            Self::Call { source, .. } => source.fmt(formatter),
             Self::DiscoveryHttpStatus(status) => {
                 write!(formatter, "discover: tr64desc.xml returned HTTP {status}")
             }
@@ -97,6 +109,7 @@ impl std::fmt::Display for ClientError {
                 status,
                 code,
                 description,
+                ..
             } => write!(
                 formatter,
                 "SOAP fault HTTP {status}, code {code}: {description}"
@@ -107,7 +120,41 @@ impl std::fmt::Display for ClientError {
     }
 }
 
-impl std::error::Error for ClientError {}
+impl std::error::Error for ClientError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Call { source, .. } => Some(source.as_ref()),
+            _ => None,
+        }
+    }
+}
+
+impl ClientError {
+    /// Return the Go-compatible structured error fields for CLI and MCP output.
+    #[must_use]
+    pub fn structured_fields(&self) -> (String, String, String) {
+        match self {
+            Self::Call {
+                service,
+                action,
+                source,
+            } => {
+                let (_, _, raw) = source.structured_fields();
+                (service.clone(), action.clone(), raw)
+            }
+            Self::SoapFault {
+                service,
+                action,
+                description,
+                ..
+            } => (service.clone(), action.clone(), description.clone()),
+            Self::Transport(message) | Self::Cnonce(message) => {
+                (String::new(), String::new(), message.clone())
+            }
+            _ => (String::new(), String::new(), self.to_string()),
+        }
+    }
+}
 
 impl From<SoapParseError> for ClientError {
     fn from(value: SoapParseError) -> Self {
@@ -164,6 +211,20 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
         action: &str,
         arguments: &BTreeMap<String, String>,
     ) -> Result<BTreeMap<String, String>, ClientError> {
+        self.call_inner(service, action, arguments)
+            .map_err(|source| ClientError::Call {
+                service: short_service(&service.service_type).to_owned(),
+                action: action.to_owned(),
+                source: Box::new(source),
+            })
+    }
+
+    fn call_inner(
+        &mut self,
+        service: &Service,
+        action: &str,
+        arguments: &BTreeMap<String, String>,
+    ) -> Result<BTreeMap<String, String>, ClientError> {
         let body = build_request(&service.service_type, action, arguments);
         let soap_action = format!("{}#{action}", service.service_type);
         let url = format!("{}{}", self.base_url, service.control_url);
@@ -191,6 +252,8 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
         if response.status != 200 {
             let (code, description) = parse_fault(&response.body);
             return Err(ClientError::SoapFault {
+                service: short_service(&service.service_type).to_owned(),
+                action: action.to_owned(),
                 status: response.status,
                 code,
                 description,
