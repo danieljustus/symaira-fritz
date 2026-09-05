@@ -45,7 +45,7 @@ const VERSION: &str = match option_env!("SYMFRITZ_VERSION") {
 };
 const EXIT_CONFIG: u8 = 9;
 const EXIT_OPERATION: u8 = 1;
-const EXIT_NO_AUTH: u8 = 2;
+const EXIT_NO_AUTH: u8 = 3;
 static CANCEL_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug)]
@@ -303,8 +303,11 @@ fn print_help(path: &[String]) -> Result<(), HandlerError> {
     if !path.is_empty() {
         command = command.bin_name(format!("symfritz {}", path.join(" ")));
     }
+    if path == [String::from("auth")] {
+        command = command.long_about("Resolve, verify, and store the FRITZ!Box password.\n\nResolution order: SYMFRITZ_PASSWORD env → symvault (password_ref) → macOS\nKeychain → plaintext config. 'auth login' captures the password once, verifies\nit against the box, and stores it in the Keychain or symvault so nothing sits in\na dotfile.");
+    }
     command
-        .print_help()
+        .print_long_help()
         .map_err(|error| HandlerError::operation(error.to_string()))?;
     println!();
     Ok(())
@@ -996,7 +999,7 @@ fn execute_auth(command: AuthCommand) -> Result<(), HandlerError> {
         None => print_help(&[String::from("auth")]),
         Some(AuthSubcommand::Test) => execute_auth_test(),
         Some(AuthSubcommand::Trust(args)) => execute_auth_trust(args),
-        Some(AuthSubcommand::Login(args)) => execute_auth_login(args),
+        Some(AuthSubcommand::Login(args)) => execute_auth_login(args.into()),
         Some(AuthSubcommand::Store(args)) => execute_auth_store(args),
     }
 }
@@ -1026,7 +1029,7 @@ fn execute_auth_test() -> Result<(), HandlerError> {
     let result = resolve(&SecretOptions::from(&config.box_config)).map_err(secret_error)?;
     if result.source == CredentialSource::None || result.password.trim().is_empty() {
         return Err(HandlerError::auth(
-            "no password configured (run 'symfritz auth login')",
+            "no credential: no password configured (run 'symfritz auth login')",
         ));
     }
     println!("Credential source: {}", result.source);
@@ -1046,7 +1049,9 @@ fn execute_auth_test() -> Result<(), HandlerError> {
         );
     }
     if !session_ok {
-        return Err(HandlerError::operation("credential rejected by box"));
+        return Err(HandlerError::auth(
+            "invalid credential: credential rejected by box",
+        ));
     }
     println!("\nOK: credential is valid.");
     Ok(())

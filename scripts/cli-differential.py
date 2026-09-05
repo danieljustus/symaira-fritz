@@ -54,7 +54,7 @@ DESC_XML = b'''<?xml version="1.0"?><root xmlns="urn:dslforum-org:device-1-0"><d
 </serviceList></device></root>'''
 HOSTS_XML = b'''<?xml version="1.0"?><List><Item><IPAddress>192.168.1.20</IPAddress><MACAddress>AA:BB:CC:DD:EE:FF</MACAddress><Active>1</Active><HostName>laptop</HostName><InterfaceType>Ethernet</InterfaceType><AddressSource>DHCP</AddressSource><LeaseTimeRemaining>3600</LeaseTimeRemaining></Item></List>'''
 MESH_JSON = b'''{"schema_version":"1","nodes":[{"uid":"node-1","device_name":"fritz.box","device_model":"FRITZ!Box","is_meshed":true,"mesh_role":"master","node_interfaces":[]}]}'''
-LOG_XML = b'''<?xml version="1.0"?><Logs><Log><Time>01.01.26 12:00</Time><Message>Started</Message><Group>sys</Group></Log></Logs>'''
+LOG_XML = b'''<?xml version="1.0"?><DeviceLog><Event><id>1</id><group>sys</group><date>01.01.26</date><time>12:00:00</time><msg>Started</msg></Event></DeviceLog>'''
 CALLS_XML = b'''<?xml version="1.0"?><CallList><Call><Type>1</Type><Caller>123</Caller><Called>456</Called><Name>Alice</Name><Date>01.01.26 12:00</Date><Duration>00:01</Duration></Call></CallList>'''
 AHA_XML = f'''<devicelist><device identifier="{AIN}" id="id-1"><name>Desk</name><present>1</present><switch><state>1</state></switch><temperature><celsius>210</celsius></temperature><hkr><tist>40</tist><tsoll>42</tsoll><batterylow>0</batterylow><battery>100</battery><windowopenactiv>0</windowopenactiv><errorcode>0</errorcode><nextchange><end></end><start></start><tchange>0</tchange></nextchange></hkr><powermeter><power>1250</power><energy>12</energy></powermeter></device></devicelist>'''.encode()
 
@@ -106,12 +106,14 @@ class StrictFakeBox(socketserver.ThreadingTCPServer):
         self.accepted: list[tuple[str, str, str, bytes]] = []
         self.failures: list[str] = []
         self.authenticated: set[tuple[str, str]] = set()
+        self.reject_auth = False
 
     def reset(self) -> None:
         self.requests.clear()
         self.accepted.clear()
         self.failures.clear()
         self.authenticated.clear()
+        self.reject_auth = False
 
 
 class StrictHandler(http.server.BaseHTTPRequestHandler):
@@ -125,6 +127,9 @@ class StrictHandler(http.server.BaseHTTPRequestHandler):
         query = parse_qs(urlsplit(self.path).query)
         if path == "/login_sid.lua":
             supplied = query.get("response", [""])[0]
+            if supplied and self.server.reject_auth:
+                self.reply(b"", "text/xml", status=401)
+                return
             if supplied and supplied != legacy_response(CHALLENGE, PASSWORD):
                 self.server.failures.append("login response did not authenticate test credential")
                 self.reply(b"<SessionInfo><SID>0000000000000000</SID></SessionInfo>", "text/xml")
@@ -165,7 +170,7 @@ class StrictHandler(http.server.BaseHTTPRequestHandler):
             self.server.accepted.append(("GET", path, "", b""))
             self.reply(body, "application/json")
             return
-        bodies = {"/tr64desc.xml": (DESC_XML, "text/xml"), "/hosts.xml": (HOSTS_XML, "text/xml"), "/mesh.json": (MESH_JSON, "application/json"), "/log.xml": (LOG_XML, "text/xml"), "/calls.xml": (CALLS_XML, "text/xml")}
+        bodies = {"/tr64desc.xml": (DESC_XML, "text/xml"), "/hosts.xml": (HOSTS_XML, "text/xml"), "/mesh.json": (MESH_JSON, "application/json"), "/log.xml": (LOG_XML, "text/xml"), "/calls.xml": (CALLS_XML, "text/xml"), "/devicelog.lua": (LOG_XML, "text/xml")}
         if path not in bodies:
             self.server.failures.append(f"GET unexpected path {self.path!r}")
             self.reply(b"", "text/plain", status=404)
@@ -236,6 +241,9 @@ class StrictHandler(http.server.BaseHTTPRequestHandler):
         key = (path, action)
         authorization = self.headers.get("Authorization", "")
         if key not in self.server.authenticated:
+            if authorization and self.server.reject_auth:
+                self.reply(b"", "text/xml", status=401, extra={"WWW-Authenticate": f'Digest realm="{REALM}", nonce="{NONCE}", qop="auth", algorithm=MD5'})
+                return
             if not authorization or not self.valid_digest(authorization, action):
                 self.reply(b"", "text/xml", status=401, extra={"WWW-Authenticate": f'Digest realm="{REALM}", nonce="{NONCE}", qop="auth", algorithm=MD5'})
                 return
@@ -259,7 +267,7 @@ class StrictHandler(http.server.BaseHTTPRequestHandler):
         elif action in {"X_AVM-DE_GetDSLLinkInfo", "GetInfo"} and path == "/upnp/control/wandslifconfig1": values = {"NewUpstreamNoiseMargin": "100", "NewDownstreamNoiseMargin": "120", "NewUpstreamAttenuation": "50", "NewDownstreamAttenuation": "60"}
         elif action == "X_AVM-DE_GetHostListPath": values = {"NewX_AVM-DE_HostListPath": "/hosts.xml"}
         elif action == "X_AVM-DE_GetMeshListPath": values = {"NewX_AVM-DE_MeshListPath": "/mesh.json"}
-        elif action == "X_AVM-DE_GetDeviceLogPath": values = {"NewX_AVM-DE_DeviceLogPath": "/log.xml"}
+        elif action == "X_AVM-DE_GetDeviceLogPath": values = {"NewDeviceLogPath": "/devicelog.lua"}
         elif action in {"GetCallList", "X_AVM-DE_GetCallList"}: values = {"NewCallListURL": f"http://{self.server.private_ip}:{PORT}/calls.xml"}
         elif action == "GetHostNumberOfEntries": values = {"NewHostNumberOfEntries": "1"}
         elif action in {"GetGenericHostEntry", "GetSpecificHostEntry", "X_AVM-DE_GetSpecificHostEntryByIP"}: values = {"NewHostName": "laptop", "NewIPAddress": IP, "NewMACAddress": MAC, "NewActive": "1", "NewInterfaceType": "Ethernet", "NewAddressSource": "DHCP", "NewLeaseTimeRemaining": "3600"}
@@ -306,6 +314,218 @@ class Result:
     code: int
     stdout: bytes
     stderr: bytes
+
+
+@dataclass(frozen=True)
+class FlagContract:
+    name: str
+    short: str
+    takes_value: bool
+    repeatable: bool
+    default: str | None
+    description: str
+
+
+@dataclass(frozen=True)
+class HelpContract:
+    description: str
+    usage: tuple[tuple[str, ...], ...]
+    subcommands: dict[str, tuple[str, tuple[str, ...]]]
+    aliases: tuple[str, ...]
+    flags: dict[str, FlagContract]
+    global_flags: dict[str, FlagContract]
+
+
+_HELP_SECTIONS = {"Flags:", "Options:", "Global Flags:", "Available Commands:", "Commands:", "Aliases:"}
+_GO_VALUE_TYPES = {"string", "int", "ints", "uint", "duration", "bool", "float"}
+
+
+def _clean_help_text(lines: list[str]) -> str:
+    return "\n".join(line.rstrip() for line in lines).strip()
+
+
+def _parse_usage(path: str, lines: list[str]) -> tuple[tuple[str, ...], ...]:
+    usages: list[str] = []
+    has_subcommands = bool(_parse_subcommands(lines))
+    for index, line in enumerate(lines):
+        if not line.startswith("Usage:"):
+            continue
+        value = line.removeprefix("Usage:").strip()
+        if value:
+            usages.append(value)
+        for continuation in lines[index + 1 :]:
+            if not continuation.strip() or not continuation.startswith(" "):
+                break
+            if continuation.lstrip().startswith(tuple(_HELP_SECTIONS)):
+                break
+            usages.append(continuation.strip())
+    shapes: set[tuple[str, ...]] = set()
+    for usage in usages:
+        if usage.startswith(path):
+            usage = usage[len(path) :].strip()
+        tokens = re.findall(r"<[^>]+>|\[[^]]+\](?:\.\.\.)?|\S+", usage)
+        shape: list[str] = []
+        for token in tokens:
+            token_name = token.lower().removesuffix("...")
+            if token_name in {"[flags]", "[options]"} or (has_subcommands and token_name in {"[command]", "[commands]", "<command>", "<commands>"}):
+                continue
+            token = token.replace("[Key=Value ...]", "[Key=Value]...")
+            token = re.sub(r"\[([^]]+)\]\.\.\.", r"[\1]...", token)
+            if token.endswith("...") and token.startswith("["):
+                token = token[:-3] + "..."
+            shape.append(token)
+        shapes.add(tuple(shape))
+    return tuple(sorted(shapes))
+
+
+def _parse_subcommands(lines: list[str]) -> dict[str, tuple[str, tuple[str, ...]]]:
+    result: dict[str, tuple[str, tuple[str, ...]]] = {}
+    section = False
+    for line in lines:
+        if line.strip() in {"Available Commands:", "Commands:"}:
+            section = True
+            continue
+        if section and line.strip() in _HELP_SECTIONS - {"Available Commands:", "Commands:"}:
+            break
+        if not section or not line.strip():
+            continue
+        match = re.match(r"^\s{2,}(\S+)(?:\s{2,})(.+?)\s*$", line)
+        if not match:
+            continue
+        name, description = match.groups()
+        aliases = tuple(re.findall(r"\[alias: ([^]]+)\]", description))
+        description = re.sub(r"\s*\[alias: [^]]+\]", "", description).rstrip()
+        if name != "help":
+            result[name] = (description, aliases)
+    return result
+
+
+def _extract_default(description: str) -> tuple[str | None, str]:
+    match = re.search(r'\(default "([^"]+)"\)|\(default ([^)]+)\)|\[default: ([^]]+)\]', description)
+    if not match:
+        return None, description.strip()
+    default = next(value for value in match.groups() if value is not None).strip()
+    return default, (description[: match.start()] + description[match.end() :]).strip()
+
+
+def _parse_flags(lines: list[str]) -> tuple[dict[str, FlagContract], dict[str, FlagContract]]:
+    local: dict[str, FlagContract] = {}
+    inherited: dict[str, FlagContract] = {}
+    section: str | None = None
+    current: FlagContract | None = None
+    for line in lines:
+        stripped = line.strip()
+        if stripped in {"Flags:", "Options:", "Global Flags:"}:
+            section = stripped
+            current = None
+            continue
+        if section and stripped in {"Available Commands:", "Commands:", "Aliases:"}:
+            section = None
+            current = None
+            continue
+        if section is None or not stripped:
+            continue
+        match = re.match(r"^\s+(?:(-[A-Za-z]),\s+)?(--[A-Za-z0-9-]+)(?:\s+(.*?))?\s*$", line)
+        if match:
+            short, name, rest = match.groups()
+            rest = rest or ""
+            marker = ""
+            description = rest
+            first, separator, remainder = rest.partition(" ")
+            if first in _GO_VALUE_TYPES or first.startswith("<"):
+                marker, description = first, remainder.strip()
+            repeatable = marker.endswith("...") or marker == "ints"
+            takes_value = bool(marker)
+            default, description = _extract_default(description)
+            current = FlagContract(name, short or "", takes_value, repeatable, default, description)
+            (inherited if section == "Global Flags:" else local)[name] = current
+            continue
+        if current and line.startswith(" ") and not stripped.startswith(tuple(_HELP_SECTIONS)):
+            # Clap wraps descriptions and defaults over multiple lines.
+            description = current.description + " " + stripped
+            default, description = _extract_default(description)
+            current = FlagContract(current.name, current.short, current.takes_value, current.repeatable, default or current.default, description.strip())
+            target = inherited if section == "Global Flags:" else local
+            target[current.name] = current
+    return local, inherited
+
+
+def parse_help(path: str, output: bytes | str) -> HelpContract:
+    text = output.decode() if isinstance(output, bytes) else output
+    lines = text.replace("\r\n", "\n").splitlines()
+    usage_index = next((index for index, line in enumerate(lines) if line.startswith("Usage:")), len(lines))
+    description = _clean_help_text(lines[:usage_index])
+    local, inherited = _parse_flags(lines)
+    aliases: set[str] = set()
+    for index, line in enumerate(lines):
+        if line.strip() != "Aliases:":
+            continue
+        for alias_line in lines[index + 1 :]:
+            if not alias_line.strip():
+                break
+            aliases.update(alias.strip() for alias in alias_line.split(","))
+    return HelpContract(description, _parse_usage(path, lines), _parse_subcommands(lines), tuple(sorted(aliases)), local, inherited)
+
+
+def _canonical_flag(flag: FlagContract, command_name: str) -> FlagContract:
+    name = flag.name.removeprefix("--")
+    description = flag.description
+    if name == "help":
+        description = f"help for {command_name}"
+    if name == "json":
+        description = "Output as JSON"
+    return FlagContract(flag.name, flag.short, flag.takes_value, flag.repeatable, flag.default, description)
+
+
+def _effective_flags(contract: HelpContract, root: HelpContract, command_name: str, inherited: dict[str, FlagContract] | None = None) -> dict[str, FlagContract]:
+    flags = dict(inherited or {})
+    flags.update(contract.global_flags)
+    flags.update(contract.flags)
+    if command_name != "symfritz":
+        root_globals = dict(root.global_flags)
+        root_globals.update({name: value for name, value in root.flags.items() if name.removeprefix("--") in {"output", "json"}})
+        for name, flag in root_globals.items():
+            flags.setdefault(name, flag)
+    return {name: _canonical_flag(flag, command_name.rsplit(" ", 1)[-1]) for name, flag in flags.items()}
+
+
+def aliases_for(path: str, contracts: dict[str, HelpContract]) -> tuple[str, ...]:
+    aliases = set(contracts.get(path, HelpContract("", (), {}, (), {}, {})).aliases)
+    if " " in path:
+        parent, name = path.rsplit(" ", 1)
+        aliases.update(contracts.get(parent, HelpContract("", (), {}, (), {}, {})).subcommands.get(name, ("", ()))[1])
+    name = path.rsplit(" ", 1)[-1]
+    aliases.discard(name)
+    return tuple(sorted(aliases))
+
+
+def compare_help_contract(label: str, expected: HelpContract, actual: HelpContract, root_expected: HelpContract, root_actual: HelpContract, path: str, expected_aliases: tuple[str, ...], actual_aliases: tuple[str, ...], expected_contracts: dict[str, HelpContract], actual_contracts: dict[str, HelpContract]) -> None:
+    if expected.description != actual.description:
+        raise AssertionError(f"{label}: long description mismatch Go={expected.description!r} Rust={actual.description!r}")
+    if expected.usage != actual.usage:
+        raise AssertionError(f"{label}: positional usage mismatch Go={expected.usage!r} Rust={actual.usage!r}")
+    expected_commands = {name: description for name, (description, _aliases) in expected.subcommands.items()}
+    actual_commands = {name: description for name, (description, _aliases) in actual.subcommands.items()}
+    if expected_commands != actual_commands:
+        raise AssertionError(f"{label}: subcommands mismatch Go={expected_commands!r} Rust={actual_commands!r}")
+    if expected_aliases != actual_aliases:
+        raise AssertionError(f"{label}: aliases mismatch Go={expected_aliases!r} Rust={actual_aliases!r}")
+    expected_inherited: dict[str, FlagContract] = {}
+    actual_inherited: dict[str, FlagContract] = {}
+    parts = path.split()
+    for index in range(1, len(parts) - 1):
+        ancestor_path = " ".join(parts[:index + 1])
+        expected_ancestor = expected_contracts.get(ancestor_path)
+        actual_ancestor = actual_contracts.get(ancestor_path)
+        for name in expected.global_flags:
+            if expected_ancestor and name in expected_ancestor.flags:
+                expected_inherited[name] = expected_ancestor.flags[name]
+            if actual_ancestor and name in actual_ancestor.flags:
+                actual_inherited[name] = actual_ancestor.flags[name]
+    expected_flags = _effective_flags(expected, root_expected, path, expected_inherited)
+    actual_flags = _effective_flags(actual, root_actual, path, actual_inherited)
+    if expected_flags != actual_flags:
+        raise AssertionError(f"{label}: flags mismatch Go={expected_flags!r} Rust={actual_flags!r}")
 
 
 def private_address() -> str:
@@ -365,16 +585,122 @@ def assert_bytes(label: str, left: Result, right: Result, homes: list[Path] | No
     if values[0] != values[1]: raise AssertionError(f"{label}: exact mismatch Go={values[0]!r} Rust={values[1]!r}")
 
 
+def _semantic_key(key: str) -> str:
+    """Compare model fields by semantic snake_case, not Go/Rust casing."""
+    first = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", key)
+    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", first).lower()
+
+
+def _normalize_structured(value: Any) -> Any:
+    if isinstance(value, dict):
+        normalized = {_semantic_key(key): _normalize_structured(item) for key, item in value.items()}
+        if normalized.get("groups") is None:
+            normalized["groups"] = []
+        return normalized
+    if isinstance(value, list):
+        return [_normalize_structured(item) for item in value]
+    return value
+
+
 def assert_json(label: str, left: Result, right: Result) -> None:
     if left.code != right.code or left.stderr != right.stderr: raise AssertionError(f"{label}: exit/stderr mismatch: {left} != {right}")
     try: lobj, robj = json.loads(left.stdout), json.loads(right.stdout)
     except json.JSONDecodeError as exc: raise AssertionError(f"{label}: non-JSON output Go={left.stdout!r} Rust={right.stdout!r}") from exc
-    def normalize(value: Any) -> Any:
-        if isinstance(value, dict):
-            return {key: ([] if key == "groups" and item is None else normalize(item)) for key, item in value.items()}
-        if isinstance(value, list): return [normalize(item) for item in value]
+    if _normalize_structured(lobj) != _normalize_structured(robj): raise AssertionError(f"{label}: JSON mismatch Go={lobj!r} Rust={robj!r}")
+
+
+def _yaml_scalar(value: str) -> Any:
+    value = value.strip()
+    if value in {"", "null", "~"}:
+        return None
+    if value in {"true", "false"}:
+        return value == "true"
+    if value.startswith("'") and value.endswith("'"):
+        return value[1:-1].replace("''", "'")
+    if value.startswith('"') and value.endswith('"'):
+        return json.loads(value)
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
         return value
-    if normalize(lobj) != normalize(robj): raise AssertionError(f"{label}: JSON mismatch Go={lobj!r} Rust={robj!r}")
+
+
+def parse_minimal_yaml(output: bytes | str) -> Any:
+    text = output.decode() if isinstance(output, bytes) else output
+    rows = [(len(line) - len(line.lstrip(" ")), line.strip()) for line in text.replace("\\r\\n", "\\n").splitlines() if line.strip()]
+    if not rows:
+        raise AssertionError("empty YAML output")
+
+    def block(index: int, indent: int) -> tuple[Any, int]:
+        if index >= len(rows) or rows[index][0] != indent:
+            raise AssertionError("invalid YAML indentation")
+        is_list = rows[index][1].startswith("-")
+        value: Any = [] if is_list else {}
+        while index < len(rows) and rows[index][0] == indent:
+            content = rows[index][1]
+            if is_list:
+                if not content.startswith("-"):
+                    break
+                item = content[1:].strip()
+                index += 1
+                if not item:
+                    if index >= len(rows) or rows[index][0] <= indent:
+                        value.append(None)
+                    else:
+                        child, index = block(index, rows[index][0])
+                        value.append(child)
+                    continue
+                if ":" not in item:
+                    value.append(_yaml_scalar(item))
+                    continue
+                key, raw = item.split(":", 1)
+                key = key.strip()
+                entry: dict[str, Any] = {}
+                if raw.strip():
+                    entry[key] = _yaml_scalar(raw)
+                elif index < len(rows) and rows[index][0] > indent:
+                    entry[key], index = block(index, rows[index][0])
+                else:
+                    entry[key] = None
+                while index < len(rows) and rows[index][0] > indent:
+                    child, next_index = block(index, rows[index][0])
+                    if not isinstance(child, dict):
+                        raise AssertionError("list mapping continuation is not a mapping")
+                    entry.update(child)
+                    index = next_index
+                value.append(entry)
+            else:
+                if content.startswith("-") or ":" not in content:
+                    raise AssertionError("invalid YAML mapping")
+                key, raw = content.split(":", 1)
+                key = key.strip()
+                index += 1
+                if raw.strip():
+                    value[key] = _yaml_scalar(raw)
+                elif index < len(rows) and rows[index][0] > indent:
+                    # The renderer may put an empty collection on the next line
+                    # when it is nested under a mapping key.
+                    if rows[index][1] in {"[]", "{}"}:
+                        value[key] = _yaml_scalar(rows[index][1])
+                        index += 1
+                    else:
+                        value[key], index = block(index, rows[index][0])
+                else:
+                    value[key] = None
+        return value, index
+
+    parsed, index = block(0, rows[0][0])
+    if index != len(rows):
+        raise AssertionError("unsupported YAML document structure")
+    return parsed
+
+
+def assert_yaml(label: str, left: Result, right: Result) -> None:
+    if left.code != right.code or left.stderr != right.stderr:
+        raise AssertionError(f"{label}: exit/stderr mismatch: {left} != {right}")
+    lobj, robj = parse_minimal_yaml(left.stdout), parse_minimal_yaml(right.stdout)
+    if _normalize_structured(lobj) != _normalize_structured(robj):
+        raise AssertionError(f"{label}: YAML mismatch Go={lobj!r} Rust={robj!r}")
 
 
 def assert_help(label: str, left: Result, right: Result) -> None:
@@ -406,6 +732,7 @@ def run_pair(server: StrictFakeBox, label: str, go: str, rust: str, args: list[s
     )
     if not requests_match: raise AssertionError(f"{label}: request/argument mismatch Go={go_requests!r} Rust={rust_requests!r}")
     if kind == "json": assert_json(label, left, right)
+    elif kind == "yaml": assert_yaml(label, left, right)
     else: assert_bytes(label, left, right)
     print(f"PASS {label}")
 
@@ -491,12 +818,40 @@ def run_suite(go: str, rust: str, root: Path) -> None:
     PRIVATE_IP = private_address()
     server = StrictFakeBox(("0.0.0.0", PORT), PRIVATE_IP); thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
     try:
+        fixture_data = json.loads((root / "testdata/port/cli/command-contracts.json").read_text())
+        command_cases = {case["path"]: case for case in fixture_data["commands"]}
+        if len(command_cases) != 49:
+            raise AssertionError(f"fixture command count changed: {len(command_cases)}")
+        go_contracts: dict[str, HelpContract] = {}
+        rust_contracts: dict[str, HelpContract] = {}
+        for path, case in command_cases.items():
+            left = run(go, case["help_args"])
+            right = run(rust, case["help_args"])
+            if left.code != 0 or right.code != 0 or left.stderr or right.stderr:
+                raise AssertionError(f"help-{path}: command failed")
+            fixture_contract = parse_help(path, case["stdout"])
+            go_contracts[path] = parse_help(path, left.stdout)
+            rust_contracts[path] = parse_help(path, right.stdout)
+            if go_contracts[path] != fixture_contract:
+                raise AssertionError(f"help-{path}: committed Go oracle drifted")
+            print(f"PASS help-{path}")
+        root_go = go_contracts["symfritz"]
+        root_rust = rust_contracts["symfritz"]
+        for path in command_cases:
+            compare_help_contract(
+                f"help-{path}",
+                go_contracts[path],
+                rust_contracts[path],
+                root_go,
+                root_rust,
+                path,
+                aliases_for(path, go_contracts),
+                aliases_for(path, rust_contracts),
+                go_contracts,
+                rust_contracts,
+            )
+        print("PASS help-contracts-49")
         families = ["auth", "call", "calls", "completion", "config", "detect", "diagnose", "dial", "doctor", "dsl", "hangup", "help", "home", "hosts", "log", "mesh", "reboot", "scrape", "services", "status", "traffic", "version", "wlan", "wol"]
-        for family in families:
-            assert_help(f"help-{family}", run(go, ["help", family]), run(rust, ["help", family])); print(f"PASS help-{family}")
-        reference_inventory = cli_inventory(go, families)
-        candidate_inventory = cli_inventory(rust, families)
-        if reference_inventory != candidate_inventory: raise AssertionError(f"CLI completion inventory mismatch: Go={reference_inventory!r} Rust={candidate_inventory!r}")
         for shell in ("bash", "fish", "powershell", "zsh"):
             left, right = run(go, ["completion", shell]), run(rust, ["completion", shell])
             if left.code != right.code or left.stderr != right.stderr or not completion_markers(shell, left.stdout) or not completion_markers(shell, right.stdout): raise AssertionError(f"completion-{shell}: output/marker mismatch")
@@ -524,21 +879,89 @@ def run_suite(go: str, rust: str, root: Path) -> None:
         run_pair(server, "mesh-path-and-sid", go, rust, ["mesh", "--output", "json"], kind="json")
         run_pair(server, "home-list-aha", go, rust, ["home", "list", "--output", "json"], kind="json")
         run_pair(server, "home-list-tr064", go, rust, ["home", "list", "--tr064", "--output", "json"], kind="json")
+        yaml_cases = [
+            ("status-yaml", ["status", "--output", "yaml"], None, False),
+            ("hosts-yaml", ["hosts", "list", "--output", "yaml"], None, False),
+            ("wlan-radios-yaml", ["wlan", "radios", "--output", "yaml"], None, False),
+            ("wlan-clients-yaml", ["wlan", "clients", "--output", "yaml"], None, True),
+            ("dsl-yaml", ["dsl", "--output", "yaml"], None, False),
+            ("calls-yaml", ["calls", "--output", "yaml"], None, False),
+            ("log-yaml", ["log", "--output", "yaml"], None, False),
+            ("traffic-yaml", ["traffic", "--output", "yaml"], None, False),
+            ("diagnose-yaml", ["diagnose", PRIVATE_IP, "--port", str(PORT), "--output", "yaml"], None, False),
+            ("mesh-yaml", ["mesh", "--output", "yaml"], None, False),
+            ("home-list-yaml", ["home", "list", "--output", "yaml"], None, False),
+            ("home-list-tr064-yaml", ["home", "list", "--tr064", "--output", "yaml"], None, False),
+            ("raw-call-yaml", ["call", "deviceinfo", "GetInfo", "--output", "yaml"], None, False),
+            ("services-yaml", ["services", "--output", "yaml"], None, False),
+        ]
+        for label, args, expected, unordered in yaml_cases:
+            run_pair(server, label, go, rust, args, kind="yaml", expected=expected, unordered_requests=unordered)
         run_pair(server, "scrape-data-lua", go, rust, ["scrape", "netDev", "foo=bar"], expected=[("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("POST", "/data.lua", "")])
         run_pair(server, "auth-test-http", go, rust, ["auth", "test"], expected=[("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("POST", "/upnp/control/deviceinfo", "GetInfo")])
         mutations = [("wol", ["wol", "--mac", MAC], [("POST", "/upnp/control/hosts", "X_AVM-DE_WakeOnLANByMACAddress")]), ("dial", ["dial", "123"], [("POST", "/upnp/control/x_voip", "X_AVM-DE_DialNumber")]), ("hangup", ["hangup"], [("POST", "/upnp/control/x_voip", "X_AVM-DE_DialHangup")]), ("guest-on", ["wlan", "guest", "on"], [("POST", "/upnp/control/wlanconfig3", "SetEnable")]), ("guest-off", ["wlan", "guest", "off"], [("POST", "/upnp/control/wlanconfig3", "SetEnable")]), ("home-switch-on", ["home", "switch", AIN, "on"], [("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("GET", "/webservices/homeautoswitch.lua", "setswitchon")]), ("home-temp", ["home", "temp", AIN, "20.5"], [("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("GET", "/webservices/homeautoswitch.lua", "sethkrtsoll")]), ("home-switch-tr064", ["home", "switch", AIN, "on", "--tr064"], [("POST", "/upnp/control/x_homeauto", "SetSwitch")]), ("reboot-confirmed", ["reboot", "--yes"], [("POST", "/upnp/control/deviceconfig", "Reboot")])]
         for label, args, expected in mutations: run_pair(server, label, go, rust, args, expected=expected)
         config_init_pair(go, rust, False, False); config_init_pair(go, rust, False, True); config_init_pair(go, rust, True, True)
         run_auth_store_pair(go, rust)
+        noauth_left = run(go, ["auth", "test", "--output", "json"])
+        noauth_right = run(rust, ["auth", "test", "--output", "json"])
+        if noauth_left.code != 3 or noauth_right.code != 3:
+            raise AssertionError(f"missing credential must exit 3: {noauth_left.code}, {noauth_right.code}")
+        assert_json("auth-missing-credential", noauth_left, noauth_right)
+        print("PASS auth-missing-credential")
+
+        server.reset()
+        server.reject_auth = True
+        unauthorized_left = run(go, ["auth", "test", "--output", "json"], fake=True)
+        assert_server(server, "auth unauthorized Go")
+        server.reset()
+        server.reject_auth = True
+        unauthorized_right = run(rust, ["auth", "test", "--output", "json"], fake=True)
+        assert_server(server, "auth unauthorized Rust")
+        if unauthorized_left.code != 3 or unauthorized_right.code != 3:
+            raise AssertionError(f"unauthorized must exit 3: {unauthorized_left.code}, {unauthorized_right.code}")
+        assert_bytes("auth-unauthorized", unauthorized_left, unauthorized_right)
+        print("PASS auth-unauthorized")
         if os.name != "nt":
-            # SIGINT must flush at least one equivalent NDJSON snapshot and use 130.
+            # SIGINT must flush at least two equivalent NDJSON snapshots, use 130,
+            # and stop issuing requests after a short cancellation grace period.
             def watch(binary: str) -> Result:
-                temp = tempfile.TemporaryDirectory(prefix="symfritz-watch-"); home = Path(temp.name)
-                for name in ("tmp", "config", "cache", "data"): (home / name).mkdir()
-                process = subprocess.Popen([binary, "traffic", "--watch", "--output", "json", "--interval", "10ms"], cwd=home, env=environment(home, fake=True), stdout=subprocess.PIPE, stderr=subprocess.PIPE); time.sleep(0.35); process.send_signal(signal.SIGINT); out, err = process.communicate(timeout=4); temp.cleanup(); return Result(process.returncode, out, err)
-            server.reset(); left, right = watch(go), watch(rust)
+                server.reset()
+                temp = tempfile.TemporaryDirectory(prefix="symfritz-watch-")
+                home = Path(temp.name)
+                for name in ("tmp", "config", "cache", "data"):
+                    (home / name).mkdir()
+                started = time.monotonic()
+                process = subprocess.Popen(
+                    [binary, "traffic", "--watch", "--output", "json", "--interval", "10ms"],
+                    cwd=home,
+                    env=environment(home, fake=True),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                time.sleep(0.35)
+                process.send_signal(signal.SIGINT)
+                out, err = process.communicate(timeout=4)
+                elapsed = time.monotonic() - started
+                request_count = len(server.requests)
+                time.sleep(0.15)
+                if len(server.requests) != request_count:
+                    raise AssertionError(f"traffic watch {binary}: requests continued after cancellation grace")
+                temp.cleanup()
+                if elapsed > 4.5:
+                    raise AssertionError(f"traffic watch {binary}: shutdown exceeded bound")
+                return Result(process.returncode, out, err)
+
+            left, right = watch(go), watch(rust)
             left_lines, right_lines = left.stdout.splitlines(), right.stdout.splitlines()
-            if left.code != 130 or right.code != 130 or not left_lines or not right_lines or left.stderr != right.stderr:
+            if (
+                left.code != 130
+                or right.code != 130
+                or len(left_lines) < 2
+                or len(right_lines) < 2
+                or left.stderr != b""
+                or right.stderr != b""
+            ):
                 raise AssertionError("traffic watch cancellation mismatch")
             try:
                 left_snapshots = [json.loads(line) for line in left_lines]
@@ -547,8 +970,12 @@ def run_suite(go: str, rust: str, root: Path) -> None:
                 raise AssertionError("traffic watch emitted invalid NDJSON") from exc
             if any(not isinstance(snapshot, dict) for snapshot in left_snapshots + right_snapshots):
                 raise AssertionError("traffic watch emitted a non-object snapshot")
-            if left_snapshots[-1] != right_snapshots[-1]:
-                raise AssertionError("traffic watch final snapshot mismatch")
+            expected_snapshot = _normalize_structured(left_snapshots[0])
+            if any(
+                _normalize_structured(snapshot) != expected_snapshot
+                for snapshot in left_snapshots + right_snapshots
+            ):
+                raise AssertionError("traffic watch corresponding snapshots mismatch")
             print("PASS traffic-watch-json-cancel")
         for case in parse_validation(root):
             args = [str(value) for value in case["args"]]; assert_bytes(str(case["id"]), run(go, args), run(rust, args)); print(f"PASS {case['id']}")

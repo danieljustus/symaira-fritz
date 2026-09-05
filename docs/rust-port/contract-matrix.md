@@ -13,8 +13,8 @@ fixtures; **FROZEN** is covered by the Go oracle but has no Rust implementation;
 | CLI-005 | Output errors | invalid and conflicting formats | Go binary | exit 9; exact stderr | same | all | bytes | PASS |
 | CLI-006 | Command tree | every command in `docs/cli.md` | `make docs` / `--help` | names, aliases, flags, defaults, inherited flags | `tests/cli_contract.rs` + `scripts/cli-differential.py` | all | semantic inventory/help | PASS |
 | CLI-007 | Argument validation | missing/excess args per command | Go binary | deterministic parse exit/stream behavior | `tests/cli_contract.rs` + `scripts/cli-differential.py` | all | exit/stream semantics | PASS |
-| CLI-008 | Structured output | traffic fake-box success in text/JSON/YAML and watch NDJSON | Go binary + local fake HTTP | snake_case, omission, stable values, append/flush | `scripts/cli-differential.py` | macOS/Linux | text bytes; structured semantic | PASS |
-| CLI-009 | Error taxonomy | output/config/transport/confirmation failures | Go binary | exit codes 1/9, stream and structured error shape | `scripts/cli-differential.py` | all | bytes where stable | PASS |
+| CLI-008 | Structured output | strict fake-box success across typed/raw/web handlers in text/JSON/YAML plus watch NDJSON | Go binary + local fake HTTP | field names, omission, stable values, append/flush | `scripts/cli-differential.py` | all; signal leg macOS/Linux | text bytes; structured semantic | PASS |
+| CLI-009 | Error taxonomy | output/config/auth/transport/confirmation failures | Go binary | exit codes 1/3/9, stream and structured error shape | `scripts/cli-differential.py` | all | bytes/structured semantic | PASS |
 | CLI-010 | Signals | SIGINT during traffic watch | Go binary | flushed output and exit 130 | `scripts/cli-differential.py` | macOS/Linux | semantic | PASS |
 
 | CFG-001 | Defaults | no file/env and timeout matrix | Go loader via generated fixture | host, TLS and 15 s timeout defaults | `symfritz-core/tests/config_fixtures.rs` | all | semantic | PASS |

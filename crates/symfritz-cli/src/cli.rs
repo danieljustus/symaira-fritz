@@ -33,12 +33,7 @@ pub struct Cli {
     )]
     pub json: bool,
 
-    #[arg(
-        short = 'v',
-        long = "version",
-        global = true,
-        help = "version for symfritz"
-    )]
+    #[arg(short = 'v', long = "version", help = "version for symfritz")]
     pub show_version: bool,
 
     #[command(subcommand)]
@@ -47,7 +42,10 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    #[command(about = "Manage FRITZ!Box credentials (test, login, store)")]
+    #[command(
+        about = "Manage FRITZ!Box credentials (test, login, store)",
+        long_about = "Resolve, verify, and store the FRITZ!Box password.\n\nResolution order: SYMFRITZ_PASSWORD env → symvault (password_ref) → macOS\nKeychain → plaintext config. 'auth login' captures the password once, verifies\nit against the box, and stores it in the Keychain or symvault so nothing sits in\na dotfile."
+    )]
     Auth(AuthCommand),
     #[command(
         about = "Invoke a raw TR-064 action (power user)",
@@ -56,7 +54,10 @@ pub enum Command {
     Call(CallArgs),
     #[command(about = "Show FRITZ!Box call list")]
     Calls(CallsArgs),
-    #[command(about = "Generate the autocompletion script for the specified shell")]
+    #[command(
+        about = "Generate the autocompletion script for the specified shell",
+        long_about = "Generate the autocompletion script for symfritz for the specified shell.\nSee each sub-command's help for details on how to use the generated script."
+    )]
     #[command(subcommand)]
     Completion(CompletionCommand),
     #[command(about = "Manage symfritz configuration")]
@@ -69,7 +70,8 @@ pub enum Command {
     Detect(FormatArgs),
     #[command(
         about = "End-to-end reachability check for a host (name, MAC, or IP)",
-        long_about = "Diagnose resolves a host via the FRITZ!Box host table, then checks it\nend-to-end from this machine: is it known, active, on LAN or WLAN, does its name\nresolve via DNS, and are the relevant TCP ports reachable.\n\nDefault ports probed: 22 (SSH), 5900 (VNC/Screen Sharing), 8001 (Paperless).\nOverride with --port (repeatable)."
+        long_about = "Diagnose resolves a host via the FRITZ!Box host table, then checks it\nend-to-end from this machine: is it known, active, on LAN or WLAN, does its name\nresolve via DNS, and are the relevant TCP ports reachable.\n\nDefault ports probed: 22 (SSH), 5900 (VNC/Screen Sharing), 8001 (Paperless).\nOverride with --port (repeatable).",
+        override_usage = "symfritz diagnose <host> [flags]\n  symfritz diagnose [command]"
     )]
     Diagnose(DiagnoseArgs),
     #[command(about = "Instruct the FRITZ!Box to dial a phone number")]
@@ -83,7 +85,11 @@ pub enum Command {
     Dsl(FormatArgs),
     #[command(about = "Hang up any active call initiated by dial")]
     Hangup,
-    #[command(about = "Help about any command")]
+    #[command(
+        about = "Help about any command",
+        long_about = "Help provides help for any command in the application.\nSimply type symfritz help [path to command] for full details.",
+        override_usage = "symfritz help [command] [flags]"
+    )]
     Help(HelpArgs),
     #[command(about = "DECT smart-home actors (switches, thermostats)")]
     #[command(subcommand)]
@@ -132,6 +138,10 @@ pub enum Command {
 }
 
 #[derive(Debug, Args)]
+#[command(
+    about = "Resolve, verify, and store the FRITZ!Box password.",
+    long_about = "Resolve, verify, and store the FRITZ!Box password.\n\nResolution order: SYMFRITZ_PASSWORD env → symvault (password_ref) → macOS\nKeychain → plaintext config. 'auth login' captures the password once, verifies\nit against the box, and stores it in the Keychain or symvault so nothing sits in\na dotfile."
+)]
 pub struct AuthCommand {
     #[command(subcommand)]
     pub command: Option<AuthSubcommand>,
@@ -140,7 +150,7 @@ pub struct AuthCommand {
 #[derive(Debug, Subcommand)]
 pub enum AuthSubcommand {
     #[command(about = "Prompt for the password, verify it, and store it securely")]
-    Login(AuthStoreArgs),
+    Login(AuthLoginArgs),
     #[command(about = "Store a password (from prompt or SYMFRITZ_PASSWORD) without verifying")]
     Store(AuthStoreArgs),
     #[command(about = "Resolve the password and verify it against the box")]
@@ -153,7 +163,7 @@ pub enum AuthSubcommand {
 }
 
 #[derive(Debug, Args)]
-pub struct AuthStoreArgs {
+pub struct AuthLoginArgs {
     #[arg(long, help = "Store in the macOS Keychain (default on macOS)")]
     pub keychain: bool,
     #[arg(
@@ -161,6 +171,23 @@ pub struct AuthStoreArgs {
         help = "Store in symvault at this entry path (e.g. fritz.password)"
     )]
     pub symvault: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct AuthStoreArgs {
+    #[arg(long, help = "Store in the macOS Keychain (default on macOS)")]
+    pub keychain: bool,
+    #[arg(long, help = "Store in symvault at this entry path")]
+    pub symvault: Option<String>,
+}
+
+impl From<AuthLoginArgs> for AuthStoreArgs {
+    fn from(args: AuthLoginArgs) -> Self {
+        Self {
+            keychain: args.keychain,
+            symvault: args.symvault,
+        }
+    }
 }
 
 #[derive(Debug, Args)]
@@ -187,7 +214,7 @@ pub struct CallArgs {
 #[derive(Debug, Args)]
 pub struct CallsArgs {
     #[arg(
-        long,
+        long = "type",
         default_value = "all",
         help = "Filter by type (incoming, missed, outgoing, rejected, all)"
     )]
@@ -200,13 +227,25 @@ pub struct CallsArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum CompletionCommand {
-    #[command(about = "Generate the autocompletion script for bash")]
+    #[command(
+        about = "Generate the autocompletion script for bash",
+        long_about = "Generate the autocompletion script for the bash shell.\n\nThis script depends on the 'bash-completion' package.\nIf it is not installed already, you can install it via your OS's package manager.\n\nTo load completions in your current shell session:\n\n\tsource <(symfritz completion bash)\n\nTo load completions for every new session, execute once:\n\n#### Linux:\n\n\tsymfritz completion bash > /etc/bash_completion.d/symfritz\n\n#### macOS:\n\n\tsymfritz completion bash > $(brew --prefix)/etc/bash_completion.d/symfritz\n\nYou will need to start a new shell for this setup to take effect."
+    )]
     Bash(CompletionArgs),
-    #[command(about = "Generate the autocompletion script for fish")]
+    #[command(
+        about = "Generate the autocompletion script for fish",
+        long_about = "Generate the autocompletion script for the fish shell.\n\nTo load completions in your current shell session:\n\n\tsymfritz completion fish | source\n\nTo load completions for every new session, execute once:\n\n\tsymfritz completion fish > ~/.config/fish/completions/symfritz.fish\n\nYou will need to start a new shell for this setup to take effect."
+    )]
     Fish(CompletionArgs),
-    #[command(about = "Generate the autocompletion script for powershell")]
+    #[command(
+        about = "Generate the autocompletion script for powershell",
+        long_about = "Generate the autocompletion script for powershell.\n\nTo load completions in your current shell session:\n\n\tsymfritz completion powershell | Out-String | Invoke-Expression\n\nTo load completions for every new session, add the output of the above command\nto your powershell profile."
+    )]
     Powershell(CompletionArgs),
-    #[command(about = "Generate the autocompletion script for zsh")]
+    #[command(
+        about = "Generate the autocompletion script for zsh",
+        long_about = "Generate the autocompletion script for the zsh shell.\n\nIf shell completion is not already enabled in your environment you will need\nto enable it.  You can execute the following once:\n\n\techo \"autoload -U compinit; compinit\" >> ~/.zshrc\n\nTo load completions in your current shell session:\n\n\tsource <(symfritz completion zsh)\n\nTo load completions for every new session, execute once:\n\n#### Linux:\n\n\tsymfritz completion zsh > \"${fpath[1]}/_symfritz\"\n\n#### macOS:\n\n\tsymfritz completion zsh > $(brew --prefix)/share/zsh/site-functions/_symfritz\n\nYou will need to start a new shell for this setup to take effect."
+    )]
     Zsh(CompletionArgs),
 }
 
@@ -218,7 +257,10 @@ pub struct CompletionArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum ConfigCommand {
-    #[command(about = "Detect the local FRITZ!Box on the network")]
+    #[command(
+        about = "Detect the local FRITZ!Box on the network",
+        long_about = "Detect attempts to find a FRITZ!Box on the local network by:\n  1. Checking if the configured host resolves to a private IP\n  2. Probing the system default gateway\n  3. Trying common FRITZ!Box default IPs\n\nThis is useful when 'fritz.box' resolves to a public IP instead of your local\nFRITZ!Box, causing connection timeouts."
+    )]
     Detect(FormatArgs),
     #[command(about = "Write default config to ~/.config/symfritz/config.toml")]
     Init(InitArgs),
@@ -234,6 +276,7 @@ pub struct InitArgs {
 pub struct FormatArgs {}
 
 #[derive(Debug, Args)]
+#[command(override_usage = "symfritz diagnose <host> [flags]\n  symfritz diagnose [command]")]
 pub struct DiagnoseArgs {
     #[arg(value_name = "host")]
     pub host: Option<String>,

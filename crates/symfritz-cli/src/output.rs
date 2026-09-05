@@ -99,9 +99,28 @@ fn is_plain_yaml_string(value: &str) -> bool {
         && !value.starts_with([
             '-', '?', '!', '*', '&', '|', '>', '@', '`', '{', '}', '[', ']', ',', '%', '\"', '\'',
         ])
-        && value != "null"
-        && value != "true"
-        && value != "false"
+        && !matches!(
+            value,
+            "null" | "Null" | "NULL" | "~" | "true" | "True" | "TRUE" | "false" | "False" | "FALSE"
+        )
+        && !is_yaml_number(value)
+}
+
+fn is_yaml_number(value: &str) -> bool {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let digits = match trimmed.as_bytes().first() {
+        Some(b'+') | Some(b'-') => &trimmed[1..],
+        _ => trimmed,
+    };
+    if digits.is_empty() {
+        return false;
+    }
+    digits.parse::<i64>().is_ok()
+        || digits.parse::<f64>().is_ok()
+        || (digits.starts_with("0x") && u64::from_str_radix(&digits[2..], 16).is_ok())
 }
 
 fn write_indent(output: &mut String, indent: usize) {
