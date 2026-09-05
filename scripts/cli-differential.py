@@ -454,7 +454,7 @@ def parse_help(path: str, output: bytes | str) -> HelpContract:
     # Windows console rendering preserves some non-ASCII clap text as JSON-style
     # Unicode escapes. Normalize that representation before semantic comparison.
     text = re.sub(
-        r"\\u([0-9a-fA-F]{4})",
+        r"\u([0-9a-fA-F]{4})",
         lambda match: chr(int(match.group(1), 16)),
         text,
     )
