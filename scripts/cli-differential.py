@@ -783,21 +783,34 @@ def config_init_pair(go: str, rust: str, force: bool, existing: bool) -> None:
 
 
 def mock_symvault(directory: Path, metadata: Path) -> None:
-    script = directory / "symvault"
-    script.write_text(f"#!{sys.executable}\nimport json,sys\npayload=sys.stdin.buffer.read()\nwith open(sys.argv[0] + '.meta','a') as f: json.dump({{'args':sys.argv[1:],'length':len(payload),'newline':payload.endswith(b'\\n')}},f); f.write('\\n')\n")
-    script.chmod(0o755)
-    script.with_name("symvault.meta").write_text("")
-    # The metadata file is read through this stable path after each run.
-    _ = metadata
+    metadata.write_text("")
+    helper = directory / "symvault.py"
+    helper.write_text(
+        "import json,sys\n"
+        "payload=sys.stdin.buffer.read()\n"
+        f"with open({str(metadata)!r},'a') as f:\n"
+        " json.dump({'args':sys.argv[1:],'length':len(payload),'newline':payload.endswith(b'\\n')},f)\n"
+        " f.write('\\n')\n"
+    )
+    if os.name == "nt":
+        (directory / "symvault.cmd").write_text(
+            f'@"{sys.executable}" "%~dp0symvault.py" %*\r\n'
+        )
+    else:
+        script = directory / "symvault"
+        script.write_text(f"#!{sys.executable}\nexec(compile(open({str(helper)!r}).read(), {str(helper)!r}, 'exec'))\n")
+        script.chmod(0o755)
 
 
 def run_auth_store_pair(go: str, rust: str) -> None:
     with tempfile.TemporaryDirectory(prefix="symfritz-vault-mock-") as raw:
-        directory = Path(raw); mock_symvault(directory, directory / "metadata")
+        directory = Path(raw)
+        metadata = directory / "symvault.meta"
+        mock_symvault(directory, metadata)
         left = run(go, ["auth", "store", "--symvault", "fritz.password"], fake=True, path_prefix=directory)
         right = run(rust, ["auth", "store", "--symvault", "fritz.password"], fake=True, path_prefix=directory)
         assert_bytes("auth-store-symvault", left, right)
-        records = [json.loads(line) for line in (directory / "symvault.meta").read_text().splitlines() if line]
+        records = [json.loads(line) for line in metadata.read_text().splitlines() if line]
         if len(records) != 2 or any(record != {"args": ["set", "fritz.password", "--stdin-value"], "length": len(PASSWORD) + 1, "newline": True} for record in records): raise AssertionError(f"auth store mock metadata mismatch: {records!r}")
         if PASSWORD.encode() in left.stdout + left.stderr + right.stdout + right.stderr: raise AssertionError("auth store leaked password")
         print("PASS auth-store-symvault")
