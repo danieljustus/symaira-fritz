@@ -242,62 +242,33 @@ impl<C: Capabilities + 'static> Server<C> {
     pub fn serve_io<R: Read, W: Write + Send>(&self, reader: R, writer: W) -> io::Result<()> {
         let mut reader = BufReader::new(reader);
         let writer = Arc::new(Mutex::new(writer));
-        thread::scope(|scope| {
-            let mut workers: Vec<std::thread::ScopedJoinHandle<'_, ()>> = Vec::new();
-            loop {
-                let (request, mode) = match read_request(&mut reader) {
-                    Ok(value) => value,
-                    Err(ReadError::Eof) => break,
-                    Err(ReadError::Parse { message, mode }) => {
-                        for worker in workers.drain(..) {
-                            let _ = worker.join();
-                        }
-                        send_error(
-                            &writer,
-                            mode,
-                            None,
-                            CODE_PARSE_ERROR,
-                            &format!("Parse error: {message}"),
-                        );
-                        continue;
-                    }
-                    Err(ReadError::Io(error)) => return Err(error),
-                };
-
-                if request.method == "tools/call" {
-                    let server = self.capabilities.clone();
-                    let writer = writer.clone();
-                    let name = self.name.clone();
-                    let version = self.version.clone();
-                    let instructions = self.instructions.clone();
-                    workers.push(scope.spawn(move || {
-                        handle_request(
-                            &server,
-                            &writer,
-                            mode,
-                            request,
-                            &name,
-                            &version,
-                            &instructions,
-                        )
-                    }));
-                } else {
-                    handle_request(
-                        &self.capabilities,
+        loop {
+            let (request, mode) = match read_request(&mut reader) {
+                Ok(value) => value,
+                Err(ReadError::Eof) => break,
+                Err(ReadError::Parse { message, mode }) => {
+                    send_error(
                         &writer,
                         mode,
-                        request,
-                        &self.name,
-                        &self.version,
-                        &self.instructions,
+                        None,
+                        CODE_PARSE_ERROR,
+                        &format!("Parse error: {message}"),
                     );
+                    continue;
                 }
-            }
-            for worker in workers {
-                let _ = worker.join();
-            }
-            Ok(())
-        })
+                Err(ReadError::Io(error)) => return Err(error),
+            };
+            handle_request(
+                &self.capabilities,
+                &writer,
+                mode,
+                request,
+                &self.name,
+                &self.version,
+                &self.instructions,
+            );
+        }
+        Ok(())
     }
 
     /// Run the protocol with an isolated reader and a fixed worker pool.
