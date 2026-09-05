@@ -19,6 +19,12 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
         self.assertIn("CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc", WORKFLOW_TEXT)
         self.assertIn("if: matrix.os == 'linux' && matrix.arch == 'arm64'", WORKFLOW_TEXT)
 
+    def test_cross_targets_are_packaged_without_execution(self) -> None:
+        self.assertEqual(WORKFLOW_TEXT.count("runtime_validation: false"), 2)
+        self.assertEqual(WORKFLOW_TEXT.count("runtime_validation: true"), 4)
+        self.assertIn('--runtime-validation "$RUNTIME_VALIDATION"', WORKFLOW_TEXT)
+        self.assertNotIn("validation_args=()", WORKFLOW_TEXT)
+
     def test_artifact_actions_are_immutable_and_never_empty(self) -> None:
         self.assertIn("actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4", WORKFLOW_TEXT)
         self.assertIn("actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4", WORKFLOW_TEXT)
