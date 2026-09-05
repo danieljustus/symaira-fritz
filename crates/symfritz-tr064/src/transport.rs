@@ -678,17 +678,15 @@ fn read_chunked_body<S: Read>(
         let mut chunk = vec![0_u8; keep];
         read_exact_deadline(stream, &mut chunk, url, deadline)?;
         body.extend_from_slice(&chunk);
-        let mut discard = vec![0_u8; size.saturating_sub(keep)];
-        read_exact_deadline(stream, &mut discard, url, deadline)?;
+        if keep < size || body.len() == limit {
+            return Ok(body);
+        }
         let terminator = read_line(stream, url, deadline)?;
         if !terminator.is_empty() {
             return Err(HttpTransportError::Request {
                 url: redact_url(url),
                 message: "chunk terminator is malformed".to_owned(),
             });
-        }
-        if body.len() == limit {
-            return Ok(body);
         }
     }
 }
@@ -1103,6 +1101,20 @@ mod tests {
                 assert!(result.is_err());
             }
         }
+    }
+
+    #[test]
+    fn oversized_chunk_stops_at_response_limit_without_discard_allocation() {
+        let url = Url::parse("https://fritz.box:49443/health").unwrap();
+        let mut input = io::Cursor::new(b"ffffffffffffffff\r\n0123456789abcdef".as_slice());
+        let body = read_chunked_body(
+            &mut input,
+            16,
+            &url,
+            Instant::now() + Duration::from_secs(1),
+        )
+        .unwrap();
+        assert_eq!(body, b"0123456789abcdef");
     }
 
     #[test]

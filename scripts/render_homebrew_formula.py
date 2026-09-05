@@ -36,7 +36,7 @@ def formula(version: str, release_url: str, digest: dict[str, str]) -> str:
     def block_header(os_name: str) -> str:
         return "on_macos do" if os_name == "darwin" else "on_linux do"
 
-    return f'''# typed: false
+    return f'''# typed: strict
 # frozen_string_literal: true
 
 # Generated from the dual-binary release archive. Do not edit manually.

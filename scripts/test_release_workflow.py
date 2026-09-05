@@ -69,13 +69,16 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
         self.assertIn("sha256sum -c checksums.txt", WORKFLOW_TEXT)
 
     def test_homebrew_readback_and_smoke_are_explicit(self) -> None:
+        renderer = (ROOT / "scripts" / "render_homebrew_formula.py").read_text()
         self.assertIn("verify_homebrew_formula.py", WORKFLOW_TEXT)
         self.assertIn("brew style", WORKFLOW_TEXT)
         self.assertIn("brew install --formula", WORKFLOW_TEXT)
         self.assertIn("cmp -- \"$formula\" \"$remote_formula\"", WORKFLOW_TEXT)
         self.assertIn('symfritz version', WORKFLOW_TEXT)
         self.assertIn('symfritz-go version', WORKFLOW_TEXT)
-        self.assertIn('version "{version}"', (ROOT / "scripts" / "render_homebrew_formula.py").read_text())
+        self.assertIn('version "{version}"', renderer)
+        self.assertIn("# typed: strict", renderer)
+        self.assertNotIn("# typed: false", renderer)
 
     def test_macos_signing_remains_fail_closed(self) -> None:
         self.assertIn("Refusing an unsigned or unnotarized release.", WORKFLOW_TEXT)
