@@ -103,8 +103,9 @@ operator has intentionally verified the box certificate.
 
 The real-router smoke/replay interface is `scripts/live_smoke.py`. It writes
 only exit status and timing to its report; it never captures command output or
-credentials. Live evidence remains **PENDING** until the parent runs the
-sanitized smoke against an actual router.
+credentials. The sanitized live run is recorded in
+`live-smoke-20260905.json`; no router identifiers or command output were
+persisted.
 
 ## Value gate
 
@@ -129,8 +130,10 @@ that run; no numbers are inferred or copied from a debug build.
 - DIST executable snapshot: **PASS** only after `release_snapshot.py` builds
   both binaries, packages the host archive, validates contents, and confirms
   version/config compatibility.
-- DIST release trust chain: **PENDING** until a tag workflow verifies signed,
-  notarized, SBOM-bearing public assets and Homebrew read-back.
+- DIST release trust chain: **PASS** for v0.7.0. Six signed dual-binary
+  archives, six CycloneDX SBOMs, the manifest, and checksums were downloaded
+  and verified; the remote Homebrew Formula installed both `symfritz` and
+  `symfritz-go`, which each reported version 0.7.0.
 - LIVE router smoke: **PASS** for the sanitized read-only Go↔Rust run recorded
   in `live-smoke-20260905.json`; no command output or router identifiers were
   persisted.

@@ -55,6 +55,19 @@ binaries as black boxes.
 9. Config and pin-store paths, modes, overwrite behavior, and precedence are
    observable contracts.
 
+### TLS identity model
+
+FRITZ!Box HTTPS identity is deliberately **pin-only TOFU**, not Web-PKI
+hostname/SAN validation. The router commonly presents a self-signed certificate,
+and operators may connect through `fritz.box`, a private IP address, or a local
+alias that is not present in that certificate. The compensating boundary is
+strict: the configured origin must resolve exclusively to private/local
+addresses, those resolved addresses are bound to the socket to prevent DNS
+rebinding, the SPKI pin is stored under the configured host immediately after
+the first completed TLS handshake and before HTTP bytes are sent, and every
+later mismatch fails closed without plaintext fallback. `insecure_tls` disables
+this pin check only through an explicit user configuration choice.
+
 ## Cutover and rollback
 
 During prerelease, publish the Rust candidate without replacing `symfritz`.
