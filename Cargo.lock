@@ -1380,6 +1380,7 @@ dependencies = [
  "serde_json",
  "symfritz-aha",
  "symfritz-core",
+ "symfritz-mcp",
  "symfritz-tr064",
  "url",
 ]
@@ -1398,6 +1399,14 @@ dependencies = [
  "sha2",
  "toml",
  "x509-parser",
+]
+
+[[package]]
+name = "symfritz-mcp"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

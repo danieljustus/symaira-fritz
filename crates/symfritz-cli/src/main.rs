@@ -32,6 +32,7 @@ use symfritz_core::{
     config::{BoxConfig, Config, ConfigError},
     secret::{CredentialSource, SecretError, SecretOptions, resolve},
 };
+use symfritz_mcp::{Capabilities as McpCapabilities, Server as McpServer};
 use symfritz_tr064::{
     BlockingHttpTransport, Call as TrCall, Client as Tr064Client, CnonceSource, Diagnosis,
     DslLineStats, ErrorKind, Host, HttpTransportConfig, LogEvent, Radio, Service, Status,
@@ -276,6 +277,7 @@ fn execute(cli: Cli, format: OutputFormat) -> Result<(), HandlerError> {
         Some(Command::Config(ConfigCommand::Init(args))) => execute_config_init(args),
         Some(Command::Diagnose(args)) => execute_diagnose(args, format),
         Some(Command::Doctor) => execute_doctor(format),
+        Some(Command::Mcp) => execute_mcp(),
         Some(Command::Mesh(_)) => execute_mesh(format),
         Some(Command::Home(command)) => execute_home(command, format),
         Some(Command::Dial(args)) => execute_dial(args),
@@ -285,10 +287,6 @@ fn execute(cli: Cli, format: OutputFormat) -> Result<(), HandlerError> {
         Some(Command::Auth(command)) => execute_auth(command),
         Some(Command::Scrape(args)) => execute_scrape(args),
         Some(Command::Completion(command)) => execute_completion(command),
-        Some(command) => Err(HandlerError::operation(format!(
-            "internal handler for '{}' is not implemented",
-            command_name(&command)
-        ))),
     }
 }
 
@@ -1241,6 +1239,141 @@ fn bool_glyph(value: bool) -> &'static str {
     if value { "✓" } else { "✗" }
 }
 
+struct FritzMcpCapabilities {
+    tr064: Tr064Client<BlockingHttpTransport, RandomCnonce>,
+    web: AhaClient<BlockingHttpTransport, SystemClock>,
+}
+
+impl McpCapabilities for FritzMcpCapabilities {
+    fn status(&mut self) -> Result<serde_json::Value, String> {
+        self.tr064
+            .status()
+            .map(serde_json::to_value)
+            .map_err(|error| format!("status: {error}"))?
+            .map_err(|error| format!("status: {error}"))
+    }
+
+    fn host_list(&mut self, active_only: bool) -> Result<serde_json::Value, String> {
+        let hosts = if active_only {
+            self.tr064.active_hosts()
+        } else {
+            self.tr064.hosts()
+        }
+        .map_err(|error| format!("host_list: {error}"))?;
+        serde_json::to_value(hosts).map_err(|error| format!("host_list: {error}"))
+    }
+
+    fn host_get(
+        &mut self,
+        name: Option<&str>,
+        mac: Option<&str>,
+        ip: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let host = if let Some(mac) = mac {
+            self.tr064.host_by_mac(mac)
+        } else if let Some(ip) = ip {
+            self.tr064.host_by_ip(ip)
+        } else if let Some(name) = name {
+            self.tr064.resolve_host(name)
+        } else {
+            return Err("provide one of name, mac, or ip".to_owned());
+        }
+        .map_err(|error| format!("host_get: {error}"))?;
+        serde_json::to_value(host).map_err(|error| format!("host_get: {error}"))
+    }
+
+    fn diagnose(&mut self, host: &str, ports: &[i64]) -> Result<serde_json::Value, String> {
+        let probes = ports
+            .iter()
+            .map(|port| {
+                let port = u16::try_from(*port).map_err(|_| format!("invalid port: {port}"))?;
+                Ok(symfritz_tr064::PortProbe {
+                    port,
+                    label: "custom".to_owned(),
+                    probe_type: "tcp".to_owned(),
+                    optional: false,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let diagnosis = self.tr064.diagnose(
+            host,
+            symfritz_tr064::DiagnoseOptions {
+                ports: probes,
+                dial_timeout_ms: 0,
+            },
+        );
+        serde_json::to_value(diagnosis).map_err(|error| format!("diagnose: {error}"))
+    }
+
+    fn mesh(&mut self) -> Result<serde_json::Value, String> {
+        let mesh = self
+            .web
+            .mesh_topology(&mut self.tr064)
+            .map_err(|error| format!("mesh: {error}"))?;
+        serde_json::to_value(mesh).map_err(|error| format!("mesh: {error}"))
+    }
+
+    fn wlan_clients(&mut self) -> Result<serde_json::Value, String> {
+        let clients = self
+            .tr064
+            .all_wlan_clients(3)
+            .map_err(|error| format!("wlan_clients: {error}"))?;
+        serde_json::to_value(clients).map_err(|error| format!("wlan_clients: {error}"))
+    }
+
+    fn wake_on_lan(
+        &mut self,
+        host: Option<&str>,
+        mac: Option<&str>,
+    ) -> Result<serde_json::Value, String> {
+        let mac = if let Some(mac) = mac {
+            mac.to_owned()
+        } else if let Some(host) = host {
+            self.tr064
+                .resolve_host(host)
+                .map_err(|error| format!("wake_on_lan: {error}"))?
+                .mac
+        } else {
+            return Err("provide host or mac".to_owned());
+        };
+        self.tr064
+            .wake_on_lan(&mac)
+            .map_err(|error| format!("wake_on_lan: {error}"))?;
+        Ok(serde_json::json!({"woke": mac}))
+    }
+
+    fn home_list(&mut self) -> Result<serde_json::Value, String> {
+        let devices = self
+            .web
+            .devices()
+            .map_err(|error| format!("home_list: {error}"))?;
+        let payload: Vec<_> = devices.iter().map(AhaDeviceOutput::from).collect();
+        serde_json::to_value(payload).map_err(|error| format!("home_list: {error}"))
+    }
+
+    fn home_switch(&mut self, ain: &str, on: bool) -> Result<serde_json::Value, String> {
+        if on {
+            self.web
+                .switch_on(ain)
+                .map_err(|error| format!("home_switch: {error}"))?;
+        } else {
+            self.web
+                .switch_off(ain)
+                .map_err(|error| format!("home_switch: {error}"))?;
+        }
+        Ok(serde_json::json!({"ain": ain, "on": on}))
+    }
+}
+
+fn execute_mcp() -> Result<(), HandlerError> {
+    let (config, password) = load_connection()?;
+    let tr064 = make_tr064(&config.box_config, &password)?;
+    let web = make_web(&config.box_config, &password)?;
+    McpServer::new(TOOL, VERSION, FritzMcpCapabilities { tr064, web })
+        .serve_stdio()
+        .map_err(|error| HandlerError::from_operation("mcp server failed", error))
+}
+
 fn load_connection() -> Result<(Config, String), HandlerError> {
     let config = symfritz_core::config::load_config().map_err(config_error)?;
     let result = resolve(&SecretOptions::from(&config.box_config)).map_err(secret_error)?;
@@ -1348,36 +1481,6 @@ fn config_error(error: ConfigError) -> HandlerError {
 }
 fn secret_error(error: SecretError) -> HandlerError {
     HandlerError::config(format!("could not resolve password: {error}"))
-}
-
-fn command_name(command: &Command) -> &'static str {
-    match command {
-        Command::Auth(_) => "auth",
-        Command::Call(_) => "call",
-        Command::Calls(_) => "calls",
-        Command::Completion(_) => "completion",
-        Command::Config(_) => "config",
-        Command::Detect(_) => "detect",
-        Command::Diagnose(_) => "diagnose",
-        Command::Dial(_) => "dial",
-        Command::Doctor => "doctor",
-        Command::Dsl(_) => "dsl",
-        Command::Hangup => "hangup",
-        Command::Help(_) => "help",
-        Command::Home(_) => "home",
-        Command::Hosts(_) => "hosts",
-        Command::Log(_) => "log",
-        Command::Mcp => "mcp",
-        Command::Mesh(_) => "mesh",
-        Command::Reboot(_) => "reboot",
-        Command::Scrape(_) => "scrape",
-        Command::Services(_) => "services",
-        Command::Status(_) => "status",
-        Command::Traffic(_) => "traffic",
-        Command::Version(_) => "version",
-        Command::Wlan(_) => "wlan",
-        Command::Wol(_) => "wol",
-    }
 }
 
 fn or_dash(value: &str) -> &str {
