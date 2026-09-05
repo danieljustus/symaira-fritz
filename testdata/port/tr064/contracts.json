@@ -89,7 +89,7 @@
   "discovery": [
     {
       "id": "redacted-router-description",
-      "input_file": "internal/fritz/testdata/tr64desc.xml",
+      "input_file": "testdata/port/tr064/tr64desc.xml",
       "services": [
         {
           "type": "urn:dslforum-org:service:DeviceConfig:1",

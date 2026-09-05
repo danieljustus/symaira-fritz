@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Build and package a deterministic local cutover snapshot.
+"""Build and package a deterministic local Rust release snapshot.
 
-The snapshot always contains the Rust ``symfritz`` primary and the Go
-``symfritz-go`` rollback binary in the same archive. It is deliberately limited
-to the host target; the release workflow runs the same packager per native CI
-matrix target.
+The snapshot is deliberately limited to the host target; the release workflow
+runs the same packager per native CI matrix target.
 """
 from __future__ import annotations
 
@@ -24,8 +22,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from release_manifest import (  # noqa: E402
     archive_name,
+    binary_name,
     build_manifest,
-    binary_names,
     parse_targets,
 )
 
@@ -51,7 +49,7 @@ def run_json(binary: Path, args: list[str], *, env: dict[str, str], cwd: Path) -
         [str(binary), *args], cwd=cwd, env=env, check=True, capture_output=True, text=True
     )
     if result.stderr:
-        raise RuntimeError(f"{binary.name} emitted diagnostics on stdout check")
+        raise RuntimeError(f"{binary.name} emitted diagnostics on stderr")
     payload = json.loads(result.stdout)
     if not isinstance(payload, dict):
         raise RuntimeError(f"{binary.name} returned a non-object version payload")
@@ -81,14 +79,12 @@ def add_tar_member(tar: tarfile.TarFile, name: str, data: bytes, executable: boo
 
 
 def package_archive(
-    root: Path, out: Path, version: str, os_name: str, arch: str, rust: Path, go: Path
+    root: Path, out: Path, version: str, os_name: str, arch: str, binary: Path
 ) -> Path:
     name = archive_name(version, os_name, arch)
     path = out / name
-    rust_name, go_name = binary_names(os_name)
     files = [
-        (rust_name, rust.read_bytes(), True),
-        (go_name, go.read_bytes(), True),
+        (binary_name(os_name), binary.read_bytes(), True),
         ("LICENSE", (root / "LICENSE").read_bytes(), False),
         ("README.md", (root / "README.md").read_bytes(), False),
     ]
@@ -122,8 +118,7 @@ def main() -> int:
         default="true",
         help="execute version/config checks only when target binaries run on this host",
     )
-    parser.add_argument("--rust-bin", type=Path)
-    parser.add_argument("--go-bin", type=Path)
+    parser.add_argument("--binary", type=Path)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     os_name, arch = parse_targets([args.target] if args.target else ["/".join(host_target())])[0]
@@ -132,8 +127,7 @@ def main() -> int:
     build_dir = out / ".build"
     build_dir.mkdir(exist_ok=True)
     suffix = ".exe" if os_name == "windows" else ""
-    rust = args.rust_bin.resolve() if args.rust_bin else build_dir / f"symfritz{suffix}"
-    go = args.go_bin.resolve() if args.go_bin else build_dir / f"symfritz-go{suffix}"
+    binary = args.binary.resolve() if args.binary else build_dir / f"symfritz{suffix}"
     if not args.skip_build:
         env = os.environ.copy()
         env["SYMFRITZ_VERSION"] = args.version
@@ -141,39 +135,19 @@ def main() -> int:
         rust_source = root / "target" / "release" / f"symfritz{suffix}"
         if not rust_source.is_file():
             raise RuntimeError(f"missing Rust release binary: {rust_source}")
-        shutil.copy2(rust_source, rust)
-        run(
-            [
-                "go",
-                "build",
-                "-ldflags",
-                f"-s -w -X main.version={args.version}",
-                "-o",
-                str(go),
-                "./cmd/symfritz",
-            ],
-            cwd=root,
-            env={**os.environ, "CGO_ENABLED": "0"},
-        )
-    for binary in (rust, go):
-        if not binary.is_file():
-            raise RuntimeError(f"missing input binary: {binary}")
+        shutil.copy2(rust_source, binary)
+    if not binary.is_file():
+        raise RuntimeError(f"missing input binary: {binary}")
     if args.runtime_validation == "true":
         env = os.environ.copy()
         with tempfile.TemporaryDirectory(prefix="symfritz-cutover-") as temp:
             temp_path = Path(temp)
-            rust_version = run_json(rust, ["version", "--json"], env=env, cwd=root)
-            go_version = run_json(go, ["version", "--json"], env=env, cwd=root)
+            version = run_json(binary, ["version", "--json"], env=env, cwd=root)
             expected = {"tool": "symfritz", "version": args.version, "schema_version": 1}
-            if rust_version != expected or go_version != expected:
-                raise RuntimeError(
-                    f"version contract mismatch: rust={rust_version!r} go={go_version!r} expected={expected!r}"
-                )
-            rust_config = config_fixture(rust, temp_path / "rust-home", cwd=root)
-            go_config = config_fixture(go, temp_path / "go-home", cwd=root)
-            if rust_config != go_config:
-                raise RuntimeError("Rust and Go config init bytes differ")
-    package_archive(root, out, args.version, os_name, arch, rust, go)
+            if version != expected:
+                raise RuntimeError(f"version contract mismatch: {version!r} != {expected!r}")
+            config_fixture(binary, temp_path / "home", cwd=root)
+    package_archive(root, out, args.version, os_name, arch, binary)
     manifest = build_manifest(args.version, out, [(os_name, arch)])
     manifest_path = out / "release-manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")

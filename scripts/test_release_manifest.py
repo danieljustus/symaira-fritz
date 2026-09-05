@@ -27,31 +27,30 @@ class ReleaseManifestTests(unittest.TestCase):
                 "symaira-fritz_1.2.3_windows_arm64.zip",
             ],
         )
-        self.assertEqual(manifest.binary_names("darwin"), ("symfritz", "symfritz-go"))
-        self.assertEqual(manifest.binary_names("windows"), ("symfritz.exe", "symfritz-go.exe"))
+        self.assertEqual(manifest.binary_name("darwin"), "symfritz")
+        self.assertEqual(manifest.binary_name("windows"), "symfritz.exe")
 
     def test_package_contents_and_manifest_are_deterministic(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             (root / "LICENSE").write_bytes(b"license\n")
             (root / "README.md").write_bytes(b"readme\n")
-            rust = root / "rust"
-            go = root / "go"
-            rust.write_bytes(b"rust binary")
-            go.write_bytes(b"go binary")
+            binary = root / "rust"
+            binary.write_bytes(b"rust binary")
             first = root / "one"
             second = root / "two"
             first.mkdir()
             second.mkdir()
-            archive_one = snapshot.package_archive(root, first, "1.2.3", "darwin", "arm64", rust, go)
-            archive_two = snapshot.package_archive(root, second, "1.2.3", "darwin", "arm64", rust, go)
+            archive_one = snapshot.package_archive(root, first, "1.2.3", "darwin", "arm64", binary)
+            archive_two = snapshot.package_archive(root, second, "1.2.3", "darwin", "arm64", binary)
             self.assertEqual(hashlib.sha256(archive_one.read_bytes()).digest(), hashlib.sha256(archive_two.read_bytes()).digest())
             self.assertEqual(
                 manifest.archive_members(archive_one),
-                ["LICENSE", "README.md", "symfritz", "symfritz-go"],
+                ["LICENSE", "README.md", "symfritz"],
             )
             result = cast(dict[str, object], manifest.build_manifest("1.2.3", first, [("darwin", "arm64")]))
-            self.assertEqual(result["binary_names"], {"rust_primary": "symfritz", "go_fallback": "symfritz-go"})
+            self.assertEqual(result["schema_version"], 2)
+            self.assertEqual(result["binary_name"], "symfritz")
             targets = cast(list[dict[str, object]], result["targets"])
             self.assertEqual(targets[0]["archive"], archive_one.name)
 
@@ -60,23 +59,19 @@ class ReleaseManifestTests(unittest.TestCase):
             root = Path(temp)
             (root / "LICENSE").write_bytes(b"license")
             (root / "README.md").write_bytes(b"readme")
-            rust = root / "rust.exe"
-            go = root / "go.exe"
-            rust.write_bytes(b"rust")
-            go.write_bytes(b"go")
-            archive = snapshot.package_archive(root, root, "1.2.3", "windows", "arm64", rust, go)
+            binary = root / "rust.exe"
+            binary.write_bytes(b"rust")
+            archive = snapshot.package_archive(root, root, "1.2.3", "windows", "arm64", binary)
             self.assertEqual(
                 manifest.archive_members(archive),
-                ["LICENSE", "README.md", "symfritz-go.exe", "symfritz.exe"],
+                ["LICENSE", "README.md", "symfritz.exe"],
             )
 
     def test_cross_target_snapshot_packages_without_executing_foreign_binaries(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            rust = root / "symfritz"
-            go = root / "symfritz-go"
-            rust.write_bytes(b"foreign rust binary")
-            go.write_bytes(b"foreign go binary")
+            binary = root / "symfritz"
+            binary.write_bytes(b"foreign rust binary")
             subprocess.run(
                 [
                     sys.executable,
@@ -90,10 +85,8 @@ class ReleaseManifestTests(unittest.TestCase):
                     "--skip-build",
                     "--runtime-validation",
                     "false",
-                    "--rust-bin",
-                    str(rust),
-                    "--go-bin",
-                    str(go),
+                    "--binary",
+                    str(binary),
                 ],
                 cwd=ROOT,
                 check=True,
@@ -102,7 +95,7 @@ class ReleaseManifestTests(unittest.TestCase):
             archive = root / "dist" / "symaira-fritz_1.2.3_linux_arm64.tar.gz"
             self.assertEqual(
                 manifest.archive_members(archive),
-                ["LICENSE", "README.md", "symfritz", "symfritz-go"],
+                ["LICENSE", "README.md", "symfritz"],
             )
 
 

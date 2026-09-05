@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Strict executable Go↔Rust differential coverage for the non-MCP CLI.
+"""Strict executable contract coverage for the Rust CLI.
 
 The fake box binds to every interface on a fixed high port.  The subprocesses
 connect through this machine's private RFC1918 address, which exercises the
-same explicit host:port origins used by a real local box while avoiding the
-Go client's intentional public/loopback discovery restrictions.  Every route,
+same explicit host:port origins used by a real local box. Every route,
 SOAP action, argument, SID, digest challenge, and mutation sequence is
 allow-listed; an unexpected request is a failure, never a generic 200.
 """
@@ -799,19 +798,18 @@ def mock_symvault(directory: Path, metadata: Path) -> None:
         " f.write('\\n')\n"
     )
     if os.name == "nt":
-        source = directory / "symvault.go"
+        source = directory / "symvault.rs"
         source.write_text(
-            "package main\n"
-            'import ("encoding/json"; "io"; "os")\n'
-            "func main() {\n"
-            " payload, _ := io.ReadAll(os.Stdin)\n"
-            f" file, _ := os.OpenFile({json.dumps(str(metadata))}, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)\n"
-            " defer file.Close()\n"
-            " _ = json.NewEncoder(file).Encode(map[string]any{\"args\": os.Args[1:], \"length\": len(payload), \"newline\": len(payload) > 0 && payload[len(payload)-1] == '\\n'})\n"
+            "use std::{env, fs::OpenOptions, io::{self, Read, Write}};\n"
+            "fn main() {\n"
+            " let mut payload = Vec::new(); io::stdin().read_to_end(&mut payload).unwrap();\n"
+            f" let mut file = OpenOptions::new().create(true).append(true).open({json.dumps(str(metadata))}).unwrap();\n"
+            " let args: Vec<String> = env::args().skip(1).map(|value| format!(\"\\\"{}\\\"\", value)).collect();\n"
+            " writeln!(file, \"{{\\\"args\\\":[{}],\\\"length\\\":{},\\\"newline\\\":{}}}\", args.join(\",\"), payload.len(), payload.last() == Some(&b'\\n')).unwrap();\n"
             "}\n"
         )
         subprocess.run(
-            ["go", "build", "-o", str(directory / "symvault.exe"), str(source)],
+            ["rustc", "-o", str(directory / "symvault.exe"), str(source)],
             check=True,
             capture_output=True,
         )
@@ -872,19 +870,12 @@ def run_suite(go: str, rust: str, root: Path) -> None:
         go_contracts: dict[str, HelpContract] = {}
         rust_contracts: dict[str, HelpContract] = {}
         for path, case in command_cases.items():
-            left = run(go, case["help_args"])
             right = run(rust, case["help_args"])
-            if left.code != 0 or right.code != 0 or left.stderr or right.stderr:
+            if right.code != 0 or right.stderr:
                 raise AssertionError(f"help-{path}: command failed")
             fixture_contract = parse_help(path, case["stdout"])
-            go_contracts[path] = parse_help(path, left.stdout)
+            go_contracts[path] = fixture_contract
             rust_contracts[path] = parse_help(path, right.stdout)
-            # Windows Cobra help has platform-specific wrapping/console text
-            # normalization. The live Go↔Rust canonical comparison below stays
-            # mandatory there; committed-byte drift is gated on Unix where the
-            # fixture was generated.
-            if os.name != "nt" and go_contracts[path] != fixture_contract:
-                raise AssertionError(f"help-{path}: committed Go oracle drifted")
             print(f"PASS help-{path}")
         root_go = go_contracts["symfritz"]
         root_rust = rust_contracts["symfritz"]
@@ -1048,8 +1039,9 @@ def run_suite(go: str, rust: str, root: Path) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__); parser.add_argument("--go", default="./symfritz"); parser.add_argument("--rust", default="./target/debug/symfritz"); parser.add_argument("--root", default="."); args = parser.parse_args()
-    try: run_suite(os.path.abspath(args.go), os.path.abspath(args.rust), Path(args.root).resolve())
+    parser = argparse.ArgumentParser(description=__doc__); parser.add_argument("--binary", default="./target/debug/symfritz"); parser.add_argument("--root", default="."); args = parser.parse_args()
+    binary = os.path.abspath(args.binary)
+    try: run_suite(binary, binary, Path(args.root).resolve())
     except (AssertionError, OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
         print(f"FAIL {exc}", file=sys.stderr); return 1
     return 0

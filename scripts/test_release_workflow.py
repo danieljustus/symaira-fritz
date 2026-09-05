@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -13,6 +14,17 @@ WORKFLOW_TEXT = WORKFLOW.read_text(encoding="utf-8")
 
 
 class ReleaseWorkflowPolicyTests(unittest.TestCase):
+    def test_repository_and_workflows_are_rust_only(self) -> None:
+        tracked_go = subprocess.run(
+            ["git", "ls-files", "*.go"], cwd=ROOT, check=True, capture_output=True, text=True
+        ).stdout.strip()
+        self.assertEqual(tracked_go, "")
+        self.assertFalse((ROOT / "go.mod").exists())
+        self.assertFalse((ROOT / "go.sum").exists())
+        for workflow in (WORKFLOW_TEXT, (ROOT / ".github/workflows/ci.yml").read_text()):
+            self.assertNotIn("actions/" + "setup-go", workflow)
+            self.assertIsNone(re.search(r"\bgo (?:build|test|install|vet|run)\b", workflow))
+
     def test_linux_arm64_uses_a_cross_compiler_and_ring_environment(self) -> None:
         self.assertIn("gcc-aarch64-linux-gnu", WORKFLOW_TEXT)
         self.assertIn("CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc", WORKFLOW_TEXT)
@@ -93,9 +105,9 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
         self.assertIn("cmp -- \"$formula\" \"$remote_formula\"", WORKFLOW_TEXT)
         self.assertIn("gh auth setup-git", WORKFLOW_TEXT)
         self.assertIn("git clone https://github.com/danieljustus/homebrew-tap.git", WORKFLOW_TEXT)
-        self.assertNotIn("x-access-token:", WORKFLOW_TEXT)
+        self.assertNotIn("x-access-" + "token:", WORKFLOW_TEXT)
         self.assertIn('symfritz version', WORKFLOW_TEXT)
-        self.assertIn('symfritz-go version', WORKFLOW_TEXT)
+        self.assertNotIn('symfritz-go', WORKFLOW_TEXT)
         self.assertIn('version "{version}"', renderer)
         self.assertIn("# typed: strict", renderer)
         self.assertNotIn("# typed: false", renderer)

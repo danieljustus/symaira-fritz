@@ -230,12 +230,10 @@ crates/symfritz-core/   config, credentials, auth primitives, TLS pins
 crates/symfritz-tr064/  SOAP/digest transport, discovery, typed capabilities
 crates/symfritz-aha/    session-authenticated AHA and web endpoints
 crates/symfritz-mcp/    MCP stdio server and protocol framing
-cmd/ + internal/        Go oracle and rollback implementation during v0.7
 ```
 
-The Rust crates are the production implementation. The Go packages remain
-runnable as the differential oracle and `symfritz-go` rollback during the
-first stable Rust release window.
+The Rust crates are the complete production implementation. Language-neutral
+fixtures under `testdata/port/` preserve the contracts frozen during the port.
 
 ## Caveats
 
@@ -244,55 +242,49 @@ first stable Rust release window.
   the web-UI `data.lua` endpoint. That interface is FRITZ!OS-version-dependent
   and may break on firmware updates; prefer TR-064 or AHA whenever possible.
 
-## Upgrade and rollback during the Rust cutover
+## Upgrade and rollback
 
-Prereleases and the first stable Rust release ship both executables in every
-archive: `symfritz` is the Rust primary and `symfritz-go` is the last known-good
-Go fallback. Keep the existing `~/.config/symfritz/config.toml` and
-`~/.config/symfritz/pins.json` when upgrading; the Rust snapshot gate compares
-both config-init bytes and preserves the Go-compatible SPKI pin format.
+Current releases contain only the Rust `symfritz` binary. Keep the existing
+`~/.config/symfritz/config.toml` and `~/.config/symfritz/pins.json` when
+upgrading; their formats did not change during the Rust migration.
 
 Verify an upgrade with:
 
 ```bash
 symfritz version --json
-symfritz-go version --json       # fallback remains available
 ```
 
-If parity, router smoke, or the value gate fails, invoke `symfritz-go` directly
-and keep the same config and pin files. Do not delete or reset pins as part of
-rollback. Go source and the fallback archive member are removed only in a
-separate reviewed change after one stable Rust release has no unexplained
-parity defects. See [`docs/rust-port/release-cutover.md`](docs/rust-port/release-cutover.md)
-for the release, signing, SBOM, and live-smoke gates.
+For an implementation-level rollback, use the immutable v0.7.0 release archive,
+which still contains `symfritz-go`. Keep the same config and pin files; do not
+delete or reset them as part of rollback. See
+[`docs/rust-port/release-cutover.md`](docs/rust-port/release-cutover.md) for the
+release, signing, SBOM, and migration evidence.
 
 ## Development
 
-Rust has been the released primary implementation since v0.7.0. The completed
-parity evidence and temporary Go rollback lifecycle are documented in
+Rust has been the sole source implementation since the completed v0.7
+migration. The parity evidence and immutable rollback point are documented in
 [`docs/rust-port/`](docs/rust-port/).
 
 Build:
 
 ```bash
 make build           # → ./symfritz
-make build-go        # → target/debug/symfritz-go (oracle/fallback)
 ```
 
 Test:
 
 ```bash
-make test            # Rust workspace + Go oracle
+make test            # complete Rust workspace
 make rust-test
-make go-test
+make cli-contract    # strict local fake-box CLI suite
 ```
 
 Lint:
 
 ```bash
-make lint            # rustfmt + Clippy + Go fmt/vet
+make lint            # rustfmt + Clippy
 make rust-lint
-make go-lint
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.

@@ -165,7 +165,7 @@ fn discovery_matches_go() {
 #[test]
 fn service_lookup_matches_go() {
     let fixture = fixture();
-    let description = fs::read(repository_root().join("internal/fritz/testdata/tr64desc.xml"))
+    let description = fs::read(repository_root().join("testdata/port/tr064/tr64desc.xml"))
         .expect("read discovery input");
     let services = parse_description(&description).unwrap();
     for vector in fixture.service_lookup {
