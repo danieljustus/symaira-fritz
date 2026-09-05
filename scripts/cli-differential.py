@@ -832,7 +832,11 @@ def run_suite(go: str, rust: str, root: Path) -> None:
             fixture_contract = parse_help(path, case["stdout"])
             go_contracts[path] = parse_help(path, left.stdout)
             rust_contracts[path] = parse_help(path, right.stdout)
-            if go_contracts[path] != fixture_contract:
+            # Windows Cobra help has platform-specific wrapping/console text
+            # normalization. The live Go↔Rust canonical comparison below stays
+            # mandatory there; committed-byte drift is gated on Unix where the
+            # fixture was generated.
+            if os.name != "nt" and go_contracts[path] != fixture_contract:
                 raise AssertionError(f"help-{path}: committed Go oracle drifted")
             print(f"PASS help-{path}")
         root_go = go_contracts["symfritz"]
