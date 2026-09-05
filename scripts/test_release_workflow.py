@@ -68,7 +68,7 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
         self.assertNotIn("raw.githubusercontent.com/anchore/syft/v1.51.1/install.sh |", WORKFLOW_TEXT)
 
     def test_release_readback_covers_assets_hashes_and_sboms(self) -> None:
-        self.assertEqual(WORKFLOW_TEXT.count("GH_TOKEN: ${{ github.token }}"), 2)
+        self.assertEqual(WORKFLOW_TEXT.count("GH_TOKEN: ${{ github.token }}"), 3)
         self.assertIn("gh release view \"$TAG\" --json assets,isPrerelease,tagName", WORKFLOW_TEXT)
         self.assertIn("gh release download \"$TAG\"", WORKFLOW_TEXT)
         self.assertIn("release-manifest.json", WORKFLOW_TEXT)
@@ -77,9 +77,14 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
 
     def test_homebrew_readback_and_smoke_are_explicit(self) -> None:
         renderer = (ROOT / "scripts" / "render_homebrew_formula.py").read_text()
+        self.assertIn("name: Publish and verify stable Homebrew formula", WORKFLOW_TEXT)
+        self.assertIn("needs: publish", WORKFLOW_TEXT)
+        self.assertIn("runs-on: macos-15", WORKFLOW_TEXT)
+        self.assertIn("needs.publish.outputs.channel == 'stable'", WORKFLOW_TEXT)
+        self.assertIn('gh release download "$TAG"', WORKFLOW_TEXT)
         self.assertIn("verify_homebrew_formula.py", WORKFLOW_TEXT)
         self.assertIn("brew style", WORKFLOW_TEXT)
-        self.assertIn("brew install --formula", WORKFLOW_TEXT)
+        self.assertIn("brew install danieljustus/tap/symfritz", WORKFLOW_TEXT)
         self.assertIn("cmp -- \"$formula\" \"$remote_formula\"", WORKFLOW_TEXT)
         self.assertIn('symfritz version', WORKFLOW_TEXT)
         self.assertIn('symfritz-go version', WORKFLOW_TEXT)

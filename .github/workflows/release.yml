@@ -261,6 +261,10 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     environment: release
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      channel: ${{ steps.release.outputs.channel }}
+      tag: ${{ steps.release.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -447,30 +451,49 @@ jobs:
           done
           test -s "$readback/release-manifest.json"
 
-      - name: Update and verify Homebrew formula for stable channel
-        if: steps.release.outputs.channel == 'stable'
+  homebrew:
+    name: Publish and verify stable Homebrew formula
+    needs: publish
+    if: needs.publish.outputs.channel == 'stable'
+    runs-on: macos-15
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Update and verify Homebrew formula
         env:
+          GH_TOKEN: ${{ github.token }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-          VERSION: ${{ steps.release.outputs.version }}
+          VERSION: ${{ needs.publish.outputs.version }}
+          TAG: ${{ needs.publish.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
           test -n "$HOMEBREW_TAP_GITHUB_TOKEN"
+          release_url="https://github.com/danieljustus/symaira-fritz/releases/download/$TAG"
+          release_dir="$RUNNER_TEMP/release"
+          mkdir -p "$release_dir"
+          gh release download "$TAG" --repo danieljustus/symaira-fritz \
+            --pattern checksums.txt --dir "$release_dir"
+          checksums="$release_dir/checksums.txt"
           tap="$RUNNER_TEMP/homebrew-tap"
-          release_url="https://github.com/danieljustus/symaira-fritz/releases/download/v$VERSION"
           git clone "https://x-access-token:${HOMEBREW_TAP_GITHUB_TOKEN}@github.com/danieljustus/homebrew-tap.git" "$tap"
           formula="$tap/Formula/symfritz.rb"
           python3 scripts/render_homebrew_formula.py \
             --version "$VERSION" \
             --release-url "$release_url" \
-            --checksums dist/checksums.txt \
+            --checksums "$checksums" \
             --output "$formula"
           python3 scripts/verify_homebrew_formula.py \
             --formula "$formula" \
             --version "$VERSION" \
             --release-url "$release_url" \
-            --checksums dist/checksums.txt
+            --checksums "$checksums"
           ruby -c "$formula"
+          brew style "$formula"
           for asset in \
             "symaira-fritz_${VERSION}_darwin_amd64.tar.gz" \
             "symaira-fritz_${VERSION}_darwin_arm64.tar.gz" \
@@ -478,13 +501,6 @@ jobs:
             "symaira-fritz_${VERSION}_linux_arm64.tar.gz"; do
             curl -fsSIL "$release_url/$asset" >/dev/null
           done
-          if command -v brew >/dev/null 2>&1; then
-            brew style "$formula"
-          fi
-          if ! command -v brew >/dev/null 2>&1; then
-            echo "::error::Homebrew is required for stable release verification" >&2
-            exit 1
-          fi
           git -C "$tap" config user.name github-actions[bot]
           git -C "$tap" config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git -C "$tap" add Formula/symfritz.rb
@@ -497,6 +513,8 @@ jobs:
           git -C "$tap" show origin/main:Formula/symfritz.rb > "$remote_formula"
           cmp -- "$formula" "$remote_formula"
           brew uninstall --force symfritz >/dev/null 2>&1 || true
-          brew install --formula "$formula"
-          symfritz version
-          symfritz-go version
+          brew tap danieljustus/tap https://github.com/danieljustus/homebrew-tap
+          brew update
+          brew install danieljustus/tap/symfritz
+          test "$(symfritz version --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')" = "$VERSION"
+          test "$(symfritz-go version --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')" = "$VERSION"
