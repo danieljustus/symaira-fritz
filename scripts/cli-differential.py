@@ -550,7 +550,7 @@ def environment(home: Path, *, fake: bool, extra: dict[str, str] | None = None, 
     env = {key: value for key, value in os.environ.items() if not key.upper().startswith("SYMFRITZ_")}
     backend_free = home / "empty-path"; backend_free.mkdir(exist_ok=True)
     path = str(backend_free) if path_prefix is None else f"{path_prefix}{os.pathsep}{os.environ.get('PATH', '')}"
-    env.update({"HOME": str(home), "XDG_CONFIG_HOME": str(home / "config"), "XDG_CACHE_HOME": str(home / "cache"), "XDG_DATA_HOME": str(home / "data"), "TMPDIR": str(home / "tmp"), "TMP": str(home / "tmp"), "TEMP": str(home / "tmp"), "PATH": path, "LC_ALL": "C", "LANG": "C", "TZ": "UTC"})
+    env.update({"HOME": str(home), "USERPROFILE": str(home), "XDG_CONFIG_HOME": str(home / "config"), "XDG_CACHE_HOME": str(home / "cache"), "XDG_DATA_HOME": str(home / "data"), "TMPDIR": str(home / "tmp"), "TMP": str(home / "tmp"), "TEMP": str(home / "tmp"), "PATH": path, "LC_ALL": "C", "LANG": "C", "TZ": "UTC"})
     if fake:
         env.update({"SYMFRITZ_BOX_HOST": f"{PRIVATE_IP}:{PORT}", "SYMFRITZ_BOX_USER": USER, "SYMFRITZ_BOX_USE_TLS": "false", "SYMFRITZ_PASSWORD": PASSWORD, "SYMFRITZ_BOX_TIMEOUT_SECONDS": "1"})
     env.update(extra or {})
@@ -757,12 +757,27 @@ def config_init_pair(go: str, rust: str, force: bool, existing: bool) -> None:
             args = ["config", "init"] + (["--force"] if force else [])
             process = subprocess.run([binary, *args], cwd=home, env=environment(home, fake=False), capture_output=True, timeout=8)
             result = Result(process.returncode, process.stdout, process.stderr)
-            path = home / "config" / "symfritz" / "config.toml"
+            candidates = (
+                home / "config" / "symfritz" / "config.toml",
+                home / ".config" / "symfritz" / "config.toml",
+            )
+            path = next((candidate for candidate in candidates if candidate.exists()), candidates[0])
             if not path.exists(): return result, None, None, str(home)
             return result, path.read_bytes(), path.stat().st_mode & 0o777, str(home)
     left, left_bytes, left_mode, left_home = run_config(go); right, right_bytes, right_mode, right_home = run_config(rust)
     label = f"config-init-{('existing' if existing else 'fresh')}{('-force' if force else '')}"
-    assert_bytes(label, left, right, [Path(left_home), Path(right_home)])
+    left_streams = (
+        left.code,
+        normalize_paths(left.stdout, [Path(left_home)]).replace(b"\\", b"/"),
+        normalize_paths(left.stderr, [Path(left_home)]).replace(b"\\", b"/"),
+    )
+    right_streams = (
+        right.code,
+        normalize_paths(right.stdout, [Path(right_home)]).replace(b"\\", b"/"),
+        normalize_paths(right.stderr, [Path(right_home)]).replace(b"\\", b"/"),
+    )
+    if left_streams != right_streams:
+        raise AssertionError(f"{label}: exact mismatch Go={left_streams!r} Rust={right_streams!r}")
     if (left_bytes, left_mode) != (right_bytes, right_mode): raise AssertionError(f"{label}: config bytes/mode mismatch")
     print(f"PASS {label}")
 
