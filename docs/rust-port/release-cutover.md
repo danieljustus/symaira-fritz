@@ -63,6 +63,17 @@ status other than `Accepted`, or failed verification stops the release. Local
 snapshots intentionally skip signing when credentials are unavailable; they do
 not claim a trusted artifact.
 
+## Release security boundary
+
+Release execution is tag-only: both stable and prerelease channels require a
+strict SemVer `v*` tag push. The GitHub `release` environment uses a custom
+deployment policy that admits only `v*` tag refs, so signing and tap credentials
+are unavailable to arbitrary branches. Homebrew Git authentication uses the
+GitHub CLI credential helper rather than a token-bearing URL or process
+argument. After publication, every downloaded public asset is compared
+byte-for-byte with the corresponding pre-upload file before the checksum,
+manifest, SBOM, and downstream Formula gates can pass.
+
 ## Config and pin compatibility
 
 Rust and Go are tested by `scripts/release_snapshot.py` with the same release
