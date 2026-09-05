@@ -82,13 +82,22 @@ jobs:
             version="$INPUT_VERSION"
             channel="$INPUT_CHANNEL"
           fi
-          case "$version" in
-            ''|*[!0-9A-Za-z.-]*) echo 'Invalid release version' >&2; exit 1;;
-          esac
+          semver_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if [[ ! "$version" =~ $semver_re ]]; then
+            echo "Invalid strict SemVer release version: $version" >&2
+            exit 1
+          fi
+          if [[ "$channel" != stable && "$channel" != prerelease ]]; then
+            echo "Invalid release channel: $channel" >&2
+            exit 1
+          fi
+          ref_sha="$(git rev-parse "${GITHUB_REF}^{commit}")"
+          test "$ref_sha" = "$GITHUB_SHA"
           {
             printf 'version=%s\n' "$version"
             printf 'channel=%s\n' "$channel"
             printf 'tag=v%s\n' "$version"
+            printf 'sha=%s\n' "$GITHUB_SHA"
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up Go
@@ -102,6 +111,25 @@ jobs:
           set -euo pipefail
           rustup toolchain install 1.98.0 --profile minimal --component clippy,rustfmt
           rustup target add --toolchain 1.98.0 "${{ matrix.rust_target }}"
+
+      - name: Install Linux arm64 cross compiler
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Configure Linux arm64 Rust linker and C compiler
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc' \
+            'CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc' \
+            'CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++' \
+            'AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar' >> "$GITHUB_ENV"
 
       - name: Import macOS signing material
         if: matrix.os == 'darwin'
@@ -191,16 +219,17 @@ jobs:
             --go-bin "$(pwd)/dist/.build/symfritz-go${suffix}"
           rm -rf dist/.build
 
-      - name: Upload target archive
-        uses: actions/upload-artifact@v4
+      - name: Upload target tar archive
+        if: matrix.os != 'windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-${{ matrix.os }}-${{ matrix.arch }}
           path: dist/symaira-fritz_*.tar.gz
-          if-no-files-found: ignore
+          if-no-files-found: error
 
-      - name: Upload Windows target archive
+      - name: Upload Windows target zip archive
         if: matrix.os == 'windows'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-${{ matrix.os }}-${{ matrix.arch }}-zip
           path: dist/symaira-fritz_*.zip
@@ -235,15 +264,33 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = push ]; then version="${REF_NAME#v}"; channel=stable; else version="$INPUT_VERSION"; channel="$INPUT_CHANNEL"; fi
+          if [ "$EVENT_NAME" = push ]; then
+            version="${REF_NAME#v}"
+            channel=stable
+          else
+            version="$INPUT_VERSION"
+            channel="$INPUT_CHANNEL"
+          fi
+          semver_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+          if [[ ! "$version" =~ $semver_re ]]; then
+            echo "Invalid strict SemVer release version: $version" >&2
+            exit 1
+          fi
+          if [[ "$channel" != stable && "$channel" != prerelease ]]; then
+            echo "Invalid release channel: $channel" >&2
+            exit 1
+          fi
+          ref_sha="$(git rev-parse "${GITHUB_REF}^{commit}")"
+          test "$ref_sha" = "$GITHUB_SHA"
           {
             printf 'version=%s\n' "$version"
             printf 'channel=%s\n' "$channel"
             printf 'tag=v%s\n' "$version"
+            printf 'sha=%s\n' "$GITHUB_SHA"
           } >> "$GITHUB_OUTPUT"
 
       - name: Download target archives
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: release-*
           path: dist
@@ -257,14 +304,24 @@ jobs:
           set -euo pipefail
           python3 scripts/release_manifest.py --version "$VERSION" --dist dist --output dist/release-manifest.json
 
-      - name: Install pinned Syft
+      - name: Install pinned Syft from verified archive
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/syft"
-          curl -fsSL https://raw.githubusercontent.com/anchore/syft/v1.51.1/install.sh | sh -s -- -b "$RUNNER_TEMP/syft"
-          "$RUNNER_TEMP/syft/syft" version
-          echo "$RUNNER_TEMP/syft" >> "$GITHUB_PATH"
+          syft_version=1.51.1
+          syft_archive="syft_${syft_version}_linux_amd64.tar.gz"
+          syft_base="https://github.com/anchore/syft/releases/download/v${syft_version}"
+          syft_dir="$RUNNER_TEMP/syft"
+          mkdir -p "$syft_dir"
+          curl -fsSLo "$RUNNER_TEMP/$syft_archive" "$syft_base/$syft_archive"
+          curl -fsSLo "$RUNNER_TEMP/syft_checksums.txt" "$syft_base/syft_${syft_version}_checksums.txt"
+          expected="$(awk -v archive="$syft_archive" '$2 == archive { print $1 }' "$RUNNER_TEMP/syft_checksums.txt")"
+          test -n "$expected"
+          printf '%s  %s\n' "$expected" "$RUNNER_TEMP/$syft_archive" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$syft_archive" -C "$syft_dir" syft
+          test -x "$syft_dir/syft"
+          "$syft_dir/syft" version
+          printf '%s\n' "$syft_dir" >> "$GITHUB_PATH"
 
       - name: Generate SBOMs and checksums
         shell: bash
@@ -288,17 +345,90 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          prerelease=''
-          if [ "$CHANNEL" = prerelease ]; then prerelease='--prerelease'; fi
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/* --clobber
-          elif [ "$EVENT_NAME" = push ]; then
-            gh release create "$TAG" dist/* --verify-tag --generate-notes $prerelease
+          assets=(dist/*)
+          tag_target="$(git ls-remote origin "refs/tags/$TAG^{}" | awk 'NR == 1 { print $1 }')"
+          if [ -z "$tag_target" ]; then
+            tag_target="$(git ls-remote origin "refs/tags/$TAG" | awk 'NR == 1 { print $1 }')"
+          fi
+          if [ -n "$tag_target" ] && [ "$tag_target" != "$GITHUB_SHA" ]; then
+            echo "Refusing release tag $TAG: remote target $tag_target differs from $GITHUB_SHA" >&2
+            exit 1
+          fi
+          release_json=''
+          if release_json="$(gh release view "$TAG" --json tagName,isPrerelease,targetCommitish 2>/dev/null)"; then
+            test -n "$tag_target"
+            release_is_prerelease="$(jq -r '.isPrerelease' <<<"$release_json")"
+            expected_is_prerelease=false
+            [ "$CHANNEL" = prerelease ] && expected_is_prerelease=true
+            if [ "$release_is_prerelease" != "$expected_is_prerelease" ]; then
+              echo "Refusing to clobber $TAG across release channels" >&2
+              exit 1
+            fi
+            gh release upload "$TAG" "${assets[@]}" --clobber
           else
-            gh release create "$TAG" dist/* --generate-notes $prerelease
+            create_args=(gh release create "$TAG" "${assets[@]}" --generate-notes)
+            if [ "$EVENT_NAME" = push ]; then
+              create_args+=(--verify-tag)
+            else
+              create_args+=(--target "$GITHUB_SHA")
+            fi
+            [ "$CHANNEL" = prerelease ] && create_args+=(--prerelease)
+            "${create_args[@]}"
           fi
 
-      - name: Update Homebrew formula for stable channel
+      - name: Read back exact public release
+        shell: bash
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          CHANNEL: ${{ steps.release.outputs.channel }}
+        run: |
+          set -euo pipefail
+          release_json="$RUNNER_TEMP/release.json"
+          expected_assets="$RUNNER_TEMP/expected-assets.txt"
+          actual_assets="$RUNNER_TEMP/actual-assets.txt"
+          tag_target_file="$RUNNER_TEMP/tag-target.txt"
+          gh release view "$TAG" --json assets,isPrerelease,tagName,targetCommitish > "$release_json"
+          git ls-remote origin "refs/tags/$TAG^{}" | awk 'NR == 1 { print $1 }' > "$tag_target_file"
+          if [ ! -s "$tag_target_file" ]; then
+            git ls-remote origin "refs/tags/$TAG" | awk 'NR == 1 { print $1 }' > "$tag_target_file"
+          fi
+          test "$(tr -d '\n' < "$tag_target_file")" = "$GITHUB_SHA"
+          python3 - "$VERSION" "$CHANNEL" "$release_json" "$expected_assets" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, "scripts")
+          from release_manifest import TARGETS, archive_name
+
+          version, channel, release_path, expected_path = sys.argv[1:]
+          release = json.loads(Path(release_path).read_text(encoding="utf-8"))
+          if release["tagName"] != f"v{version}":
+              raise SystemExit("release tag name does not match the requested version")
+          if bool(release["isPrerelease"]) != (channel == "prerelease"):
+              raise SystemExit("release channel does not match the requested channel")
+          archives = [archive_name(version, os_name, arch) for os_name, arch in TARGETS]
+          expected = archives + [f"{name}.sbom.cdx.json" for name in archives]
+          expected += ["checksums.txt", "release-manifest.json"]
+          Path(expected_path).write_text("".join(f"{name}\n" for name in sorted(expected)), encoding="utf-8")
+          actual = sorted(asset["name"] for asset in release["assets"])
+          if actual != sorted(expected):
+              raise SystemExit(f"release assets differ: {actual!r} != {sorted(expected)!r}")
+          PY
+          jq -r '.assets[].name' "$release_json" | sort > "$actual_assets"
+          diff -u "$expected_assets" "$actual_assets"
+          readback="$RUNNER_TEMP/release-readback"
+          rm -rf "$readback"
+          mkdir -p "$readback"
+          gh release download "$TAG" --dir "$readback" --clobber
+          (cd "$readback" && sha256sum -c checksums.txt)
+          for archive in "$readback"/symaira-fritz_*.tar.gz "$readback"/symaira-fritz_*.zip; do
+            [ -s "$archive.sbom.cdx.json" ]
+          done
+          test -s "$readback/release-manifest.json"
+
+      - name: Update and verify Homebrew formula for stable channel
         if: steps.release.outputs.channel == 'stable'
         env:
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
@@ -308,13 +438,34 @@ jobs:
           set -euo pipefail
           test -n "$HOMEBREW_TAP_GITHUB_TOKEN"
           tap="$RUNNER_TEMP/homebrew-tap"
+          release_url="https://github.com/danieljustus/symaira-fritz/releases/download/v$VERSION"
           git clone "https://x-access-token:${HOMEBREW_TAP_GITHUB_TOKEN}@github.com/danieljustus/homebrew-tap.git" "$tap"
+          formula="$tap/Formula/symfritz.rb"
           python3 scripts/render_homebrew_formula.py \
             --version "$VERSION" \
-            --release-url "https://github.com/danieljustus/symaira-fritz/releases/download/v$VERSION" \
+            --release-url "$release_url" \
             --checksums dist/checksums.txt \
-            --output "$tap/Formula/symfritz.rb"
-          ruby -c "$tap/Formula/symfritz.rb"
+            --output "$formula"
+          python3 scripts/verify_homebrew_formula.py \
+            --formula "$formula" \
+            --version "$VERSION" \
+            --release-url "$release_url" \
+            --checksums dist/checksums.txt
+          ruby -c "$formula"
+          for asset in \
+            "symaira-fritz_${VERSION}_darwin_amd64.tar.gz" \
+            "symaira-fritz_${VERSION}_darwin_arm64.tar.gz" \
+            "symaira-fritz_${VERSION}_linux_amd64.tar.gz" \
+            "symaira-fritz_${VERSION}_linux_arm64.tar.gz"; do
+            curl -fsSIL "$release_url/$asset" >/dev/null
+          done
+          if command -v brew >/dev/null 2>&1; then
+            brew style "$formula"
+          fi
+          if ! command -v brew >/dev/null 2>&1; then
+            echo "::error::Homebrew is required for stable release verification" >&2
+            exit 1
+          fi
           git -C "$tap" config user.name github-actions[bot]
           git -C "$tap" config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git -C "$tap" add Formula/symfritz.rb
@@ -322,3 +473,11 @@ jobs:
             git -C "$tap" commit -m "symfritz $VERSION: ship Rust primary and Go fallback"
             git -C "$tap" push origin HEAD:main
           fi
+          git -C "$tap" fetch --quiet origin main
+          remote_formula="$RUNNER_TEMP/remote-symfritz.rb"
+          git -C "$tap" show origin/main:Formula/symfritz.rb > "$remote_formula"
+          cmp -- "$formula" "$remote_formula"
+          brew uninstall --force symfritz >/dev/null 2>&1 || true
+          brew install --formula "$formula"
+          symfritz version
+          symfritz-go version
