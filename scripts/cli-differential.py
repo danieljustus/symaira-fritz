@@ -793,8 +793,21 @@ def mock_symvault(directory: Path, metadata: Path) -> None:
         " f.write('\\n')\n"
     )
     if os.name == "nt":
-        (directory / "symvault.cmd").write_text(
-            f'@"{sys.executable}" "%~dp0symvault.py" %*\r\n'
+        source = directory / "symvault.go"
+        source.write_text(
+            "package main\n"
+            'import ("encoding/json"; "io"; "os")\n'
+            "func main() {\n"
+            " payload, _ := io.ReadAll(os.Stdin)\n"
+            f" file, _ := os.OpenFile({json.dumps(str(metadata))}, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)\n"
+            " defer file.Close()\n"
+            " _ = json.NewEncoder(file).Encode(map[string]any{\"args\": os.Args[1:], \"length\": len(payload), \"newline\": len(payload) > 0 && payload[len(payload)-1] == '\\n'})\n"
+            "}\n"
+        )
+        subprocess.run(
+            ["go", "build", "-o", str(directory / "symvault.exe"), str(source)],
+            check=True,
+            capture_output=True,
         )
     else:
         script = directory / "symvault"
