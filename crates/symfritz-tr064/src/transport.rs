@@ -201,9 +201,9 @@ impl BlockingHttpTransport {
                     }
                 })?;
             let mut tls = StreamOwned::new(connection, stream);
-            write_request(&mut tls, request, url, deadline)
-                .map_err(|error| classify_io_error(error, url, "writing request"))?;
-            let (status, headers) = read_response_headers(&mut tls, url, deadline)?;
+            tls.conn
+                .complete_io(&mut tls.sock)
+                .map_err(|error| classify_io_error(error, url, "completing TLS handshake"))?;
             if !self.insecure_tls {
                 let certificate = tls
                     .conn
@@ -215,6 +215,9 @@ impl BlockingHttpTransport {
                     })?;
                 self.record_peer_pin(url, certificate)?;
             }
+            write_request(&mut tls, request, url, deadline)
+                .map_err(|error| classify_io_error(error, url, "writing request"))?;
+            let (status, headers) = read_response_headers(&mut tls, url, deadline)?;
             let body = read_response_body(
                 &mut tls,
                 status,
@@ -398,12 +401,16 @@ fn write_request<S: Write>(
         request_target(url)
     );
     for (name, value) in &request.headers {
-        if name.bytes().any(|byte| byte == b'\r' || byte == b'\n')
-            || value.bytes().any(|byte| byte == b'\r' || byte == b'\n')
-        {
+        if !valid_header_name(name) || !valid_header_value(value) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "request header contains a line break",
+                "request header name or value is invalid",
+            ));
+        }
+        if is_reserved_request_header(name) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "request attempts to override transport-owned framing headers",
             ));
         }
         wire.push_str(name);
@@ -422,6 +429,51 @@ fn write_request<S: Write>(
     stream.flush()?;
     let _ = deadline;
     Ok(())
+}
+
+fn valid_header_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b'!' | b'#'
+                        | b'$'
+                        | b'%'
+                        | b'&'
+                        | b'\''
+                        | b'*'
+                        | b'+'
+                        | b'-'
+                        | b'.'
+                        | b'^'
+                        | b'_'
+                        | b'`'
+                        | b'|'
+                        | b'~'
+                )
+        })
+}
+
+fn valid_header_value(value: &str) -> bool {
+    value
+        .bytes()
+        .all(|byte| byte == b'\t' || (byte >= 0x20 && byte != 0x7f))
+}
+
+fn is_reserved_request_header(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "host"
+            | "content-length"
+            | "transfer-encoding"
+            | "connection"
+            | "accept-encoding"
+            | "te"
+            | "trailer"
+            | "upgrade"
+            | "proxy-connection"
+    )
 }
 
 fn request_target(url: &Url) -> String {
@@ -492,7 +544,7 @@ fn read_response_headers<S: Read>(
             message: format!("unsupported HTTP response version {version:?}"),
         });
     }
-    let mut headers = BTreeMap::new();
+    let mut headers: BTreeMap<String, String> = BTreeMap::new();
     for line in lines {
         let (name, value) = line
             .split_once(':')
@@ -500,7 +552,26 @@ fn read_response_headers<S: Read>(
                 url: redact_url(url),
                 message: "response header is malformed".to_owned(),
             })?;
-        headers.insert(name.trim().to_owned(), value.trim().to_owned());
+        let name = name.trim().to_ascii_lowercase();
+        let value = value.trim();
+        if !valid_header_name(&name) || !valid_header_value(value) {
+            return Err(HttpTransportError::Request {
+                url: redact_url(url),
+                message: "response header name or value is invalid".to_owned(),
+            });
+        }
+        if let Some(existing) = headers.get_mut(&name) {
+            if matches!(name.as_str(), "content-length" | "transfer-encoding") {
+                return Err(HttpTransportError::Request {
+                    url: redact_url(url),
+                    message: format!("response contains duplicate {name} header"),
+                });
+            }
+            existing.push_str(", ");
+            existing.push_str(value);
+        } else {
+            headers.insert(name, value.to_owned());
+        }
     }
     Ok((status, headers))
 }
@@ -972,6 +1043,66 @@ mod tests {
             &url,
             "reading response headers",
         )));
+    }
+
+    #[test]
+    fn request_headers_cannot_inject_lines_or_override_framing() {
+        let url = Url::parse("https://fritz.box:49443/health").unwrap();
+        for (name, value) in [
+            ("X-Test\r\nInjected", "value"),
+            ("X-Test", "value\r\nInjected: true"),
+            ("Content-Length", "0"),
+            ("Transfer-Encoding", "chunked"),
+            ("Host", "attacker.invalid"),
+        ] {
+            let request = Request {
+                method: Method::Get,
+                url: url.to_string(),
+                headers: BTreeMap::from([(name.to_owned(), value.to_owned())]),
+                body: Vec::new(),
+                response_limit: 1024,
+            };
+            let mut wire = Vec::new();
+            assert!(write_request(&mut wire, &request, &url, Instant::now()).is_err());
+            assert!(wire.is_empty());
+        }
+    }
+
+    #[test]
+    fn response_rejects_duplicate_or_conflicting_framing_headers() {
+        let url = Url::parse("https://fritz.box:49443/health").unwrap();
+        for response in [
+            b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\ncontent-length: 1\r\n\r\n".as_slice(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n"
+                .as_slice(),
+        ] {
+            let mut input = io::Cursor::new(response);
+            let result =
+                read_response_headers(&mut input, &url, Instant::now() + Duration::from_secs(1));
+            if response
+                .windows(14)
+                .any(|part| part.eq_ignore_ascii_case(b"content-length"))
+                && response
+                    .windows(17)
+                    .any(|part| part.eq_ignore_ascii_case(b"transfer-encoding"))
+            {
+                let (status, headers) = result.unwrap();
+                assert_eq!(status, 200);
+                assert!(
+                    read_response_body(
+                        &mut input,
+                        status,
+                        &headers,
+                        1024,
+                        &url,
+                        Instant::now() + Duration::from_secs(1),
+                    )
+                    .is_err()
+                );
+            } else {
+                assert!(result.is_err());
+            }
+        }
     }
 
     #[test]

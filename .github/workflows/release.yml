@@ -77,7 +77,7 @@ jobs:
           set -euo pipefail
           if [ "$EVENT_NAME" = push ]; then
             version="${REF_NAME#v}"
-            channel=stable
+            if [[ "$version" == *-* ]]; then channel=prerelease; else channel=stable; fi
           else
             version="$INPUT_VERSION"
             channel="$INPUT_CHANNEL"
@@ -89,6 +89,11 @@ jobs:
           fi
           if [[ "$channel" != stable && "$channel" != prerelease ]]; then
             echo "Invalid release channel: $channel" >&2
+            exit 1
+          fi
+          if [[ "$version" == *-* && "$channel" != prerelease ]] \
+            || [[ "$version" != *-* && "$channel" != stable ]]; then
+            echo "Release channel does not match SemVer prerelease state: $version ($channel)" >&2
             exit 1
           fi
           ref_sha="$(git rev-parse "${GITHUB_REF}^{commit}")"
@@ -266,7 +271,7 @@ jobs:
           set -euo pipefail
           if [ "$EVENT_NAME" = push ]; then
             version="${REF_NAME#v}"
-            channel=stable
+            if [[ "$version" == *-* ]]; then channel=prerelease; else channel=stable; fi
           else
             version="$INPUT_VERSION"
             channel="$INPUT_CHANNEL"
@@ -278,6 +283,11 @@ jobs:
           fi
           if [[ "$channel" != stable && "$channel" != prerelease ]]; then
             echo "Invalid release channel: $channel" >&2
+            exit 1
+          fi
+          if [[ "$version" == *-* && "$channel" != prerelease ]] \
+            || [[ "$version" != *-* && "$channel" != stable ]]; then
+            echo "Release channel does not match SemVer prerelease state: $version ($channel)" >&2
             exit 1
           fi
           ref_sha="$(git rev-parse "${GITHUB_REF}^{commit}")"

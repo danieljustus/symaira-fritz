@@ -211,7 +211,7 @@ fn unclean_tls_close_delimited_body_is_accepted() {
 }
 
 #[test]
-fn first_certificate_is_not_persisted_until_http_response_arrives() {
+fn first_certificate_is_persisted_after_tls_handshake_before_http_response() {
     let root = TestDir::new();
     let pin_store = PinStore::new(root.0.join("pins.json"));
     let (origin, server) = spawn_tls_server(false);
@@ -226,7 +226,7 @@ fn first_certificate_is_not_persisted_until_http_response_arrives() {
 
     assert!(transport.send(request(&origin)).is_err());
     server.join().unwrap();
-    assert_eq!(pin_store.get("127.0.0.1"), None);
+    assert!(pin_store.get("127.0.0.1").is_some());
 }
 
 #[test]

@@ -41,6 +41,20 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
         self.assertIn('git ls-remote origin "refs/tags/$TAG^{}"', WORKFLOW_TEXT)
         self.assertIn("isPrerelease", WORKFLOW_TEXT)
 
+    def test_release_channel_matches_semver_prerelease_state(self) -> None:
+        self.assertEqual(
+            WORKFLOW_TEXT.count(
+                'if [[ "$version" == *-* ]]; then channel=prerelease; else channel=stable; fi'
+            ),
+            2,
+        )
+        self.assertEqual(
+            WORKFLOW_TEXT.count(
+                '[[ "$version" == *-* && "$channel" != prerelease ]]'
+            ),
+            2,
+        )
+
     def test_syft_install_is_archive_and_checksum_verified(self) -> None:
         self.assertIn("syft_archive=\"syft_${syft_version}_linux_amd64.tar.gz\"", WORKFLOW_TEXT)
         self.assertIn("syft_${syft_version}_checksums.txt", WORKFLOW_TEXT)
