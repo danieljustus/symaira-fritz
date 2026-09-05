@@ -3,7 +3,7 @@
 [![CI](https://github.com/danieljustus/symaira-fritz/actions/workflows/ci.yml/badge.svg)](https://github.com/danieljustus/symaira-fritz/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/danieljustus/symaira-fritz)](https://github.com/danieljustus/symaira-fritz/releases/latest)
 [![License](https://img.shields.io/github/license/danieljustus/symaira-fritz)](LICENSE)
-[![Go](https://img.shields.io/github/go-mod/go-version/danieljustus/symaira-fritz)](go.mod)
+[![Rust](https://img.shields.io/badge/rust-1.98-orange.svg)](rust-toolchain.toml)
 
 ![Symaira Fritz](docs/assets/social-preview.png)
 
@@ -63,7 +63,7 @@ Still planned: per-radio band labelling.
 ```bash
 make build           # → ./symfritz
 # or
-go install github.com/danieljustus/symaira-fritz/cmd/symfritz@latest
+cargo install --path crates/symfritz-cli --locked
 # or via Homebrew
 brew install danieljustus/tap/symfritz
 ```
@@ -225,32 +225,17 @@ through MCP.
 ## Architecture
 
 ```
-cmd/symfritz/        Cobra CLI
-  detect.go            FRITZ!Box network discovery
-internal/config/     TOML + env config (corekit configkit)
-internal/fritz/      Core library:
-  client.go            Client, options, endpoints
-  session.go           login_sid.lua auth (PBKDF2 + MD5, auto re-login)
-  tr064.go             SOAP action calls
-  digest.go            HTTP digest auth
-  discover.go          tr64desc.xml service discovery
-  hosts.go             host table, lookup, Wake-on-LAN
-  diagnose.go          end-to-end reachability checks
-  errors.go            Error classification with actionable messages
-  router.go            Router utilities
-  router_gateway.go    Gateway detection
-  wlan.go              radios, clients, guest network
-  mesh.go              mesh topology
-  aha.go               AHA-HTTP smart-home
-  status.go            high-level overview
-internal/secret/     credential resolution (env → symvault → keychain → config),
-                     symvault & macOS Keychain via their CLIs (no build coupling)
-internal/mcp/        MCP stdio server: status, host_list, host_get, diagnose,
-                     mesh, wlan_clients, wake_on_lan, home_list, home_switch
+crates/symfritz-cli/    clap CLI and output adapters
+crates/symfritz-core/   config, credentials, auth primitives, TLS pins
+crates/symfritz-tr064/  SOAP/digest transport, discovery, typed capabilities
+crates/symfritz-aha/    session-authenticated AHA and web endpoints
+crates/symfritz-mcp/    MCP stdio server and protocol framing
+cmd/ + internal/        Go oracle and rollback implementation during v0.7
 ```
 
-The `internal/fritz` package is deliberately self-contained so other Symaira
-tools could embed it later.
+The Rust crates are the production implementation. The Go packages remain
+runnable as the differential oracle and `symfritz-go` rollback during the
+first stable Rust release window.
 
 ## Caveats
 
@@ -283,29 +268,31 @@ for the release, signing, SBOM, and live-smoke gates.
 
 ## Development
 
-The staged, non-production Rust port is documented in
-[`docs/rust-port/`](docs/rust-port/). Go remains the released implementation
-and executable oracle until the differential contract matrix is complete.
+Rust has been the released primary implementation since v0.7.0. The completed
+parity evidence and temporary Go rollback lifecycle are documented in
+[`docs/rust-port/`](docs/rust-port/).
 
 Build:
 
 ```bash
 make build           # → ./symfritz
-go install github.com/danieljustus/symaira-fritz/cmd/symfritz@latest
+make build-go        # → target/debug/symfritz-go (oracle/fallback)
 ```
 
 Test:
 
 ```bash
-make test
-go test ./...        # CGO_ENABLED=0
+make test            # Rust workspace + Go oracle
+make rust-test
+make go-test
 ```
 
 Lint:
 
 ```bash
-make lint            # go fmt + go vet
-go vet ./...
+make lint            # rustfmt + Clippy + Go fmt/vet
+make rust-lint
+make go-lint
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.

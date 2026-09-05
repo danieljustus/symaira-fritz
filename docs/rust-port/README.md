@@ -1,14 +1,15 @@
-# Go-to-Rust migration gate
+# Go-to-Rust migration record
 
-This directory prepares a reversible, contract-first Rust port. The Go binary
-remains the executable oracle and production implementation until every row in
-[`contract-matrix.md`](contract-matrix.md) passes on all supported platforms.
+This directory records the reversible, contract-first Rust port completed in
+v0.7.0. Rust is the production implementation. The Go binary remains the
+executable oracle and explicit rollback during the first stable Rust release
+window.
 
 ## Decision
 
-Proceed with a staged port, not a flag-day rewrite. Rust is not a benefit by
-itself, and the migration has not yet demonstrated a production gain. Cutover
-is gated on observable parity plus measured value.
+The port proceeded in staged vertical slices rather than as a flag-day rewrite.
+The v0.7.0 cutover followed executable parity, sanitized router smoke tests, and
+a measured value gate; the evidence remains committed here.
 
 The Rust CLI layer now freezes the complete documented Cobra command tree
 (command names, `serve` alias, positional arity, flags, defaults, global flags,
@@ -78,7 +79,8 @@ overhead; it says nothing yet about the complete network/MCP implementation.
 
 ## Value gate
 
-A stable cutover requires all of the following:
+The stable cutover required all of the following, and every item passed for
+v0.7.0:
 
 1. Every contract-matrix row has an executable Go↔Rust parity test.
 2. Rust release artifacts improve at least one primary metric materially
@@ -90,16 +92,19 @@ A stable cutover requires all of the following:
 5. Release names, archives, checksums, signing, notarization, Homebrew behavior,
    MCP framing, config files, and rollback are verified.
 
-If Rust cannot meet this gate, keep Go. Rewriting 17,922 lines for vibes would
-be expensive theatre.
+The exact release measurements are recorded in
+[`value-gate-20260905.json`](value-gate-20260905.json).
 
 ## Local workflow
 
 ```bash
-make build
-make rust-check
+make build                  # Rust production binary → ./symfritz
+make test                   # Rust workspace + Go oracle
+make lint                   # rustfmt/Clippy + Go fmt/vet
+make build-go               # explicit Go oracle → target/debug/symfritz-go
 make port-fixtures          # deliberate Go-oracle fixture regeneration
 make port-parity-version    # Go + Rust version golden cases
+make port-cli-parity        # full CLI differential harness
 make mcp-fixtures            # regenerate Go MCP wire fixtures
 make mcp-parity              # raw Go oracle ↔ Rust stdio differential
 ```
@@ -134,17 +139,18 @@ own language-neutral fixtures.
 
 ## Sequence
 
-1. Freeze CLI/config/error and fixture contracts. *(in progress)*
+1. Freeze CLI/config/error and fixture contracts. *(complete)*
 2. Port pure parsers and authentication vectors. *(complete)*
 3. Port the TR-064 protocol engine and discovery against deterministic fake
    boxes. *(complete)*
 4. Port the concrete HTTP/TLS adapter and TLS pin persistence. *(complete)*
 5. Port typed capabilities and AHA/session behavior. *(complete)*
 6. Port MCP and run raw-frame differential tests with zero stdout pollution. *(complete: issue #191)*
-7. Validate against a real FRITZ!Box using sanitized recordings.
-8. Ship a prerelease with the last known-good Go binary as the explicit fallback.
-9. Remove Go only after one stable Rust release operates without unexplained
-   parity defects.
+7. Validate against a real FRITZ!Box using sanitized recordings. *(complete)*
+8. Ship a prerelease and stable release with the last known-good Go binary as
+   the explicit fallback. *(complete: v0.7.0)*
+9. Remove Go only after the full v0.7 stable observation window operates
+   without unexplained parity defects. *(intentionally pending)*
 
 See [`architecture.md`](architecture.md) for boundaries and
 [`contract-matrix.md`](contract-matrix.md) for the executable acceptance map.

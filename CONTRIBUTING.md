@@ -6,8 +6,8 @@ Thank you for your interest in contributing to Symaira Fritz! This document prov
 
 ### Prerequisites
 
-- Go 1.26.6 or later
-- Rust 1.98.0 via rustup (for the staged Rust port)
+- Rust 1.98.0 via rustup (production implementation)
+- Go 1.26.6 or later (differential oracle and temporary rollback)
 - Git
 
 ### Getting Started
@@ -24,21 +24,21 @@ Thank you for your interest in contributing to Symaira Fritz! This document prov
    ```
 4. Make your changes and ensure they pass all checks:
    ```bash
-   CGO_ENABLED=0 go vet ./...
-   CGO_ENABLED=0 go build ./...
-   CGO_ENABLED=0 go test -race ./...
-   make rust-check
-   make port-parity-version
+   make build
+   make lint
+   make test
+   make port-cli-parity
+   make mcp-parity
    ```
 
 ## Code Style
 
-- Follow standard Go conventions (`gofmt`, `go vet`) and Rust conventions
-  (`rustfmt`, Clippy with warnings denied)
+- Follow Rust conventions (`rustfmt`, Clippy with warnings denied) in the
+  production crates and Go conventions (`gofmt`, `go vet`) in the oracle
 - Keep functions focused and small
 - Write meaningful commit messages
 - Add tests for new functionality
-- Ensure `CGO_ENABLED=0` builds succeed (cross-platform requirement)
+- Keep the Go oracle CGO-free while it remains in the repository
 
 ## Pull Request Process
 
