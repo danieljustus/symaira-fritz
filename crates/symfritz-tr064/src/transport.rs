@@ -368,7 +368,7 @@ fn server_name(url: &Url) -> Result<ServerName<'static>, String> {
 fn classify_io_error(error: io::Error, url: &Url, phase: &str) -> HttpTransportError {
     let message = format!("{phase}: {}", error);
     let url = redact_url(url);
-    if endpoint_unreachable_message(&message) {
+    if phase == "connecting" && endpoint_unreachable_message(&message) {
         HttpTransportError::EndpointUnavailable { url, message }
     } else {
         HttpTransportError::Request { url, message }
@@ -961,6 +961,17 @@ mod tests {
             url: "https://fritz.box:49443".to_owned(),
             message: "response body read timed out".to_owned(),
         }));
+        let url = Url::parse("https://fritz.box:49443").unwrap();
+        assert!(is_endpoint_unreachable(&classify_io_error(
+            io::Error::new(io::ErrorKind::TimedOut, "timed out"),
+            &url,
+            "connecting",
+        )));
+        assert!(!is_endpoint_unreachable(&classify_io_error(
+            io::Error::new(io::ErrorKind::TimedOut, "timed out"),
+            &url,
+            "reading response headers",
+        )));
     }
 
     #[test]
