@@ -21,3 +21,4 @@ x509-parser.workspace = true
 
 [dev-dependencies]
 serde.workspace = true
+proptest.workspace = true

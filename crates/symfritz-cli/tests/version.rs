@@ -3,10 +3,10 @@
 use std::process::{Command, Output};
 
 fn run(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_symfritz-rust"))
+    Command::new(env!("CARGO_BIN_EXE_symfritz"))
         .args(args)
         .output()
-        .expect("run symfritz-rust")
+        .expect("run symfritz")
 }
 
 #[test]

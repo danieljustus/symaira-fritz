@@ -1,20 +1,19 @@
 //! Concrete bounded blocking HTTP/TLS transport for the TR-064 engine.
 
 use std::{
+    collections::BTreeMap,
     fmt,
-    io::Read,
-    net::{IpAddr, SocketAddr, ToSocketAddrs},
+    io::{self, Read, Write},
+    net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs},
     sync::{
         Arc, Once,
         atomic::{AtomicBool, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
-use reqwest::blocking::{Client, ClientBuilder};
-use reqwest::redirect::Policy;
 use rustls::{
-    DigitallySignedStruct, SignatureScheme,
+    ClientConnection, DigitallySignedStruct, SignatureScheme, StreamOwned,
     client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
     crypto::{self, CryptoProvider},
     pki_types::{CertificateDer, ServerName, UnixTime},
@@ -97,10 +96,12 @@ impl fmt::Display for HttpTransportError {
 
 impl std::error::Error for HttpTransportError {}
 
-/// A synchronous reqwest adapter with strict origin checks, TOFU and fallback.
+/// A synchronous HTTP/1 transport with strict origin checks, TOFU and fallback.
 pub struct BlockingHttpTransport {
-    client: Client,
     origin: Url,
+    resolved_ips: Vec<IpAddr>,
+    timeout: Duration,
+    tls_config: Arc<rustls::ClientConfig>,
     pin_store: PinStore,
     pin_key: String,
     insecure_tls: bool,
@@ -124,7 +125,11 @@ impl BlockingHttpTransport {
     /// Builds a transport. HTTPS always uses either TOFU or explicit insecure mode.
     pub fn new(config: HttpTransportConfig) -> Result<Self, HttpTransportError> {
         validate_origin(&config.origin)?;
-        let (resolved_host, resolved_addresses) = resolve_local_origin(&config.origin)?;
+        let (_resolved_host, resolved_addresses) = resolve_local_origin(&config.origin)?;
+        let resolved_ips = resolved_addresses
+            .iter()
+            .map(SocketAddr::ip)
+            .collect::<Vec<_>>();
         let pin_key = pin_key(&config.origin);
         let provider = Arc::new(crypto::ring::default_provider());
         let verifier: Arc<dyn ServerCertVerifier> = if config.insecure_tls {
@@ -147,21 +152,11 @@ impl BlockingHttpTransport {
             .dangerous()
             .with_custom_certificate_verifier(verifier)
             .with_no_client_auth();
-        let client = ClientBuilder::new()
-            .no_proxy()
-            .redirect(Policy::none())
-            .timeout(config.timeout)
-            .tls_info(true)
-            .resolve_to_addrs(&resolved_host, &resolved_addresses)
-            .use_preconfigured_tls(tls_config)
-            .build()
-            .map_err(|error| HttpTransportError::Request {
-                url: redact_url(&config.origin),
-                message: error_chain(&error),
-            })?;
         Ok(Self {
-            client,
             origin: config.origin.clone(),
+            resolved_ips,
+            timeout: config.timeout,
+            tls_config: Arc::new(tls_config),
             pin_store: config.pin_store,
             pin_key,
             insecure_tls: config.insecure_tls,
@@ -191,66 +186,111 @@ impl BlockingHttpTransport {
     }
 
     fn execute(&self, request: &Request, url: &Url) -> Result<Response, HttpTransportError> {
-        let method = match request.method {
-            Method::Get => reqwest::Method::GET,
-            Method::Post => reqwest::Method::POST,
-        };
-        let mut builder = self.client.request(method, url.clone());
-        for (name, value) in &request.headers {
-            builder = builder.header(name, value);
-        }
-        if !request.body.is_empty() {
-            builder = builder.body(request.body.clone());
-        }
-        let mut response = builder
-            .send()
-            .map_err(|error| classify_send_error(&error, url))?;
-        if url.scheme() == "https" && !self.insecure_tls {
-            self.record_peer_pin(url, &response)?;
-        }
-        let limit = request.response_limit.min(DEFAULT_RESPONSE_LIMIT);
-        let mut body = Vec::with_capacity(limit);
-        response
-            .by_ref()
-            .take(limit as u64)
-            .read_to_end(&mut body)
-            .map_err(|error| HttpTransportError::Request {
+        let deadline = Instant::now() + self.timeout;
+        let mut stream = self.connect(url, deadline)?;
+        if url.scheme() == "https" {
+            let server_name = server_name(url).map_err(|message| HttpTransportError::Request {
                 url: redact_url(url),
-                message: error.to_string(),
+                message,
             })?;
-        let headers = response
-            .headers()
-            .iter()
-            .filter_map(|(name, value)| {
-                value
-                    .to_str()
-                    .ok()
-                    .map(|value| (name.as_str().to_owned(), value.to_owned()))
+            let connection =
+                ClientConnection::new(self.tls_config.clone(), server_name).map_err(|error| {
+                    HttpTransportError::Request {
+                        url: redact_url(url),
+                        message: format!("TLS handshake failed: {error}"),
+                    }
+                })?;
+            let mut tls = StreamOwned::new(connection, stream);
+            tls.conn
+                .complete_io(&mut tls.sock)
+                .map_err(|error| classify_io_error(error, url, "completing TLS handshake"))?;
+            if !self.insecure_tls {
+                let certificate = tls
+                    .conn
+                    .peer_certificates()
+                    .and_then(|certificates| certificates.first())
+                    .ok_or_else(|| HttpTransportError::Request {
+                        url: redact_url(url),
+                        message: "TLS peer certificate is unavailable".to_owned(),
+                    })?;
+                self.record_peer_pin(url, certificate)?;
+            }
+            write_request(&mut tls, request, url, deadline)
+                .map_err(|error| classify_io_error(error, url, "writing request"))?;
+            let (status, headers) = read_response_headers(&mut tls, url, deadline)?;
+            let body = read_response_body(
+                &mut tls,
+                status,
+                &headers,
+                request.response_limit.min(DEFAULT_RESPONSE_LIMIT),
+                url,
+                deadline,
+            )?;
+            Ok(Response {
+                status,
+                headers,
+                body,
             })
-            .collect();
-        Ok(Response {
-            status: response.status().as_u16(),
-            headers,
-            body,
-        })
+        } else {
+            write_request(&mut stream, request, url, deadline)
+                .map_err(|error| classify_io_error(error, url, "writing request"))?;
+            let (status, headers) = read_response_headers(&mut stream, url, deadline)?;
+            let body = read_response_body(
+                &mut stream,
+                status,
+                &headers,
+                request.response_limit.min(DEFAULT_RESPONSE_LIMIT),
+                url,
+                deadline,
+            )?;
+            Ok(Response {
+                status,
+                headers,
+                body,
+            })
+        }
+    }
+
+    fn connect(&self, url: &Url, deadline: Instant) -> Result<TcpStream, HttpTransportError> {
+        let port = url
+            .port_or_known_default()
+            .ok_or_else(|| HttpTransportError::Request {
+                url: redact_url(url),
+                message: "request URL has no port".to_owned(),
+            })?;
+        let mut last_error = None;
+        for ip in &self.resolved_ips {
+            let address = SocketAddr::new(*ip, port);
+            match TcpStream::connect_timeout(&address, remaining(deadline)) {
+                Ok(stream) => {
+                    stream
+                        .set_read_timeout(Some(remaining(deadline)))
+                        .map_err(|error| classify_io_error(error, url, "setting read timeout"))?;
+                    stream
+                        .set_write_timeout(Some(remaining(deadline)))
+                        .map_err(|error| classify_io_error(error, url, "setting write timeout"))?;
+                    return Ok(stream);
+                }
+                Err(error) => last_error = Some(error),
+            }
+        }
+        Err(classify_io_error(
+            last_error.unwrap_or_else(|| io::Error::other("no resolved addresses")),
+            url,
+            "connecting",
+        ))
     }
 
     fn record_peer_pin(
         &self,
         url: &Url,
-        response: &reqwest::blocking::Response,
+        certificate: &CertificateDer<'_>,
     ) -> Result<(), HttpTransportError> {
-        let certificate = response
-            .extensions()
-            .get::<reqwest::tls::TlsInfo>()
-            .and_then(reqwest::tls::TlsInfo::peer_certificate)
-            .ok_or_else(|| HttpTransportError::Request {
+        let pin = calculate_spki_pin(certificate.as_ref()).map_err(|error| {
+            HttpTransportError::Request {
                 url: redact_url(url),
-                message: "TLS peer certificate is unavailable".to_owned(),
-            })?;
-        let pin = calculate_spki_pin(certificate).map_err(|error| HttpTransportError::Request {
-            url: redact_url(url),
-            message: format!("invalid server certificate: {error}"),
+                message: format!("invalid server certificate: {error}"),
+            }
         })?;
         match self.pin_store.get(&self.pin_key) {
             Some(expected) if expected != pin => Err(HttpTransportError::Request {
@@ -312,28 +352,412 @@ impl Transport for BlockingHttpTransport {
     }
 }
 
-fn error_chain(error: &dyn std::error::Error) -> String {
-    let mut messages = vec![error.to_string()];
-    let mut source = error.source();
-    while let Some(error) = source {
-        messages.push(error.to_string());
-        source = error.source();
+fn remaining(deadline: Instant) -> Duration {
+    deadline.saturating_duration_since(Instant::now())
+}
+
+fn server_name(url: &Url) -> Result<ServerName<'static>, String> {
+    let host = url
+        .host_str()
+        .ok_or_else(|| "request URL has no host".to_owned())?;
+    if let Ok(address) = host.parse::<std::net::IpAddr>() {
+        Ok(ServerName::IpAddress(address.into()))
+    } else {
+        ServerName::try_from(host.to_owned())
+            .map_err(|error| format!("invalid TLS server name: {error}"))
     }
-    messages.join(": ")
 }
 
-fn redact_error_chain(error: &dyn std::error::Error, url: &Url) -> String {
-    error_chain(error).replace(url.as_str(), &redact_url(url))
-}
-
-fn classify_send_error(error: &reqwest::Error, url: &Url) -> HttpTransportError {
-    let message = redact_error_chain(error, url);
+fn classify_io_error(error: io::Error, url: &Url, phase: &str) -> HttpTransportError {
+    let message = format!("{phase}: {}", error);
     let url = redact_url(url);
-    if endpoint_unreachable_message(&message) {
+    if phase == "connecting" && endpoint_unreachable_message(&message) {
         HttpTransportError::EndpointUnavailable { url, message }
     } else {
         HttpTransportError::Request { url, message }
     }
+}
+
+fn write_request<S: Write>(
+    stream: &mut S,
+    request: &Request,
+    url: &Url,
+    deadline: Instant,
+) -> io::Result<()> {
+    let method = match request.method {
+        Method::Get => "GET",
+        Method::Post => "POST",
+    };
+    let host = url
+        .host_str()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "request URL has no host"))?;
+    let host_header = match url.port_or_known_default() {
+        Some(80 | 443) => host.to_owned(),
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_owned(),
+    };
+    let mut wire = format!(
+        "{method} {} HTTP/1.1\r\nHost: {host_header}\r\nConnection: close\r\nAccept-Encoding: identity\r\n",
+        request_target(url)
+    );
+    for (name, value) in &request.headers {
+        if !valid_header_name(name) || !valid_header_value(value) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "request header name or value is invalid",
+            ));
+        }
+        if is_reserved_request_header(name) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "request attempts to override transport-owned framing headers",
+            ));
+        }
+        wire.push_str(name);
+        wire.push_str(": ");
+        wire.push_str(value);
+        wire.push_str("\r\n");
+    }
+    if !request.body.is_empty() {
+        wire.push_str(&format!("Content-Length: {}\r\n", request.body.len()));
+    }
+    wire.push_str("\r\n");
+    stream.write_all(wire.as_bytes())?;
+    if !request.body.is_empty() {
+        stream.write_all(&request.body)?;
+    }
+    stream.flush()?;
+    let _ = deadline;
+    Ok(())
+}
+
+fn valid_header_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b'!' | b'#'
+                        | b'$'
+                        | b'%'
+                        | b'&'
+                        | b'\''
+                        | b'*'
+                        | b'+'
+                        | b'-'
+                        | b'.'
+                        | b'^'
+                        | b'_'
+                        | b'`'
+                        | b'|'
+                        | b'~'
+                )
+        })
+}
+
+fn valid_header_value(value: &str) -> bool {
+    value
+        .bytes()
+        .all(|byte| byte == b'\t' || (byte >= 0x20 && byte != 0x7f))
+}
+
+fn is_reserved_request_header(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "host"
+            | "content-length"
+            | "transfer-encoding"
+            | "connection"
+            | "accept-encoding"
+            | "te"
+            | "trailer"
+            | "upgrade"
+            | "proxy-connection"
+    )
+}
+
+fn request_target(url: &Url) -> String {
+    match url.query() {
+        Some(query) => format!("{}?{query}", url.path()),
+        None => url.path().to_owned(),
+    }
+}
+
+fn read_response_headers<S: Read>(
+    stream: &mut S,
+    url: &Url,
+    deadline: Instant,
+) -> Result<(u16, BTreeMap<String, String>), HttpTransportError> {
+    let mut bytes = Vec::with_capacity(4096);
+    let mut one = [0_u8; 1];
+    while !bytes.ends_with(b"\r\n\r\n") {
+        if bytes.len() >= 64 * 1024 {
+            return Err(HttpTransportError::Request {
+                url: redact_url(url),
+                message: "response headers exceed 64 KiB".to_owned(),
+            });
+        }
+        let count = stream
+            .read(&mut one)
+            .map_err(|error| classify_io_error(error, url, "reading response headers"))?;
+        if count == 0 {
+            return Err(HttpTransportError::Request {
+                url: redact_url(url),
+                message: "unexpected EOF while reading response headers".to_owned(),
+            });
+        }
+        bytes.push(one[0]);
+        if Instant::now() >= deadline {
+            return Err(HttpTransportError::Request {
+                url: redact_url(url),
+                message: "response header timeout".to_owned(),
+            });
+        }
+    }
+    let text = std::str::from_utf8(&bytes[..bytes.len() - 4]).map_err(|error| {
+        HttpTransportError::Request {
+            url: redact_url(url),
+            message: format!("response headers are not UTF-8: {error}"),
+        }
+    })?;
+    let mut lines = text.split("\r\n");
+    let status_line = lines.next().ok_or_else(|| HttpTransportError::Request {
+        url: redact_url(url),
+        message: "response is missing a status line".to_owned(),
+    })?;
+    let mut status_parts = status_line.split_whitespace();
+    let version = status_parts.next().unwrap_or_default();
+    let status = status_parts
+        .next()
+        .ok_or_else(|| HttpTransportError::Request {
+            url: redact_url(url),
+            message: "response status line is malformed".to_owned(),
+        })?
+        .parse::<u16>()
+        .map_err(|error| HttpTransportError::Request {
+            url: redact_url(url),
+            message: format!("response status is malformed: {error}"),
+        })?;
+    if version != "HTTP/1.0" && version != "HTTP/1.1" {
+        return Err(HttpTransportError::Request {
+            url: redact_url(url),
+            message: format!("unsupported HTTP response version {version:?}"),
+        });
+    }
+    let mut headers: BTreeMap<String, String> = BTreeMap::new();
+    for line in lines {
+        let (name, value) = line
+            .split_once(':')
+            .ok_or_else(|| HttpTransportError::Request {
+                url: redact_url(url),
+                message: "response header is malformed".to_owned(),
+            })?;
+        let name = name.trim().to_ascii_lowercase();
+        let value = value.trim();
+        if !valid_header_name(&name) || !valid_header_value(value) {
+            return Err(HttpTransportError::Request {
+                url: redact_url(url),
+                message: "response header name or value is invalid".to_owned(),
+            });
+        }
+        if let Some(existing) = headers.get_mut(&name) {
+            if matches!(name.as_str(), "content-length" | "transfer-encoding") {
+                return Err(HttpTransportError::Request {
+                    url: redact_url(url),
+                    message: format!("response contains duplicate {name} header"),
+                });
+            }
+            existing.push_str(", ");
+            existing.push_str(value);
+        } else {
+            headers.insert(name, value.to_owned());
+        }
+    }
+    Ok((status, headers))
+}
+
+fn read_response_body<S: Read>(
+    stream: &mut S,
+    status: u16,
+    headers: &BTreeMap<String, String>,
+    limit: usize,
+    url: &Url,
+    deadline: Instant,
+) -> Result<Vec<u8>, HttpTransportError> {
+    if status == 204 || status == 304 {
+        return Ok(Vec::new());
+    }
+    let content_length = header_value(headers, "content-length");
+    let transfer_encoding = header_value(headers, "transfer-encoding");
+    if content_length.is_some() && transfer_encoding.is_some() {
+        return Err(HttpTransportError::Request {
+            url: redact_url(url),
+            message: "response has both Content-Length and Transfer-Encoding".to_owned(),
+        });
+    }
+    if transfer_encoding.is_some_and(|value| !value.eq_ignore_ascii_case("chunked")) {
+        return Err(HttpTransportError::Request {
+            url: redact_url(url),
+            message: "unsupported response transfer encoding".to_owned(),
+        });
+    }
+    if let Some(length) = content_length {
+        let length = length
+            .parse::<usize>()
+            .map_err(|error| HttpTransportError::Request {
+                url: redact_url(url),
+                message: format!("response Content-Length is malformed: {error}"),
+            })?;
+        let mut body = vec![0_u8; length.min(limit)];
+        read_exact_deadline(stream, &mut body, url, deadline)?;
+        return Ok(body);
+    }
+    if transfer_encoding.is_some() {
+        return read_chunked_body(stream, limit, url, deadline);
+    }
+    let connection_close = header_value(headers, "connection").is_some_and(|value| {
+        value
+            .split(',')
+            .any(|item| item.trim().eq_ignore_ascii_case("close"))
+    });
+    if !connection_close {
+        return Err(HttpTransportError::Request {
+            url: redact_url(url),
+            message: "response body has no framing or connection close".to_owned(),
+        });
+    }
+    let mut body = Vec::with_capacity(limit);
+    let mut buffer = [0_u8; 8192];
+    while body.len() < limit {
+        let wanted = (limit - body.len()).min(buffer.len());
+        match stream.read(&mut buffer[..wanted]) {
+            Ok(0) => break,
+            Ok(count) => body.extend_from_slice(&buffer[..count]),
+            Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => break,
+            Err(error) => return Err(classify_io_error(error, url, "reading response body")),
+        }
+        if Instant::now() >= deadline {
+            return Err(HttpTransportError::Request {
+                url: redact_url(url),
+                message: "response body timeout".to_owned(),
+            });
+        }
+    }
+    Ok(body)
+}
+
+fn read_chunked_body<S: Read>(
+    stream: &mut S,
+    limit: usize,
+    url: &Url,
+    deadline: Instant,
+) -> Result<Vec<u8>, HttpTransportError> {
+    let mut body = Vec::with_capacity(limit);
+    loop {
+        let line = read_line(stream, url, deadline)?;
+        let size = line
+            .split(';')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .strip_prefix("0x")
+            .unwrap_or_else(|| line.split(';').next().unwrap_or_default().trim());
+        let size =
+            usize::from_str_radix(size, 16).map_err(|error| HttpTransportError::Request {
+                url: redact_url(url),
+                message: format!("chunk size is malformed: {error}"),
+            })?;
+        if size == 0 {
+            loop {
+                if read_line(stream, url, deadline)?.is_empty() {
+                    return Ok(body);
+                }
+            }
+        }
+        let keep = size.min(limit.saturating_sub(body.len()));
+        let mut chunk = vec![0_u8; keep];
+        read_exact_deadline(stream, &mut chunk, url, deadline)?;
+        body.extend_from_slice(&chunk);
+        if keep < size || body.len() == limit {
+            return Ok(body);
+        }
+        let terminator = read_line(stream, url, deadline)?;
+        if !terminator.is_empty() {
+            return Err(HttpTransportError::Request {
+                url: redact_url(url),
+                message: "chunk terminator is malformed".to_owned(),
+            });
+        }
+    }
+}
+
+fn read_line<S: Read>(
+    stream: &mut S,
+    url: &Url,
+    deadline: Instant,
+) -> Result<String, HttpTransportError> {
+    let mut bytes = Vec::new();
+    let mut one = [0_u8; 1];
+    loop {
+        read_exact_deadline(stream, &mut one, url, deadline)?;
+        if one[0] == b'\n' {
+            if bytes.last() == Some(&b'\r') {
+                bytes.pop();
+            }
+            return String::from_utf8(bytes).map_err(|error| HttpTransportError::Request {
+                url: redact_url(url),
+                message: format!("response line is not UTF-8: {error}"),
+            });
+        }
+        bytes.push(one[0]);
+        if bytes.len() > 64 * 1024 {
+            return Err(HttpTransportError::Request {
+                url: redact_url(url),
+                message: "response line exceeds 64 KiB".to_owned(),
+            });
+        }
+    }
+}
+
+fn read_exact_deadline<S: Read>(
+    stream: &mut S,
+    buffer: &mut [u8],
+    url: &Url,
+    deadline: Instant,
+) -> Result<(), HttpTransportError> {
+    let mut offset = 0;
+    while offset < buffer.len() {
+        match stream.read(&mut buffer[offset..]) {
+            Ok(0) => {
+                return Err(HttpTransportError::Request {
+                    url: redact_url(url),
+                    message: "unexpected EOF while reading response body".to_owned(),
+                });
+            }
+            Ok(count) => offset += count,
+            Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => {
+                return Err(HttpTransportError::Request {
+                    url: redact_url(url),
+                    message: "unexpected EOF while reading response body".to_owned(),
+                });
+            }
+            Err(error) => return Err(classify_io_error(error, url, "reading response body")),
+        }
+        if Instant::now() >= deadline {
+            return Err(HttpTransportError::Request {
+                url: redact_url(url),
+                message: "response body timeout".to_owned(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn header_value<'a>(headers: &'a BTreeMap<String, String>, name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
 }
 
 fn validate_origin(origin: &Url) -> Result<(), HttpTransportError> {
@@ -606,6 +1030,91 @@ mod tests {
             url: "https://fritz.box:49443".to_owned(),
             message: "response body read timed out".to_owned(),
         }));
+        let url = Url::parse("https://fritz.box:49443").unwrap();
+        assert!(is_endpoint_unreachable(&classify_io_error(
+            io::Error::new(io::ErrorKind::TimedOut, "timed out"),
+            &url,
+            "connecting",
+        )));
+        assert!(!is_endpoint_unreachable(&classify_io_error(
+            io::Error::new(io::ErrorKind::TimedOut, "timed out"),
+            &url,
+            "reading response headers",
+        )));
+    }
+
+    #[test]
+    fn request_headers_cannot_inject_lines_or_override_framing() {
+        let url = Url::parse("https://fritz.box:49443/health").unwrap();
+        for (name, value) in [
+            ("X-Test\r\nInjected", "value"),
+            ("X-Test", "value\r\nInjected: true"),
+            ("Content-Length", "0"),
+            ("Transfer-Encoding", "chunked"),
+            ("Host", "attacker.invalid"),
+        ] {
+            let request = Request {
+                method: Method::Get,
+                url: url.to_string(),
+                headers: BTreeMap::from([(name.to_owned(), value.to_owned())]),
+                body: Vec::new(),
+                response_limit: 1024,
+            };
+            let mut wire = Vec::new();
+            assert!(write_request(&mut wire, &request, &url, Instant::now()).is_err());
+            assert!(wire.is_empty());
+        }
+    }
+
+    #[test]
+    fn response_rejects_duplicate_or_conflicting_framing_headers() {
+        let url = Url::parse("https://fritz.box:49443/health").unwrap();
+        for response in [
+            b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\ncontent-length: 1\r\n\r\n".as_slice(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n"
+                .as_slice(),
+        ] {
+            let mut input = io::Cursor::new(response);
+            let result =
+                read_response_headers(&mut input, &url, Instant::now() + Duration::from_secs(1));
+            if response
+                .windows(14)
+                .any(|part| part.eq_ignore_ascii_case(b"content-length"))
+                && response
+                    .windows(17)
+                    .any(|part| part.eq_ignore_ascii_case(b"transfer-encoding"))
+            {
+                let (status, headers) = result.unwrap();
+                assert_eq!(status, 200);
+                assert!(
+                    read_response_body(
+                        &mut input,
+                        status,
+                        &headers,
+                        1024,
+                        &url,
+                        Instant::now() + Duration::from_secs(1),
+                    )
+                    .is_err()
+                );
+            } else {
+                assert!(result.is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn oversized_chunk_stops_at_response_limit_without_discard_allocation() {
+        let url = Url::parse("https://fritz.box:49443/health").unwrap();
+        let mut input = io::Cursor::new(b"ffffffffffffffff\r\n0123456789abcdef".as_slice());
+        let body = read_chunked_body(
+            &mut input,
+            16,
+            &url,
+            Instant::now() + Duration::from_secs(1),
+        )
+        .unwrap();
+        assert_eq!(body, b"0123456789abcdef");
     }
 
     #[test]

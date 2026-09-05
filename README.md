@@ -259,6 +259,28 @@ tools could embed it later.
   the web-UI `data.lua` endpoint. That interface is FRITZ!OS-version-dependent
   and may break on firmware updates; prefer TR-064 or AHA whenever possible.
 
+## Upgrade and rollback during the Rust cutover
+
+Prereleases and the first stable Rust release ship both executables in every
+archive: `symfritz` is the Rust primary and `symfritz-go` is the last known-good
+Go fallback. Keep the existing `~/.config/symfritz/config.toml` and
+`~/.config/symfritz/pins.json` when upgrading; the Rust snapshot gate compares
+both config-init bytes and preserves the Go-compatible SPKI pin format.
+
+Verify an upgrade with:
+
+```bash
+symfritz version --json
+symfritz-go version --json       # fallback remains available
+```
+
+If parity, router smoke, or the value gate fails, invoke `symfritz-go` directly
+and keep the same config and pin files. Do not delete or reset pins as part of
+rollback. Go source and the fallback archive member are removed only in a
+separate reviewed change after one stable Rust release has no unexplained
+parity defects. See [`docs/rust-port/release-cutover.md`](docs/rust-port/release-cutover.md)
+for the release, signing, SBOM, and live-smoke gates.
+
 ## Development
 
 The staged, non-production Rust port is documented in

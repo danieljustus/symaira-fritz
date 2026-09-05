@@ -26,7 +26,7 @@ type fixture struct {
 
 func main() {
 	referenceFlag := flag.String("reference", "./symfritz", "path to the Go binary")
-	candidateFlag := flag.String("candidate", "./target/debug/symfritz-rust", "path to the Rust binary")
+	candidateFlag := flag.String("candidate", "./target/debug/symfritz", "path to the Rust binary")
 	fixtureFlag := flag.String("fixture", "testdata/port/cli/version-cases.json", "golden fixture path")
 	timeoutFlag := flag.Duration("timeout", 10*time.Second, "per-process timeout")
 	flag.Parse()

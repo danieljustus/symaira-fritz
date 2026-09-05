@@ -1,0 +1,38 @@
+{
+  "binaries": {
+    "go_fallback": {
+      "bytes": 8155458,
+      "fake_box_command_p95_ms": 10.459709,
+      "max_rss_bytes": 12566528,
+      "path": "dist/snapshot/.build/symfritz-go",
+      "startup_p95_ms": 7.218958
+    },
+    "rust_primary": {
+      "bytes": 7283184,
+      "fake_box_command_p95_ms": 7.067625,
+      "max_rss_bytes": 7503872,
+      "path": "target/release/symfritz",
+      "startup_p95_ms": 5.8355
+    }
+  },
+  "comparison": {
+    "fake_box_command_p95_ratio": 0.6756999645018804,
+    "rss_improvement": 0.4028683181225554,
+    "size_improvement": 0.10695585704690036,
+    "startup_p95_ratio": 0.8083576604823023
+  },
+  "gate": {
+    "latency_regression": true,
+    "pass": true,
+    "size_or_rss_improvement": true,
+    "thresholds": {
+      "improvement": 0.2,
+      "latency_regression": 0.1
+    }
+  },
+  "platform": {
+    "arch": "arm64",
+    "os": "darwin"
+  },
+  "schema_version": 1
+}

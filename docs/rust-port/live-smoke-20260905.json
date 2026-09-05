@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "timestamp": "2026-09-05T02:54:40Z",
+  "mode": "sanitized_live_read_only",
+  "privacy": {
+    "command_output_persisted": false,
+    "credentials_persisted": false,
+    "router_identifiers_persisted": false
+  },
+  "binaries": {
+    "go": "release-built oracle",
+    "rust": "release-built candidate"
+  },
+  "commands": [
+    {"name": "status", "go_exit": 0, "rust_exit": 0, "json_schema_match": true},
+    {"name": "services", "go_exit": 0, "rust_exit": 0, "json_schema_match": true},
+    {"name": "hosts active", "go_exit": 0, "rust_exit": 0, "json_schema_match": true},
+    {"name": "wlan radios", "go_exit": 0, "rust_exit": 0, "json_schema_match": true},
+    {"name": "dsl", "go_exit": 1, "rust_exit": 1, "json_schema_match": true},
+    {"name": "traffic", "go_exit": 0, "rust_exit": 0, "json_schema_match": true},
+    {"name": "calls --limit 1", "go_exit": 0, "rust_exit": 0, "json_schema_match": true},
+    {"name": "log", "go_exit": 0, "rust_exit": 0, "json_schema_match": true},
+    {"name": "home list", "go_exit": 0, "rust_exit": 0, "json_schema_match": true},
+    {"name": "mesh", "go_exit": 0, "rust_exit": 0, "json_schema_match": true}
+  ],
+  "result": "pass"
+}

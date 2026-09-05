@@ -13,9 +13,8 @@ is gated on observable parity plus measured value.
 The Rust CLI layer now freezes the complete documented Cobra command tree
 (command names, `serve` alias, positional arity, flags, defaults, global flags,
 version semantics, and help metadata) and wires the `mcp`/`serve` aliases to the
-Rust stdio server. It deliberately ships as `symfritz-rust`; `version` and MCP
-are implemented while the remaining command handlers continue to be ported
-behind the existing parity gate.
+Rust stdio server. The release artifact is named `symfritz`; `symfritz-go` is
+kept as the explicit rollback binary.
 
 Implemented slices:
 

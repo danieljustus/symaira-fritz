@@ -72,6 +72,37 @@ fn spawn_tls_server(respond: bool) -> (Url, thread::JoinHandle<()>) {
     (Url::parse(&format!("https://{address}")).unwrap(), handle)
 }
 
+fn spawn_tls_close_delimited_server() -> (Url, thread::JoinHandle<()>) {
+    let CertifiedKey { cert, signing_key } =
+        generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
+    let certificate = CertificateDer::from(cert.der().to_vec());
+    let private_key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing_key.serialize_der()));
+    let provider = Arc::new(crypto::ring::default_provider());
+    let config = ServerConfig::builder_with_provider(provider)
+        .with_protocol_versions(&[&rustls::version::TLS13, &rustls::version::TLS12])
+        .unwrap()
+        .with_no_client_auth()
+        .with_single_cert(vec![certificate], private_key)
+        .unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let handle = thread::spawn(move || {
+        let Ok((stream, _)) = listener.accept() else {
+            return;
+        };
+        let mut tls = StreamOwned::new(ServerConnection::new(Arc::new(config)).unwrap(), stream);
+        let mut request = [0_u8; 4096];
+        if tls.read(&mut request).is_err() {
+            return;
+        }
+        let _ = tls
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nConnection: close\r\n\r\nOK");
+        let _ = tls.flush();
+        // FRITZ!OS closes these response streams without TLS close_notify.
+    });
+    (Url::parse(&format!("https://{address}")).unwrap(), handle)
+}
+
 fn request(origin: &Url) -> Request {
     Request {
         method: Method::Get,
@@ -162,7 +193,25 @@ fn tofu_accepts_first_certificate_and_rejects_changed_certificate() {
 }
 
 #[test]
-fn first_certificate_is_not_persisted_until_http_response_arrives() {
+fn unclean_tls_close_delimited_body_is_accepted() {
+    let root = TestDir::new();
+    let (origin, server) = spawn_tls_close_delimited_server();
+    let mut transport = BlockingHttpTransport::new(HttpTransportConfig {
+        origin: origin.clone(),
+        pin_store: PinStore::new(root.0.join("pins.json")),
+        insecure_tls: true,
+        timeout: Duration::from_secs(5),
+        warning_sink: None,
+    })
+    .unwrap();
+    let response = transport.send(request(&origin)).unwrap();
+    server.join().unwrap();
+    assert_eq!(response.status, 200);
+    assert_eq!(response.body, b"OK");
+}
+
+#[test]
+fn first_certificate_is_persisted_after_tls_handshake_before_http_response() {
     let root = TestDir::new();
     let pin_store = PinStore::new(root.0.join("pins.json"));
     let (origin, server) = spawn_tls_server(false);
@@ -177,7 +226,7 @@ fn first_certificate_is_not_persisted_until_http_response_arrives() {
 
     assert!(transport.send(request(&origin)).is_err());
     server.join().unwrap();
-    assert_eq!(pin_store.get("127.0.0.1"), None);
+    assert!(pin_store.get("127.0.0.1").is_some());
 }
 
 #[test]

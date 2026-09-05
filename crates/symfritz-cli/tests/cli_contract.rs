@@ -90,7 +90,7 @@ fn generated_fixture_covers_every_documented_command() {
         "Rust command tree drifted from Go fixture"
     );
 
-    let binary = env!("CARGO_BIN_EXE_symfritz-rust");
+    let binary = env!("CARGO_BIN_EXE_symfritz");
     for case in &fixture.commands {
         let output = ProcessCommand::new(binary)
             .args(&case.help_args)
@@ -179,7 +179,7 @@ fn generated_argument_cases_match_go_fixtures_byte_for_byte() {
         case.comparison == "bytes" && case.exit_code == 1 && case.stdout.is_empty()
     }));
 
-    let binary = env!("CARGO_BIN_EXE_symfritz-rust");
+    let binary = env!("CARGO_BIN_EXE_symfritz");
     for case in fixture.validation {
         let output = ProcessCommand::new(binary)
             .args(&case.args)
@@ -198,7 +198,7 @@ fn generated_argument_cases_match_go_fixtures_byte_for_byte() {
 
 #[test]
 fn completion_handlers_generate_all_shells() {
-    let binary = env!("CARGO_BIN_EXE_symfritz-rust");
+    let binary = env!("CARGO_BIN_EXE_symfritz");
     for shell in ["bash", "fish", "powershell", "zsh"] {
         let output = ProcessCommand::new(binary)
             .args(["completion", shell, "--no-descriptions"])
@@ -256,7 +256,7 @@ fn documented_command_list_does_not_drift_from_fixture() {
 
 #[test]
 fn help_flags_precede_positional_validation_and_exit_successfully() {
-    let binary = env!("CARGO_BIN_EXE_symfritz-rust");
+    let binary = env!("CARGO_BIN_EXE_symfritz");
     for args in [
         vec!["status", "--help"],
         vec!["status", "-h"],

@@ -1,4 +1,5 @@
 #![deny(unsafe_code)]
+#![allow(clippy::result_large_err)]
 
 use std::{
     collections::BTreeMap,
@@ -60,6 +61,9 @@ struct HandlerError {
     kind: String,
     hint: Option<String>,
     status: bool,
+    service: String,
+    action: String,
+    raw: String,
 }
 
 impl HandlerError {
@@ -70,6 +74,9 @@ impl HandlerError {
             kind: "unavailable".to_owned(),
             hint: None,
             status: false,
+            service: String::new(),
+            action: String::new(),
+            raw: String::new(),
         }
     }
 
@@ -80,6 +87,9 @@ impl HandlerError {
             kind: "auth".to_owned(),
             hint: Some("Run: symfritz auth login".to_owned()),
             status: false,
+            service: String::new(),
+            action: String::new(),
+            raw: String::new(),
         }
     }
 
@@ -90,6 +100,9 @@ impl HandlerError {
             kind: "validation".to_owned(),
             hint: None,
             status: false,
+            service: String::new(),
+            action: String::new(),
+            raw: String::new(),
         }
     }
 
@@ -100,6 +113,9 @@ impl HandlerError {
             kind: "unavailable".to_owned(),
             hint: None,
             status: false,
+            service: String::new(),
+            action: String::new(),
+            raw: String::new(),
         }
     }
 
@@ -127,6 +143,7 @@ impl HandlerError {
             ErrorKind::Unknown => "unavailable",
         };
         let unauthorized = symfritz_tr064::error_kind(error) == ErrorKind::Unauthorized;
+        let (service, action, raw) = error.structured_fields();
         Self {
             message: format!("{context}: {error}"),
             exit_code: if unauthorized {
@@ -137,6 +154,9 @@ impl HandlerError {
             kind: kind.to_owned(),
             hint: unauthorized.then(|| "Run: symfritz auth login".to_owned()),
             status: false,
+            service,
+            action,
+            raw,
         }
     }
 }
@@ -155,6 +175,13 @@ struct ErrorOutput<'a> {
 #[derive(Serialize)]
 struct ErrorDetails<'a> {
     kind: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    service: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    action: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    raw: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
     message: &'a str,
 }
 
@@ -230,6 +257,9 @@ fn main() -> ExitCode {
                 let payload = ErrorOutput {
                     error: ErrorDetails {
                         kind: &error.kind,
+                        service: &error.service,
+                        action: &error.action,
+                        raw: &error.raw,
                         message: &error.message,
                     },
                 };
@@ -820,6 +850,7 @@ fn execute_log(args: LogArgs, format: OutputFormat) -> Result<(), HandlerError> 
         .device_log(&args.filter)
         .map_err(|error| HandlerError::from_client("log failed", &error))?;
     if format != OutputFormat::Text {
+        let events: Vec<LogOutput<'_>> = events.iter().map(LogOutput::from).collect();
         output::write(&mut std::io::stdout(), &events, format)
             .map_err(|error| HandlerError::operation(error.to_string()))?;
     } else if events.is_empty() {
@@ -835,6 +866,29 @@ fn execute_log(args: LogArgs, format: OutputFormat) -> Result<(), HandlerError> 
         }
     }
     Ok(())
+}
+
+#[derive(Serialize)]
+struct LogOutput<'a> {
+    #[serde(rename = "ID")]
+    id: &'a str,
+    #[serde(rename = "Group")]
+    group: &'a str,
+    #[serde(rename = "Time")]
+    time: &'a str,
+    #[serde(rename = "Msg")]
+    msg: &'a str,
+}
+
+impl<'a> From<&'a LogEvent> for LogOutput<'a> {
+    fn from(event: &'a LogEvent) -> Self {
+        Self {
+            id: &event.id,
+            group: &event.group,
+            time: &event.time,
+            msg: &event.msg,
+        }
+    }
 }
 
 fn execute_services(format: OutputFormat) -> Result<(), HandlerError> {

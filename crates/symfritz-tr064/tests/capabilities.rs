@@ -356,10 +356,16 @@ fn status_returns_original_prioritized_unauthorized_error() {
     let failure = client.status().unwrap_err();
     assert_eq!(
         failure.source,
-        symfritz_tr064::ClientError::SoapFault {
-            status: 500,
-            code: 606,
-            description: "unauthorized".to_owned(),
+        symfritz_tr064::ClientError::Call {
+            service: "WANIPConnection".to_owned(),
+            action: "GetInfo".to_owned(),
+            source: Box::new(symfritz_tr064::ClientError::SoapFault {
+                service: "WANIPConnection".to_owned(),
+                action: "GetInfo".to_owned(),
+                status: 500,
+                code: 606,
+                description: "unauthorized".to_owned(),
+            }),
         }
     );
     assert_eq!(
@@ -396,10 +402,16 @@ fn status_keeps_partial_report_when_returning_original_error() {
     );
     assert_eq!(
         failure.source,
-        symfritz_tr064::ClientError::SoapFault {
-            status: 500,
-            code: 606,
-            description: "unauthorized".to_owned(),
+        symfritz_tr064::ClientError::Call {
+            service: "DeviceInfo".to_owned(),
+            action: "GetInfo".to_owned(),
+            source: Box::new(symfritz_tr064::ClientError::SoapFault {
+                service: "DeviceInfo".to_owned(),
+                action: "GetInfo".to_owned(),
+                status: 500,
+                code: 606,
+                description: "unauthorized".to_owned(),
+            }),
         }
     );
     assert_eq!(
