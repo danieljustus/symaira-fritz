@@ -1116,12 +1116,14 @@ pub type WLANClient = WlanClient;
 
 /// Parsed mesh topology.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
 pub struct MeshTopology {
     pub schema_version: String,
     pub nodes: Vec<MeshNode>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
 pub struct MeshNode {
     pub uid: String,
     pub device_name: String,
@@ -1132,6 +1134,7 @@ pub struct MeshNode {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
 pub struct MeshInterface {
     pub uid: String,
     pub name: String,
@@ -1141,6 +1144,7 @@ pub struct MeshInterface {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
 pub struct MeshLink {
     pub state: String,
     pub node_1: String,

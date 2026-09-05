@@ -1,4 +1,5 @@
 #![deny(unsafe_code)]
+#![allow(clippy::result_large_err)]
 
 use std::{
     collections::BTreeMap,
@@ -849,6 +850,7 @@ fn execute_log(args: LogArgs, format: OutputFormat) -> Result<(), HandlerError> 
         .device_log(&args.filter)
         .map_err(|error| HandlerError::from_client("log failed", &error))?;
     if format != OutputFormat::Text {
+        let events: Vec<LogOutput<'_>> = events.iter().map(LogOutput::from).collect();
         output::write(&mut std::io::stdout(), &events, format)
             .map_err(|error| HandlerError::operation(error.to_string()))?;
     } else if events.is_empty() {
@@ -864,6 +866,29 @@ fn execute_log(args: LogArgs, format: OutputFormat) -> Result<(), HandlerError> 
         }
     }
     Ok(())
+}
+
+#[derive(Serialize)]
+struct LogOutput<'a> {
+    #[serde(rename = "ID")]
+    id: &'a str,
+    #[serde(rename = "Group")]
+    group: &'a str,
+    #[serde(rename = "Time")]
+    time: &'a str,
+    #[serde(rename = "Msg")]
+    msg: &'a str,
+}
+
+impl<'a> From<&'a LogEvent> for LogOutput<'a> {
+    fn from(event: &'a LogEvent) -> Self {
+        Self {
+            id: &event.id,
+            group: &event.group,
+            time: &event.time,
+            msg: &event.msg,
+        }
+    }
 }
 
 fn execute_services(format: OutputFormat) -> Result<(), HandlerError> {

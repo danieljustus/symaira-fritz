@@ -67,22 +67,28 @@ def main() -> int:
     parser.add_argument("--command", nargs=argparse.REMAINDER, default=["services", "--output", "json"])
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
+    binary = args.binary.resolve()
     if args.mode == "replay" and not args.recording:
         parser.error("--recording is required in replay mode")
     server = None
     thread = None
-    env = {key: value for key, value in os.environ.items() if not key.upper().startswith("SYMFRITZ_")}
+    env = os.environ.copy()
     with tempfile.TemporaryDirectory(prefix="symfritz-smoke-") as temp:
         home = Path(temp)
-        env.update({"HOME": str(home), "USERPROFILE": str(home), "LC_ALL": "C", "LANG": "C", "TZ": "UTC"})
         if args.mode == "replay":
+            env = {
+                key: value
+                for key, value in env.items()
+                if not key.upper().startswith("SYMFRITZ_")
+            }
+            env.update({"HOME": str(home), "USERPROFILE": str(home), "LC_ALL": "C", "LANG": "C", "TZ": "UTC"})
             server = ReplayServer(("127.0.0.1", 0), ReplayHandler)
             server.responses = load_recording(args.recording)  # type: ignore[attr-defined]
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             env.update({"SYMFRITZ_BOX_HOST": f"127.0.0.1:{server.server_address[1]}", "SYMFRITZ_BOX_USE_TLS": "false"})
         started = time.perf_counter()
-        result = subprocess.run([str(args.binary), *args.command], env=env, cwd=home, capture_output=True, timeout=30)
+        result = subprocess.run([str(binary), *args.command], env=env, cwd=home, capture_output=True, timeout=30)
         elapsed_ms = (time.perf_counter() - started) * 1000
     if server:
         server.shutdown()

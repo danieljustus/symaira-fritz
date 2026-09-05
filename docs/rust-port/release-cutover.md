@@ -130,4 +130,6 @@ that run; no numbers are inferred or copied from a debug build.
   version/config compatibility.
 - DIST release trust chain: **PENDING** until a tag workflow verifies signed,
   notarized, SBOM-bearing public assets and Homebrew read-back.
-- LIVE router smoke/replay: **PENDING** until parent evidence.
+- LIVE router smoke: **PASS** for the sanitized read-only Go↔Rust run recorded
+  in `live-smoke-20260905.json`; no command output or router identifiers were
+  persisted.

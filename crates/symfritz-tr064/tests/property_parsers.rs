@@ -18,6 +18,8 @@ proptest! {
         let text = String::from_utf8(request).unwrap();
         prop_assert!(text.contains("<Value>"));
         prop_assert!(text.contains("</Value>"));
-        prop_assert!(!text.contains("<Value><"));
+        if !value.is_empty() {
+            prop_assert!(!text.contains("<Value><"));
+        }
     }
 }

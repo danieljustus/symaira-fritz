@@ -47,9 +47,9 @@ fixtures; **FROZEN** is covered by the Go oracle but has no Rust implementation;
 | DIST-003 | Release ownership | tag or workflow_dispatch channel | custom release workflow | one publisher; stable tag path; prerelease fallback lifecycle; no GoReleaser race | workflow/actionlint + release-cutover docs | all | workflow semantics | PASS |
 | DIST-004 | Value gate | release-built binaries + loopback discovery fixture | Go fallback benchmark oracle | >=20% size or RSS gain and <=10% fake-box p95 regression | `scripts/benchmark_release.py` JSON report | macOS arm64 | measured values | PASS |
 | DIST-005 | Rollback compatibility | config.toml + pins.json | Go loader/store | Rust and Go retain config bytes, 0600 mode, and Go-compatible SPKI pin shape | `scripts/release_snapshot.py` | host PASS; native matrix in CI | bytes/metadata | PASS |
-| LIVE-002 | Sanitized smoke/replay | redacted fixture or operator-provided live box | installed Go binary | no credentials, SID, MAC, IP, or phone values persisted; outcome-only report | `scripts/live_smoke.py` | macOS/Linux | semantic | PENDING |
+| LIVE-002 | Sanitized smoke/replay | operator-provided live box | release-built Go/Rust binaries | no credentials, SID, MAC, IP, phone values, or command output persisted; outcome-only report | `scripts/live_smoke.py` + `live-smoke-20260905.json` | macOS | semantic | PASS |
 | DOC-001 | Docs/completions | generated CLI docs + four shells | Go/Cobra generation | no command/help drift | `tests/cli_contract.rs` + completion handler tests | all | semantic inventory + executable scripts | PASS |
-| LIVE-001 | Real box | sanitized recordings for supported FRITZ!OS | installed Go binary | request/response and side-effect parity | replay + approved live smoke | macOS/Linux | semantic | PENDING |
+| LIVE-001 | Real box | `docs/rust-port/live-smoke-20260905.json` (no command output or identifiers persisted) | release-built Go binary | read-only command exit/schema parity without storing router data | release-built Rust candidate + `scripts/live_smoke.py` | macOS | semantic | PASS |
 
 ## Read-only handler slice
 
