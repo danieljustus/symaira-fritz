@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import hashlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -67,6 +68,40 @@ class ReleaseManifestTests(unittest.TestCase):
             self.assertEqual(
                 manifest.archive_members(archive),
                 ["LICENSE", "README.md", "symfritz-go.exe", "symfritz.exe"],
+            )
+
+    def test_cross_target_snapshot_packages_without_executing_foreign_binaries(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            rust = root / "symfritz"
+            go = root / "symfritz-go"
+            rust.write_bytes(b"foreign rust binary")
+            go.write_bytes(b"foreign go binary")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "release_snapshot.py"),
+                    "--version",
+                    "1.2.3",
+                    "--out",
+                    str(root / "dist"),
+                    "--target",
+                    "linux/arm64",
+                    "--skip-build",
+                    "--skip-runtime-validation",
+                    "--rust-bin",
+                    str(rust),
+                    "--go-bin",
+                    str(go),
+                ],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+            )
+            archive = root / "dist" / "symaira-fritz_1.2.3_linux_arm64.tar.gz"
+            self.assertEqual(
+                manifest.archive_members(archive),
+                ["LICENSE", "README.md", "symfritz", "symfritz-go"],
             )
 
 

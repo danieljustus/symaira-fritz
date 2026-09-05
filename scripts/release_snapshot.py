@@ -65,7 +65,7 @@ def config_fixture(binary: Path, home: Path, *, cwd: Path) -> bytes:
     path = home / ".config" / "symfritz" / "config.toml"
     if not path.is_file():
         raise RuntimeError(f"{binary.name} did not write {path}")
-    if path.stat().st_mode & 0o777 != 0o600:
+    if os.name != "nt" and path.stat().st_mode & 0o777 != 0o600:
         raise RuntimeError(f"{binary.name} wrote config with unsafe mode")
     return path.read_bytes()
 
@@ -116,6 +116,11 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=Path("dist/snapshot"))
     parser.add_argument("--target", help="OS/ARCH; defaults to the current host")
     parser.add_argument("--skip-build", action="store_true")
+    parser.add_argument(
+        "--skip-runtime-validation",
+        action="store_true",
+        help="package a cross-compiled target without executing foreign binaries",
+    )
     parser.add_argument("--rust-bin", type=Path)
     parser.add_argument("--go-bin", type=Path)
     args = parser.parse_args()
@@ -152,20 +157,21 @@ def main() -> int:
     for binary in (rust, go):
         if not binary.is_file():
             raise RuntimeError(f"missing input binary: {binary}")
-    env = os.environ.copy()
-    with tempfile.TemporaryDirectory(prefix="symfritz-cutover-") as temp:
-        temp_path = Path(temp)
-        rust_version = run_json(rust, ["version", "--json"], env=env, cwd=root)
-        go_version = run_json(go, ["version", "--json"], env=env, cwd=root)
-        expected = {"tool": "symfritz", "version": args.version, "schema_version": 1}
-        if rust_version != expected or go_version != expected:
-            raise RuntimeError(
-                f"version contract mismatch: rust={rust_version!r} go={go_version!r} expected={expected!r}"
-            )
-        rust_config = config_fixture(rust, temp_path / "rust-home", cwd=root)
-        go_config = config_fixture(go, temp_path / "go-home", cwd=root)
-        if rust_config != go_config:
-            raise RuntimeError("Rust and Go config init bytes differ")
+    if not args.skip_runtime_validation:
+        env = os.environ.copy()
+        with tempfile.TemporaryDirectory(prefix="symfritz-cutover-") as temp:
+            temp_path = Path(temp)
+            rust_version = run_json(rust, ["version", "--json"], env=env, cwd=root)
+            go_version = run_json(go, ["version", "--json"], env=env, cwd=root)
+            expected = {"tool": "symfritz", "version": args.version, "schema_version": 1}
+            if rust_version != expected or go_version != expected:
+                raise RuntimeError(
+                    f"version contract mismatch: rust={rust_version!r} go={go_version!r} expected={expected!r}"
+                )
+            rust_config = config_fixture(rust, temp_path / "rust-home", cwd=root)
+            go_config = config_fixture(go, temp_path / "go-home", cwd=root)
+            if rust_config != go_config:
+                raise RuntimeError("Rust and Go config init bytes differ")
     package_archive(root, out, args.version, os_name, arch, rust, go)
     manifest = build_manifest(args.version, out, [(os_name, arch)])
     manifest_path = out / "release-manifest.json"

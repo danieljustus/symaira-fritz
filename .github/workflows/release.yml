@@ -37,26 +37,32 @@ jobs:
             arch: amd64
             runner: macos-15
             rust_target: x86_64-apple-darwin
+            runtime_validation: true
           - os: darwin
             arch: arm64
             runner: macos-15
             rust_target: aarch64-apple-darwin
+            runtime_validation: true
           - os: linux
             arch: amd64
             runner: ubuntu-24.04
             rust_target: x86_64-unknown-linux-gnu
+            runtime_validation: true
           - os: linux
             arch: arm64
             runner: ubuntu-24.04
             rust_target: aarch64-unknown-linux-gnu
+            runtime_validation: false
           - os: windows
             arch: amd64
             runner: windows-2025
             rust_target: x86_64-pc-windows-msvc
+            runtime_validation: true
           - os: windows
             arch: arm64
             runner: windows-2025
             rust_target: aarch64-pc-windows-msvc
+            runtime_validation: false
     runs-on: ${{ matrix.runner }}
     environment: release
     steps:
@@ -211,15 +217,21 @@ jobs:
         env:
           VERSION: ${{ steps.release.outputs.version }}
           TARGET: ${{ matrix.os }}/${{ matrix.arch }}
+          RUNTIME_VALIDATION: ${{ matrix.runtime_validation }}
         run: |
           set -euo pipefail
           suffix=''
           case "$TARGET" in windows/*) suffix='.exe';; esac
+          validation_args=()
+          if [ "$RUNTIME_VALIDATION" != true ]; then
+            validation_args+=(--skip-runtime-validation)
+          fi
           python3 scripts/release_snapshot.py \
             --version "$VERSION" \
             --out dist \
             --target "$TARGET" \
             --skip-build \
+            "${validation_args[@]}" \
             --rust-bin "$(pwd)/dist/.build/symfritz${suffix}" \
             --go-bin "$(pwd)/dist/.build/symfritz-go${suffix}"
           rm -rf dist/.build
