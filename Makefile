@@ -1,9 +1,9 @@
 GO ?= go
 CARGO ?= cargo
 BINARY_NAME = symfritz
-RUST_BINARY = target/debug/symfritz-rust
+RUST_BINARY = target/debug/symfritz
 # version is a package-level var in `main`, so inject into main.version
-# (matches .goreleaser.yml). Injecting into the full import path silently no-ops.
+# (matches release version injection). Injecting into the full import path silently no-ops.
 VERSION_PKG = main
 
 .PHONY: all
@@ -60,6 +60,24 @@ rust-mutating:
 
 .PHONY: rust-check
 rust-check: rust-lint rust-test
+
+.PHONY: rust-parser-properties
+rust-parser-properties:
+	$(CARGO) test -p symfritz-core --test property_parsers --locked
+	$(CARGO) test -p symfritz-tr064 --test property_parsers --locked
+	$(CARGO) test -p symfritz-mcp --test property_framing --locked
+
+.PHONY: release-manifest-test
+release-manifest-test:
+	python3 scripts/test_release_manifest.py
+
+.PHONY: release-snapshot
+release-snapshot:
+	python3 scripts/release_snapshot.py --version "$${VERSION:-0.0.0-dev}" --out dist/snapshot
+
+.PHONY: benchmark-release
+benchmark-release: release-snapshot
+	python3 scripts/benchmark_release.py --go dist/snapshot/.build/symfritz-go --rust target/release/symfritz --output dist/snapshot/value-gate.json
 
 .PHONY: port-aha-fixtures
 port-aha-fixtures:

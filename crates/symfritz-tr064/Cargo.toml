@@ -21,3 +21,4 @@ url.workspace = true
 rcgen.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+proptest.workspace = true

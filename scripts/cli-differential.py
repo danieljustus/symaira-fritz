@@ -1048,7 +1048,7 @@ def run_suite(go: str, rust: str, root: Path) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__); parser.add_argument("--go", default="./symfritz"); parser.add_argument("--rust", default="./target/debug/symfritz-rust"); parser.add_argument("--root", default="."); args = parser.parse_args()
+    parser = argparse.ArgumentParser(description=__doc__); parser.add_argument("--go", default="./symfritz"); parser.add_argument("--rust", default="./target/debug/symfritz"); parser.add_argument("--root", default="."); args = parser.parse_args()
     try: run_suite(os.path.abspath(args.go), os.path.abspath(args.rust), Path(args.root).resolve())
     except (AssertionError, OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
         print(f"FAIL {exc}", file=sys.stderr); return 1
