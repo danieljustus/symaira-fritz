@@ -1,17 +1,17 @@
-# Go↔Rust contract matrix
+# Rust contract matrix
 
-Status meanings: **PASS** is exercised against committed language-neutral
-fixtures; **FROZEN** is covered by the Go oracle but has no Rust implementation;
-**PENDING** still needs an explicit fixture or acceptance test.
+**PASS** means the contract remains executable through Rust tests, a strict
+fake-box harness, or release validation. The frozen v0.7 oracle column records
+provenance; it does not require Go source in the current repository.
 
-| ID | Seam | Fixture / input | Go oracle | Expected contract | Rust test | Platforms | Compare | Status |
+| ID | Seam | Fixture / input | Frozen v0.7 oracle | Expected contract | Rust test | Platforms | Compare | Status |
 |---|---|---|---|---|---|---|---|---|
 | CLI-001 | Version text | `version` | `./symfritz version` | exit 0; exact stdout; empty stderr | `tests/version.rs` + parity harness | all | bytes | PASS |
 | CLI-002 | Version flag | `--version` | `./symfritz --version` | Cobra-compatible text | same | all | bytes | PASS |
 | CLI-003 | Version JSON | `version --json`, `--output json`, uppercase format | Go binary | compact schema v1 object | same | all | bytes | PASS |
 | CLI-004 | Version YAML | `version --output yaml` | Go binary | ordered three-line YAML | same | all | bytes | PASS |
 | CLI-005 | Output errors | invalid and conflicting formats | Go binary | exit 9; exact stderr | same | all | bytes | PASS |
-| CLI-006 | Command tree | every command in `docs/cli.md` | `make docs` / `--help` | names, aliases, flags, defaults, inherited flags | `tests/cli_contract.rs` + `scripts/cli-differential.py` | all | semantic inventory/help | PASS |
+| CLI-006 | Command tree | every command in `docs/cli.md` | frozen command fixture / `--help` | names, aliases, flags, defaults, inherited flags | `tests/cli_contract.rs` + `scripts/cli-differential.py` | all | semantic inventory/help | PASS |
 | CLI-007 | Argument validation | missing/excess args per command | Go binary | deterministic parse exit/stream behavior | `tests/cli_contract.rs` + `scripts/cli-differential.py` | all | exit/stream semantics | PASS |
 | CLI-008 | Structured output | strict fake-box success across typed/raw/web handlers in text/JSON/YAML plus watch NDJSON | Go binary + local fake HTTP | field names, omission, stable values, append/flush | `scripts/cli-differential.py` | all; signal leg macOS/Linux | text bytes; structured semantic | PASS |
 | CLI-009 | Error taxonomy | output/config/auth/transport/confirmation failures | Go binary | exit codes 1/3/9, stream and structured error shape | `scripts/cli-differential.py` | all | bytes/structured semantic | PASS |
@@ -38,15 +38,16 @@ fixtures; **FROZEN** is covered by the Go oracle but has no Rust implementation;
 | CAP-002 | AHA capabilities | device/switch/temp/CPU fixtures | Go AHA tests + `port_aha_fixture_test.go` + `status.go` CPU oracle | SID query behavior, XML types, web-origin CPU query, 403 retry, 1 MiB bound, TR-064 Homeauto calls and capability bits | `symfritz-aha/tests/aha.rs`, `symfritz-aha/tests/fixtures.rs`, `symfritz-tr064/tests/homeauto.rs` | all | semantic/bytes | PASS |
 | CAP-003 | Phone/traffic/DSL/log/reboot | `testdata/port/capabilities-remaining/contracts.json` | Go `internal/fritz/{dsl,phone,traffic,log}` plus reboot command seam | typed models, parsing/filtering, reduced datasets, request actions/arguments and negative behavior | `symfritz-tr064/tests/remaining_capabilities.rs` + Go fixture drift test | all | semantic/bytes | PASS |
 | SCRAPE-001 | `data.lua` | success/error/oversized JSON fixtures | Go scraper tests | best-effort, bounded, version-fragile behavior | `symfritz-aha/tests/client.rs` + `tests/contracts.rs` | all | semantic | PASS |
-| MCP-001 | Initialize | raw framed requests | Go fixture oracle | server name/version/instructions/capabilities | `testdata/mcp/protocol-fixtures.json` + `scripts/mcp-differential.py` | all | parsed semantic | PASS |
-| MCP-002 | Tool surface | `tools/list` | Go fixture oracle | 9 names, schemas, descriptions, annotations | same | all | parsed semantic | PASS |
-| MCP-003 | Tool calls | success/validation/backend failures | Go fixture oracle + production Go models | JSON-RPC IDs, exact Go `toJSON` content text strings, `isError` behavior | production serializer tests + raw-frame tests | all | content.text bytes; semantic envelope | PASS |
-| MCP-004 | Stdio hygiene | initialize/list/call/notifications/malformed frames | Go corekit oracle | only protocol frames on stdout; logs on stderr; cancellation returns boundedly with exit 130 | raw-frame process harness + cancellation/worker tests | all | raw framing + semantic | PASS |
-| DIST-001 | Artifacts | release snapshot | `scripts/release_snapshot.py` + Go build | six legacy archive names; each contains `symfritz`, `symfritz-go`, LICENSE, README; version/config bytes match | `scripts/test_release_manifest.py` + local host snapshot | host PASS; native matrix in CI | metadata + archive members | PASS |
+| MCP-001 | Initialize | raw framed requests | frozen corekit framing | server name/version/instructions/capabilities | `symfritz-mcp` initialize/line/framed unit tests | all | parsed semantic | PASS |
+| MCP-002 | Tool surface | `tools/list` | frozen tool fixture | 9 names, schemas, descriptions, annotations | `symfritz-mcp::tests::tool_surface_is_frozen` | all | parsed semantic | PASS |
+| MCP-003 | Tool calls | success/validation/backend failures | frozen content/error fixtures | JSON-RPC IDs, exact content text strings, `isError` behavior | MCP tool tests + production CLI serializer tests | all | content.text bytes; semantic envelope | PASS |
+| MCP-004 | Stdio hygiene | initialize/list/call/notifications/malformed frames | frozen corekit behavior | only protocol frames on stdout; logs on stderr; cancellation returns boundedly with exit 130 | framing property tests + cancellation/worker unit tests | all | raw framing + semantic | PASS |
+| DIST-001 | Artifacts | release snapshot | v0.7 archive names | six legacy archive names; each contains `symfritz`, LICENSE, README | `scripts/test_release_manifest.py` + local host snapshot | host + native CI matrix | metadata + archive members | PASS |
 | DIST-002 | Trust chain | v0.7.0 release plus remote Formula | release workflow | six signed dual-binary archives, six SBOMs, checksums, manifest, exact tag/assets, and installed Formula smoke for both binaries | public v0.7.0 asset/checksum/signature read-back + remote Formula/install verification | all | cryptographic/semantic | PASS |
 | DIST-003 | Release ownership | tag or workflow_dispatch channel | custom release workflow | one publisher; stable tag path; prerelease fallback lifecycle; no GoReleaser race | workflow/actionlint + release-cutover docs | all | workflow semantics | PASS |
-| DIST-004 | Value gate | release-built binaries + loopback discovery fixture | Go fallback benchmark oracle | >=20% size or RSS gain and <=10% fake-box p95 regression | `scripts/benchmark_release.py` JSON report | macOS arm64 | measured values | PASS |
-| DIST-005 | Rollback compatibility | config.toml + pins.json | Go loader/store | Rust and Go retain config bytes, 0600 mode, and Go-compatible SPKI pin shape | `scripts/release_snapshot.py` | host PASS; native matrix in CI | bytes/metadata | PASS |
+| DIST-004 | Value gate | v0.7 release-built binaries + loopback fixture | archived Go fallback benchmark | >=20% size or RSS gain and <=10% fake-box p95 regression at cutover | `value-gate-20260905.json` | macOS arm64 | measured values | PASS |
+| DIST-005 | Config compatibility | config.toml + pins.json | frozen loader/store fixtures | Rust retains config bytes, 0600 mode, and the frozen SPKI pin shape | fixture tests + `scripts/release_snapshot.py` | all | bytes/metadata | PASS |
+| DIST-006 | Rust-only distribution | current release plus remote Formula | v0.7.0 immutable rollback | six signed single-binary archives, SBOMs, checksums, manifest, and Formula smoke | release workflow public readback | all | cryptographic/semantic | PENDING |
 | LIVE-002 | Sanitized smoke/replay | operator-provided live box | release-built Go/Rust binaries | no credentials, SID, MAC, IP, phone values, or command output persisted; outcome-only report | `scripts/live_smoke.py` + `live-smoke-20260905.json` | macOS | semantic | PASS |
 | DOC-001 | Docs/completions | generated CLI docs + four shells | Go/Cobra generation | no command/help drift | `tests/cli_contract.rs` + completion handler tests | all | semantic inventory + executable scripts | PASS |
 | LIVE-001 | Real box | `docs/rust-port/live-smoke-20260905.json` (no command output or identifiers persisted) | release-built Go binary | read-only command exit/schema parity without storing router data | release-built Rust candidate + `scripts/live_smoke.py` | macOS | semantic | PASS |
@@ -81,25 +82,17 @@ remains reserved for issue #191.
 
 ## Final CLI parity scope and gaps
 
-`make port-cli-parity` builds both binaries and runs
-`scripts/cli-differential.py` against an isolated local fake TR-064 endpoint.
-The harness compares every implemented non-MCP command family through
-executable help, validation, success, error, config, auth-test/store, and
-mutation checks. It binds the fake box on `0.0.0.0:49000`, discovers the local
-RFC1918 address dynamically, and compares request method, route, SOAP action,
-arguments, authentication sequence, output semantics, and mutation order.
-Temporary HOME/config paths are normalized; structured JSON is compared
-semantically, and doctor compares the shared structured report plus stable
-failure status while allowing the language-specific error suffix. Watch mode
-requires valid object-per-line NDJSON, cancellation exit 130, matching stderr,
-and an equivalent final snapshot because poll timing can change the first
-in-flight snapshot. The MCP-specific harness is
-`scripts/mcp-differential.py`: it runs the Go-generated deterministic oracle and
-Rust fixture server against raw Content-Length frames, including initialize,
-tools/list, notifications, tool successes, tool errors, invalid params, and
-parse errors. There are no skip or `NON-PASS` paths: a required family failure aborts the
-run. The only intentional exclusion is interactive auth login (terminal-specific;
-covered by injected/secret tests as described above).
+`make cli-contract` builds the Rust binary and runs
+`scripts/cli-differential.py` against an isolated strict fake TR-064 endpoint.
+The retained harness exercises every non-MCP command family through executable
+help, validation, success, error, config, auth-test/store, and mutation checks.
+It binds the fake box on `0.0.0.0:49000`, discovers the local RFC1918 address,
+and validates request method, route, SOAP action, arguments, authentication
+sequence, output semantics, and mutation order. Temporary HOME/config paths are
+normalized. Watch mode requires valid object-per-line NDJSON, cancellation exit
+130, empty diagnostics and stable snapshots. MCP framing, tool calls,
+notifications, invalid params, parse errors, cancellation and bounded input are
+executable Rust unit/property tests. There are no skip or `NON-PASS` paths.
 
 The matrix below still tracks repository-wide work outside this issue,
 including release/live-box coverage; those rows are not claimed by the
@@ -107,8 +100,8 @@ non-MCP CLI harness.
 
 ## Rules
 
-- A row moves to **PASS** only when the Rust test and differential comparison are
-  executable in CI.
+- A row moves to **PASS** only when its Rust test, strict harness, or release
+  validation is executable in CI.
 - Byte comparison is mandatory for protocol frames, version/help/error output,
   generated artifacts, and persisted files unless this table records a reason.
 - Randomness, clocks, locale, timezone, HOME, and network endpoints must be

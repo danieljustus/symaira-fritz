@@ -7,7 +7,6 @@ Thank you for your interest in contributing to Symaira Fritz! This document prov
 ### Prerequisites
 
 - Rust 1.98.0 via rustup (production implementation)
-- Go 1.26.6 or later (differential oracle and temporary rollback)
 - Git
 
 ### Getting Started
@@ -27,18 +26,17 @@ Thank you for your interest in contributing to Symaira Fritz! This document prov
    make build
    make lint
    make test
-   make port-cli-parity
-   make mcp-parity
+   make cli-contract
+   make release-manifest-test
    ```
 
 ## Code Style
 
-- Follow Rust conventions (`rustfmt`, Clippy with warnings denied) in the
-  production crates and Go conventions (`gofmt`, `go vet`) in the oracle
+- Follow Rust conventions (`rustfmt`, Clippy with warnings denied)
 - Keep functions focused and small
 - Write meaningful commit messages
 - Add tests for new functionality
-- Keep the Go oracle CGO-free while it remains in the repository
+
 
 ## Pull Request Process
 

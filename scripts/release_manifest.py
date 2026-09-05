@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Generate and validate the Rust cutover release manifest.
-
-The manifest is intentionally independent of GoReleaser so a single publisher
-can ship the Rust primary and Go fallback in one archive per target.
-"""
+"""Generate and validate the Rust release manifest."""
 from __future__ import annotations
 
 import argparse
@@ -29,9 +25,9 @@ def archive_name(version: str, os_name: str, arch: str) -> str:
     return f"symaira-fritz_{version}_{os_name}_{arch}.{suffix}"
 
 
-def binary_names(os_name: str) -> tuple[str, str]:
+def binary_name(os_name: str) -> str:
     suffix = ".exe" if os_name == "windows" else ""
-    return (f"symfritz{suffix}", f"symfritz-go{suffix}")
+    return f"symfritz{suffix}"
 
 
 def parse_targets(values: Iterable[str]) -> list[tuple[str, str]]:
@@ -60,8 +56,7 @@ def archive_members(path: Path) -> list[str]:
 
 
 def expected_members(os_name: str) -> list[str]:
-    rust, fallback = binary_names(os_name)
-    return sorted(["LICENSE", "README.md", rust, fallback])
+    return sorted(["LICENSE", "README.md", binary_name(os_name)])
 
 
 def validate_archive(path: Path, version: str, os_name: str, arch: str) -> dict[str, object]:
@@ -99,16 +94,16 @@ def build_manifest(version: str, dist: Path, targets: Iterable[tuple[str, str]])
             raise ValueError(f"missing release archive: {path}")
         archives.append(validate_archive(path, version, os_name, arch))
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "version": version,
-        "binary_names": {"rust_primary": "symfritz", "go_fallback": "symfritz-go"},
+        "binary_name": "symfritz",
         "targets": [
             {
                 "os": os_name,
                 "arch": arch,
                 "archive": archive_name(version, os_name, arch),
                 "format": "zip" if os_name == "windows" else "tar.gz",
-                "binaries": list(binary_names(os_name)),
+                "binary": binary_name(os_name),
             }
             for os_name, arch in target_list
         ],

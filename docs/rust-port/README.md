@@ -1,9 +1,8 @@
 # Go-to-Rust migration record
 
 This directory records the reversible, contract-first Rust port completed in
-v0.7.0. Rust is the production implementation. The Go binary remains the
-executable oracle and explicit rollback during the first stable Rust release
-window.
+v0.7.0. Rust is the sole source and production implementation. The immutable
+v0.7.0 release retains the final Go binary as the historical rollback point.
 
 ## Decision
 
@@ -14,8 +13,7 @@ a measured value gate; the evidence remains committed here.
 The Rust CLI layer now freezes the complete documented Cobra command tree
 (command names, `serve` alias, positional arity, flags, defaults, global flags,
 version semantics, and help metadata) and wires the `mcp`/`serve` aliases to the
-Rust stdio server. The release artifact is named `symfritz`; `symfritz-go` is
-kept as the explicit rollback binary.
+Rust stdio server. Current release artifacts contain only `symfritz`.
 
 Implemented slices:
 
@@ -99,21 +97,19 @@ The exact release measurements are recorded in
 
 ```bash
 make build                  # Rust production binary → ./symfritz
-make test                   # Rust workspace + Go oracle
-make lint                   # rustfmt/Clippy + Go fmt/vet
-make build-go               # explicit Go oracle → target/debug/symfritz-go
-make port-fixtures          # deliberate Go-oracle fixture regeneration
-make port-parity-version    # Go + Rust version golden cases
-make port-cli-parity        # full CLI differential harness
-make mcp-fixtures            # regenerate Go MCP wire fixtures
-make mcp-parity              # raw Go oracle ↔ Rust stdio differential
+make test                   # complete Rust workspace
+make lint                   # rustfmt + Clippy
+make cli-contract           # fake-box CLI and frozen fixture contracts
+make rust-parser-properties # untrusted parser/framing properties
+make release-manifest-test  # archive and manifest contract
+make release-snapshot       # host release artifact smoke
 ```
 
-`make port-cli-parity` runs both binaries with fresh `HOME`/XDG trees, fixed
-locale/timezone, a local fake TR-064 endpoint, deterministic text/JSON/YAML
-traffic cases, watch NDJSON flushing, confirmation/no-side-effect behavior,
-and SIGINT cancellation. Structured traffic values are compared semantically;
-stable version/configuration/confirmation outputs are compared byte-for-byte.
+`make cli-contract` runs the Rust binary with fresh `HOME`/XDG trees, fixed
+locale/timezone, a strict local fake TR-064 endpoint, deterministic
+text/JSON/YAML traffic cases, watch NDJSON flushing,
+confirmation/no-side-effect behavior, and SIGINT cancellation. Every network
+route, SOAP action, argument and mutation sequence is allow-listed.
 
 The remaining typed capabilities are split by protocol boundary: TR-064 owns
 SOAP/digest operations, while `symfritz-aha::Client` owns session-authenticated
@@ -149,8 +145,8 @@ own language-neutral fixtures.
 7. Validate against a real FRITZ!Box using sanitized recordings. *(complete)*
 8. Ship a prerelease and stable release with the last known-good Go binary as
    the explicit fallback. *(complete: v0.7.0)*
-9. Remove Go only after the full v0.7 stable observation window operates
-   without unexplained parity defects. *(intentionally pending)*
+9. Remove Go source and current-release fallback while retaining v0.7.0 as the
+   immutable rollback point. *(complete by explicit maintainer decision)*
 
 See [`architecture.md`](architecture.md) for boundaries and
 [`contract-matrix.md`](contract-matrix.md) for the executable acceptance map.

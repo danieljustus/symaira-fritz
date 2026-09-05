@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the maintained Homebrew formula for the dual-binary archive."""
+"""Render the maintained Homebrew formula for the Rust release archive."""
 from __future__ import annotations
 
 import argparse
@@ -27,7 +27,6 @@ def formula(version: str, release_url: str, digest: dict[str, str]) -> str:
                 f'''      sha256 "{digest[asset]}"\n\n'''
                 f'''      define_method(:install) do\n'''
                 f'''        bin.install "symfritz"\n'''
-                f'''        bin.install "symfritz-go"\n'''
                 f'''      end\n'''
                 f'''    end'''
             )
@@ -39,7 +38,7 @@ def formula(version: str, release_url: str, digest: dict[str, str]) -> str:
     return f'''# typed: strict
 # frozen_string_literal: true
 
-# Generated from the dual-binary release archive. Do not edit manually.
+# Generated from the Rust release archive. Do not edit manually.
 class Symfritz < Formula
   desc "CLI to administer, analyse, and control an AVM FRITZ!Box"
   homepage "https://github.com/danieljustus/symaira-fritz"
@@ -52,7 +51,6 @@ class Symfritz < Formula
 
   test do
     system "#{{bin}}/symfritz", "version"
-    system "#{{bin}}/symfritz-go", "version"
   end
 end
 '''

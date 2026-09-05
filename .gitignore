@@ -6,13 +6,11 @@ dist/
 .DS_Store
 **/.DS_Store
 
-# Go
-*.test
-*.out
-vendor/
-
 # Rust
 /target/
+
+# Python release tooling
+__pycache__/
 
 # Config / secrets
 .env

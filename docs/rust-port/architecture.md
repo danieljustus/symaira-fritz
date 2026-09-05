@@ -70,9 +70,8 @@ this pin check only through an explicit user configuration choice.
 
 ## Cutover and rollback
 
-During prerelease, publish the Rust candidate without replacing `symfritz`.
-Once parity is green, produce the normal Rust `symfritz` artifact and retain the
-last Go artifact as `symfritz-go` for one stable release. The fallback must be
-explicit; the Rust process must not silently dispatch arbitrary failures to Go.
-Rollback restores the previous Homebrew formula/release asset and preserves the
-same config and pin files.
+The staged cutover completed in v0.7.0 after parity, value, release and live-box
+gates passed. Current source and release artifacts contain only the Rust
+`symfritz` implementation. The immutable v0.7.0 release remains the rollback
+point and includes the final `symfritz-go` binary. Rollback preserves the same
+config and pin files; it never resets trust state.

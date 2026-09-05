@@ -26,8 +26,8 @@ def validate(formula_path: Path, version: str, release_url: str, checksum_path: 
         raise ValueError("formula is missing the exact version stanza")
     if 'system "#{bin}/symfritz", "version"' not in text:
         raise ValueError("formula does not test symfritz")
-    if 'system "#{bin}/symfritz-go", "version"' not in text:
-        raise ValueError("formula does not test symfritz-go")
+    if "symfritz-go" in text:
+        raise ValueError("formula still references the removed Go fallback")
 
     for os_name, arch in TARGETS:
         if os_name == "windows":
