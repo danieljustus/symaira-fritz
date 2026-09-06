@@ -14,6 +14,9 @@ use std::{
     time::Duration,
 };
 
+#[cfg(unix)]
+use std::process::Stdio;
+
 use clap::CommandFactory;
 use clap_complete::{generate, shells};
 use serde::{Deserialize, Serialize};
@@ -185,6 +188,95 @@ struct ErrorDetails<'a> {
     message: &'a str,
 }
 
+#[derive(Serialize)]
+struct DialOutput<'a> {
+    ok: bool,
+    action: &'static str,
+    number: &'a str,
+}
+
+#[derive(Serialize)]
+struct HangupOutput {
+    ok: bool,
+    action: &'static str,
+}
+
+#[derive(Serialize)]
+struct RebootOutput {
+    ok: bool,
+    action: &'static str,
+    triggered: bool,
+}
+
+#[derive(Serialize)]
+struct WolOutput<'a> {
+    ok: bool,
+    action: &'static str,
+    mac: &'a str,
+}
+
+#[derive(Serialize)]
+struct GuestWlanOutput {
+    ok: bool,
+    action: &'static str,
+    index: usize,
+    enabled: bool,
+}
+
+#[derive(Serialize)]
+struct HomeSwitchOutput<'a> {
+    ok: bool,
+    action: &'static str,
+    ain: &'a str,
+    state: &'a str,
+}
+
+#[derive(Serialize)]
+struct HomeTempOutput<'a> {
+    ok: bool,
+    action: &'static str,
+    ain: &'a str,
+    temperature: &'a str,
+}
+
+#[derive(Serialize)]
+struct AuthTrustOutput<'a> {
+    ok: bool,
+    action: &'static str,
+    host: &'a str,
+    reset: bool,
+}
+
+#[derive(Serialize)]
+struct AuthTestOutput<'a> {
+    ok: bool,
+    action: &'static str,
+    credential_source: CredentialSource,
+    host: &'a str,
+    user: &'a str,
+    session_ok: bool,
+    tr064_ok: bool,
+    valid: bool,
+}
+
+#[derive(Serialize)]
+struct AuthStoreOutput<'a> {
+    ok: bool,
+    action: &'static str,
+    backend: &'a str,
+    stored: bool,
+}
+
+#[derive(Serialize)]
+struct AuthLoginOutput<'a> {
+    ok: bool,
+    action: &'static str,
+    backend: &'a str,
+    session_ok: bool,
+    tr064_ok: bool,
+    stored: bool,
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct RandomCnonce;
 
@@ -317,11 +409,11 @@ fn execute(cli: Cli, format: OutputFormat) -> Result<(), HandlerError> {
         Some(Command::Mcp) => execute_mcp(),
         Some(Command::Mesh(_)) => execute_mesh(format),
         Some(Command::Home(command)) => execute_home(command, format),
-        Some(Command::Dial(args)) => execute_dial(args),
-        Some(Command::Hangup) => execute_hangup(),
-        Some(Command::Reboot(args)) => execute_reboot(args),
-        Some(Command::Wol(args)) => execute_wol(args),
-        Some(Command::Auth(command)) => execute_auth(command),
+        Some(Command::Dial(args)) => execute_dial(args, format),
+        Some(Command::Hangup) => execute_hangup(format),
+        Some(Command::Reboot(args)) => execute_reboot(args, format),
+        Some(Command::Wol(args)) => execute_wol(args, format),
+        Some(Command::Auth(command)) => execute_auth(command, format),
         Some(Command::Scrape(args)) => execute_scrape(args),
         Some(Command::Completion(command)) => execute_completion(command),
     }
@@ -627,11 +719,22 @@ fn execute_wlan(
                 client
                     .set_guest_wlan(usize::from(command.guest_index), enable)
                     .map_err(|error| HandlerError::from_client("guest toggle failed", &error))?;
-                println!(
-                    "Guest WLAN (index {}) {}.",
-                    command.guest_index,
-                    if enable { "enabled" } else { "disabled" }
-                );
+                if format != OutputFormat::Text {
+                    let payload = GuestWlanOutput {
+                        ok: true,
+                        action: "wlan_guest",
+                        index: usize::from(command.guest_index),
+                        enabled: enable,
+                    };
+                    output::write(&mut std::io::stdout(), &payload, format)
+                        .map_err(|error| HandlerError::operation(error.to_string()))?;
+                } else {
+                    println!(
+                        "Guest WLAN (index {}) {}.",
+                        command.guest_index,
+                        if enable { "enabled" } else { "disabled" }
+                    );
+                }
                 Ok(())
             }
         },
@@ -971,27 +1074,46 @@ fn service_by_shortcut(name: &str) -> Option<Service> {
     }
 }
 
-fn execute_dial(args: symfritz_cli::cli::OneArg) -> Result<(), HandlerError> {
+fn execute_dial(args: symfritz_cli::cli::OneArg, format: OutputFormat) -> Result<(), HandlerError> {
     let (config, password) = load_connection()?;
     let mut client = make_tr064(&config.box_config, &password)?;
     client
         .dial(&args.number)
         .map_err(|error| HandlerError::from_client("dial failed", &error))?;
-    println!("Dialing {}...", args.number);
+    if format != OutputFormat::Text {
+        let payload = DialOutput {
+            ok: true,
+            action: "dial",
+            number: &args.number,
+        };
+        output::write(&mut std::io::stdout(), &payload, format)
+            .map_err(|error| HandlerError::operation(error.to_string()))?;
+    } else {
+        println!("Dialing {}...", args.number);
+    }
     Ok(())
 }
 
-fn execute_hangup() -> Result<(), HandlerError> {
+fn execute_hangup(format: OutputFormat) -> Result<(), HandlerError> {
     let (config, password) = load_connection()?;
     let mut client = make_tr064(&config.box_config, &password)?;
     client
         .hangup()
         .map_err(|error| HandlerError::from_client("hangup failed", &error))?;
-    println!("Hanging up...");
+    if format != OutputFormat::Text {
+        let payload = HangupOutput {
+            ok: true,
+            action: "hangup",
+        };
+        output::write(&mut std::io::stdout(), &payload, format)
+            .map_err(|error| HandlerError::operation(error.to_string()))?;
+    } else {
+        println!("Hanging up...");
+    }
     Ok(())
 }
 
-fn execute_reboot(args: RebootArgs) -> Result<(), HandlerError> {
+fn execute_reboot(args: RebootArgs, format: OutputFormat) -> Result<(), HandlerError> {
     if !args.yes {
         return Err(HandlerError::config(
             "confirmation required: refusing to reboot without --yes",
@@ -1002,11 +1124,21 @@ fn execute_reboot(args: RebootArgs) -> Result<(), HandlerError> {
     client
         .reboot()
         .map_err(|error| HandlerError::from_client("reboot failed", &error))?;
-    println!("Reboot triggered.");
+    if format != OutputFormat::Text {
+        let payload = RebootOutput {
+            ok: true,
+            action: "reboot",
+            triggered: true,
+        };
+        output::write(&mut std::io::stdout(), &payload, format)
+            .map_err(|error| HandlerError::operation(error.to_string()))?;
+    } else {
+        println!("Reboot triggered.");
+    }
     Ok(())
 }
 
-fn execute_wol(args: WolArgs) -> Result<(), HandlerError> {
+fn execute_wol(args: WolArgs, format: OutputFormat) -> Result<(), HandlerError> {
     if args.mac.is_none() && args.host.is_none() {
         return Err(HandlerError::config("provide a host argument or --mac"));
     }
@@ -1031,7 +1163,17 @@ fn execute_wol(args: WolArgs) -> Result<(), HandlerError> {
     client
         .wake_on_lan(&mac)
         .map_err(|error| HandlerError::from_client("wol failed", &error))?;
-    println!("Wake-on-LAN packet sent to {mac}.");
+    if format != OutputFormat::Text {
+        let payload = WolOutput {
+            ok: true,
+            action: "wol",
+            mac: &mac,
+        };
+        output::write(&mut std::io::stdout(), &payload, format)
+            .map_err(|error| HandlerError::operation(error.to_string()))?;
+    } else {
+        println!("Wake-on-LAN packet sent to {mac}.");
+    }
     Ok(())
 }
 
@@ -1053,17 +1195,17 @@ fn execute_config_init(args: symfritz_cli::cli::InitArgs) -> Result<(), HandlerE
     Ok(())
 }
 
-fn execute_auth(command: AuthCommand) -> Result<(), HandlerError> {
+fn execute_auth(command: AuthCommand, format: OutputFormat) -> Result<(), HandlerError> {
     match command.command {
         None => print_help(&[String::from("auth")]),
-        Some(AuthSubcommand::Test) => execute_auth_test(),
-        Some(AuthSubcommand::Trust(args)) => execute_auth_trust(args),
-        Some(AuthSubcommand::Login(args)) => execute_auth_login(args.into()),
-        Some(AuthSubcommand::Store(args)) => execute_auth_store(args),
+        Some(AuthSubcommand::Test) => execute_auth_test(format),
+        Some(AuthSubcommand::Trust(args)) => execute_auth_trust(args, format),
+        Some(AuthSubcommand::Login(args)) => execute_auth_login(args.into(), format),
+        Some(AuthSubcommand::Store(args)) => execute_auth_store(args, format),
     }
 }
 
-fn execute_auth_trust(args: TrustArgs) -> Result<(), HandlerError> {
+fn execute_auth_trust(args: TrustArgs, format: OutputFormat) -> Result<(), HandlerError> {
     let Some(host) = args.reset.filter(|host| !host.is_empty()) else {
         return print_help(&[String::from("auth"), String::from("trust")]);
     };
@@ -1073,7 +1215,16 @@ fn execute_auth_trust(args: TrustArgs) -> Result<(), HandlerError> {
     let reset = store
         .reset(&host)
         .map_err(|error| HandlerError::operation(format!("failed to reset pin: {error}")))?;
-    if reset {
+    if format != OutputFormat::Text {
+        let payload = AuthTrustOutput {
+            ok: true,
+            action: "auth_trust",
+            host: &host,
+            reset,
+        };
+        output::write(&mut std::io::stdout(), &payload, format)
+            .map_err(|error| HandlerError::operation(error.to_string()))?;
+    } else if reset {
         println!(
             "Reset certificate pin for {host}.\nNext TLS connection will pin the current certificate."
         );
@@ -1083,7 +1234,7 @@ fn execute_auth_trust(args: TrustArgs) -> Result<(), HandlerError> {
     Ok(())
 }
 
-fn execute_auth_test() -> Result<(), HandlerError> {
+fn execute_auth_test(format: OutputFormat) -> Result<(), HandlerError> {
     let config = symfritz_core::config::load_config().map_err(config_error)?;
     let result = resolve(&SecretOptions::from(&config.box_config)).map_err(secret_error)?;
     if result.source == CredentialSource::None || result.password.trim().is_empty() {
@@ -1091,12 +1242,32 @@ fn execute_auth_test() -> Result<(), HandlerError> {
             "no credential: no password configured (run 'symfritz auth login')",
         ));
     }
+    let (session_ok, tr064_ok) = verify_credential(&config.box_config, &result.password);
+    if format != OutputFormat::Text {
+        if !session_ok {
+            return Err(HandlerError::auth(
+                "invalid credential: credential rejected by box",
+            ));
+        }
+        let payload = AuthTestOutput {
+            ok: true,
+            action: "auth_test",
+            credential_source: result.source,
+            host: &config.box_config.host,
+            user: &config.box_config.user,
+            session_ok,
+            tr064_ok,
+            valid: true,
+        };
+        output::write(&mut std::io::stdout(), &payload, format)
+            .map_err(|error| HandlerError::operation(error.to_string()))?;
+        return Ok(());
+    }
     println!("Credential source: {}", result.source);
     println!(
         "Box:               {} (user {:?})",
         config.box_config.host, config.box_config.user
     );
-    let (session_ok, tr064_ok) = verify_credential(&config.box_config, &result.password);
     println!(
         "  {} Web session login (login_sid.lua)",
         bool_glyph(session_ok)
@@ -1136,7 +1307,7 @@ fn verify_credential(box_config: &BoxConfig, password: &str) -> (bool, bool) {
     (session_ok, tr064_ok)
 }
 
-fn execute_auth_login(args: AuthStoreArgs) -> Result<(), HandlerError> {
+fn execute_auth_login(args: AuthStoreArgs, format: OutputFormat) -> Result<(), HandlerError> {
     let config = symfritz_core::config::load_config().map_err(config_error)?;
     let password = prompt_hidden(&format!(
         "FRITZ!Box password for {}@{}: ",
@@ -1150,23 +1321,36 @@ fn execute_auth_login(args: AuthStoreArgs) -> Result<(), HandlerError> {
     if !session_ok {
         return Err(HandlerError::auth("box rejected the password"));
     }
-    println!(
-        "Verified: web login ✓  TR-064 {}",
-        if tr064_ok {
-            "✓"
-        } else {
-            "✗ (disabled or unavailable)"
-        }
-    );
     let (backend, hint) = store_credential(&config.box_config, &password, &args)?;
-    println!("Stored in {backend}.");
-    if !hint.is_empty() {
-        println!("{hint}");
+    if format != OutputFormat::Text {
+        let payload = AuthLoginOutput {
+            ok: true,
+            action: "auth_login",
+            backend: &backend,
+            session_ok,
+            tr064_ok,
+            stored: true,
+        };
+        output::write(&mut std::io::stdout(), &payload, format)
+            .map_err(|error| HandlerError::operation(error.to_string()))?;
+    } else {
+        println!(
+            "Verified: web login ✓  TR-064 {}",
+            if tr064_ok {
+                "✓"
+            } else {
+                "✗ (disabled or unavailable)"
+            }
+        );
+        println!("Stored in {backend}.");
+        if !hint.is_empty() {
+            println!("{hint}");
+        }
     }
     Ok(())
 }
 
-fn execute_auth_store(args: AuthStoreArgs) -> Result<(), HandlerError> {
+fn execute_auth_store(args: AuthStoreArgs, format: OutputFormat) -> Result<(), HandlerError> {
     let config = symfritz_core::config::load_config().map_err(config_error)?;
     let password = match std::env::var("SYMFRITZ_PASSWORD") {
         Ok(password) if !password.is_empty() => password,
@@ -1179,9 +1363,20 @@ fn execute_auth_store(args: AuthStoreArgs) -> Result<(), HandlerError> {
         return Err(HandlerError::config("empty password"));
     }
     let (backend, hint) = store_credential(&config.box_config, &password, &args)?;
-    println!("Stored in {backend}.");
-    if !hint.is_empty() {
-        println!("{hint}");
+    if format != OutputFormat::Text {
+        let payload = AuthStoreOutput {
+            ok: true,
+            action: "auth_store",
+            backend: &backend,
+            stored: true,
+        };
+        output::write(&mut std::io::stdout(), &payload, format)
+            .map_err(|error| HandlerError::operation(error.to_string()))?;
+    } else {
+        println!("Stored in {backend}.");
+        if !hint.is_empty() {
+            println!("{hint}");
+        }
     }
     Ok(())
 }
@@ -1237,6 +1432,7 @@ impl TerminalEchoGuard {
     fn new() -> Result<Self, HandlerError> {
         let saved = ProcessCommand::new("stty")
             .arg("-g")
+            .stdin(Stdio::inherit())
             .output()
             .map_err(|error| {
                 HandlerError::operation(format!("cannot read terminal settings: {error}"))
@@ -1247,6 +1443,7 @@ impl TerminalEchoGuard {
         let saved = String::from_utf8_lossy(&saved.stdout).trim().to_owned();
         let disabled = ProcessCommand::new("stty")
             .arg("-echo")
+            .stdin(Stdio::inherit())
             .status()
             .map_err(|error| {
                 HandlerError::operation(format!("cannot disable password echo: {error}"))
@@ -1263,7 +1460,10 @@ impl Drop for TerminalEchoGuard {
     fn drop(&mut self) {
         // Drop is the final safety net for read errors, cancellation, and panic
         // unwinding. Never replace the user's terminal mode with a guess.
-        let _ = ProcessCommand::new("stty").arg(&self.saved).status();
+        let _ = ProcessCommand::new("stty")
+            .arg(&self.saved)
+            .stdin(Stdio::inherit())
+            .status();
     }
 }
 
@@ -2142,12 +2342,12 @@ fn model_suffix(model: &str) -> String {
 fn execute_home(command: HomeCommand, format: OutputFormat) -> Result<(), HandlerError> {
     match command {
         HomeCommand::List(args) => execute_home_list(args, format),
-        HomeCommand::Switch(args) => execute_home_switch(args),
-        HomeCommand::Temp(args) => execute_home_temp(args),
+        HomeCommand::Switch(args) => execute_home_switch(args, format),
+        HomeCommand::Temp(args) => execute_home_temp(args, format),
     }
 }
 
-fn execute_home_switch(args: HomeSwitchArgs) -> Result<(), HandlerError> {
+fn execute_home_switch(args: HomeSwitchArgs, format: OutputFormat) -> Result<(), HandlerError> {
     let state = match args.state.to_ascii_lowercase().as_str() {
         "on" => true,
         "off" => false,
@@ -2171,11 +2371,23 @@ fn execute_home_switch(args: HomeSwitchArgs) -> Result<(), HandlerError> {
                 .map_err(|error| HandlerError::from_aha("switch failed", &error))?;
         }
     }
-    println!("OK: {} -> {}", args.ain, if state { "on" } else { "off" });
+    let state_text = if state { "on" } else { "off" };
+    if format != OutputFormat::Text {
+        let payload = HomeSwitchOutput {
+            ok: true,
+            action: "home_switch",
+            ain: &args.ain,
+            state: state_text,
+        };
+        output::write(&mut std::io::stdout(), &payload, format)
+            .map_err(|error| HandlerError::operation(error.to_string()))?;
+    } else {
+        println!("OK: {} -> {}", args.ain, state_text);
+    }
     Ok(())
 }
 
-fn execute_home_temp(args: HomeTempArgs) -> Result<(), HandlerError> {
+fn execute_home_temp(args: HomeTempArgs, format: OutputFormat) -> Result<(), HandlerError> {
     let value = match args.temperature.to_ascii_lowercase().as_str() {
         "on" => 254.0,
         "off" => 253.0,
@@ -2193,7 +2405,18 @@ fn execute_home_temp(args: HomeTempArgs) -> Result<(), HandlerError> {
     client
         .set_hkr_temp(&args.ain, value)
         .map_err(|error| HandlerError::from_aha("set temp failed", &error))?;
-    println!("OK: {} -> {}", args.ain, args.temperature);
+    if format != OutputFormat::Text {
+        let payload = HomeTempOutput {
+            ok: true,
+            action: "home_temp",
+            ain: &args.ain,
+            temperature: &args.temperature,
+        };
+        output::write(&mut std::io::stdout(), &payload, format)
+            .map_err(|error| HandlerError::operation(error.to_string()))?;
+    } else {
+        println!("OK: {} -> {}", args.ain, args.temperature);
+    }
     Ok(())
 }
 fn execute_home_list(args: HomeListArgs, format: OutputFormat) -> Result<(), HandlerError> {
@@ -2227,10 +2450,11 @@ fn execute_home_list(args: HomeListArgs, format: OutputFormat) -> Result<(), Han
         return Ok(());
     }
     let mut web = make_web(&config.box_config, &password)?;
-    let devices = web
-        .devices()
+    let list = web
+        .device_list()
         .map_err(|error| HandlerError::from_aha("device list failed", &error))?;
-    let groups = web.groups().unwrap_or_default();
+    let devices = list.devices;
+    let groups = list.groups;
     if format != OutputFormat::Text {
         let payload = AhaCombinedOutput {
             devices: devices.iter().map(AhaDeviceOutput::from).collect(),
