@@ -139,6 +139,24 @@ fn schema(properties: Value, required: &[&str]) -> Value {
     Value::Object(object)
 }
 
+fn selector_schema(properties: Value, selectors: &[&str]) -> Value {
+    let mut object = match schema(properties, &[]) {
+        Value::Object(object) => object,
+        _ => unreachable!(),
+    };
+    object.insert("additionalProperties".to_owned(), Value::Bool(false));
+    object.insert(
+        "oneOf".to_owned(),
+        Value::Array(
+            selectors
+                .iter()
+                .map(|selector| json!({"required": [selector]}))
+                .collect(),
+        ),
+    );
+    Value::Object(object)
+}
+
 /// The frozen nine-tool surface, in registration order.
 pub fn tool_definitions() -> Vec<ToolDefinition> {
     vec![
@@ -157,7 +175,10 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
         ToolDefinition {
             name: "host_get".to_owned(),
             description: "Look up one host by name, MAC, or IP. Provide exactly one of name/mac/ip.".to_owned(),
-            input_schema: schema(json!({"name": {"type": "string"}, "mac": {"type": "string"}, "ip": {"type": "string"}}), &[]),
+            input_schema: selector_schema(
+                json!({"name": {"type": "string"}, "mac": {"type": "string"}, "ip": {"type": "string"}}),
+                &["name", "mac", "ip"],
+            ),
             annotations: ToolAnnotations { read_only_hint: true, idempotent_hint: true, ..Default::default() },
         },
         ToolDefinition {
@@ -181,7 +202,10 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
         ToolDefinition {
             name: "wake_on_lan".to_owned(),
             description: "Send a Wake-on-LAN packet via the box. Provide host (name/IP, resolved via host table) or mac.".to_owned(),
-            input_schema: schema(json!({"host": {"type": "string"}, "mac": {"type": "string"}}), &[]),
+            input_schema: selector_schema(
+                json!({"host": {"type": "string"}, "mac": {"type": "string"}}),
+                &["host", "mac"],
+            ),
             annotations: ToolAnnotations { open_world_hint: true, ..Default::default() },
         },
         ToolDefinition {
@@ -860,8 +884,13 @@ fn dispatch_tool<C: Capabilities + 'static>(
             let name = optional_string(args.get("name"))?;
             let mac = optional_string(args.get("mac"))?;
             let ip = optional_string(args.get("ip"))?;
-            if mac.is_none() && ip.is_none() && name.is_none() {
-                return Err("provide one of name, mac, or ip".to_owned());
+            if [name.as_ref(), mac.as_ref(), ip.as_ref()]
+                .into_iter()
+                .filter(|value| value.is_some())
+                .count()
+                != 1
+            {
+                return Err("provide exactly one of name, mac, or ip".to_owned());
             }
             capabilities.host_get(name.as_deref(), mac.as_deref(), ip.as_deref())
         }
@@ -887,8 +916,13 @@ fn dispatch_tool<C: Capabilities + 'static>(
             let args = parse_object(&arguments)?;
             let host = optional_string(args.get("host"))?;
             let mac = optional_string(args.get("mac"))?;
-            if host.is_none() && mac.is_none() {
-                return Err("provide host or mac".to_owned());
+            if [host.as_ref(), mac.as_ref()]
+                .into_iter()
+                .filter(|value| value.is_some())
+                .count()
+                != 1
+            {
+                return Err("provide exactly one of host or mac".to_owned());
             }
             capabilities.wake_on_lan(host.as_deref(), mac.as_deref())
         }
