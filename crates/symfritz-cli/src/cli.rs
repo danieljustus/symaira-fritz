@@ -554,14 +554,114 @@ pub fn parse_args(args: &[String]) -> Result<Cli, ParseError> {
     })
 }
 
-fn go_validation_error(args: &[String]) -> Option<&'static str> {
+fn selector_validation_error(args: &[String]) -> Option<&'static str> {
     let args = args.get(1..)?;
+    let (kind, start) = if args.len() >= 2 && args[0] == "hosts" && args[1] == "get" {
+        ("hosts", 2)
+    } else if args.first().is_some_and(|command| command == "wol") {
+        ("wol", 1)
+    } else {
+        return None;
+    };
+
+    let mut positionals = 0;
+    let mut option_selectors = 0;
+    let mut skip_next = false;
+    let mut positional_only = false;
+    for argument in args[start..].iter() {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if positional_only {
+            positionals += 1;
+            continue;
+        }
+        if argument == "--" {
+            positional_only = true;
+        } else if matches!(argument.as_str(), "--json" | "--help" | "-h")
+            || argument.starts_with("--output=")
+        {
+            continue;
+        } else if argument == "--output" {
+            skip_next = true;
+        } else if (kind == "hosts" && matches!(argument.as_str(), "--mac" | "--ip"))
+            || (kind == "wol" && argument == "--mac")
+        {
+            option_selectors += 1;
+            skip_next = !argument.contains('=');
+        } else if !argument.starts_with('-') {
+            positionals += 1;
+        }
+    }
+
+    if positionals > 1 {
+        return Some("accepts at most 1 arg(s), received 2");
+    }
+    let selectors = positionals + option_selectors;
+    if selectors == 0 {
+        return Some(if kind == "hosts" {
+            "exactly one of name, --mac, or --ip is required"
+        } else {
+            "exactly one of host or --mac is required"
+        });
+    }
+    if selectors > 1 {
+        return Some(if kind == "hosts" {
+            "only one of name, --mac, or --ip may be specified"
+        } else {
+            "only one of host or --mac may be specified"
+        });
+    }
+    None
+}
+
+fn diagnose_positionals(args: &[String]) -> Vec<&str> {
+    let mut positionals = Vec::new();
+    let mut skip_next = false;
+    let mut positional_only = false;
+    for argument in args.iter().skip(1) {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if positional_only {
+            positionals.push(argument.as_str());
+            continue;
+        }
+        if argument == "--" {
+            positional_only = true;
+        } else if matches!(argument.as_str(), "--json" | "--help" | "-h")
+            || argument.starts_with("--output=")
+            || argument.starts_with("--port=")
+        {
+            continue;
+        } else if matches!(argument.as_str(), "--output" | "--port") {
+            skip_next = true;
+        } else if !argument.starts_with('-') {
+            positionals.push(argument.as_str());
+        }
+    }
+    positionals
+}
+
+fn go_validation_error(args: &[String]) -> Option<&'static str> {
+    let all_args = args;
+    let args = args.get(1..)?;
+    if let Some(message) = selector_validation_error(all_args) {
+        return Some(message);
+    }
+    if args.first().is_some_and(|command| command == "diagnose") {
+        let positionals = diagnose_positionals(args);
+        if positionals.len() == 2 && positionals[0] != "router" {
+            return Some("accepts 1 arg(s), received 2");
+        }
+    }
     let error = match args {
         [command] if command == "call" => "requires at least 2 arg(s), only received 0",
         [command, _service] if command == "call" => "requires at least 2 arg(s), only received 1",
         [command] if command == "scrape" => "requires at least 1 arg(s), only received 0",
         [command] if command == "diagnose" => "accepts 1 arg(s), received 0",
-        [command, _, _] if command == "diagnose" => "accepts 1 arg(s), received 2",
         [command, subcommand, flag, value]
             if command == "diagnose"
                 && subcommand == "router"
