@@ -648,6 +648,23 @@ fn diagnose_positionals(args: &[String]) -> Vec<&str> {
     positionals
 }
 
+fn without_output_flags(args: &[String]) -> Vec<String> {
+    let mut filtered = Vec::with_capacity(args.len());
+    let mut skip_next = false;
+    for argument in args {
+        if skip_next {
+            skip_next = false;
+        } else if argument == "--json" || argument.starts_with("--output=") {
+            continue;
+        } else if argument == "--output" {
+            skip_next = true;
+        } else {
+            filtered.push(argument.clone());
+        }
+    }
+    filtered
+}
+
 fn go_validation_error(args: &[String]) -> Option<&'static str> {
     let all_args = args;
     let args = args.get(1..)?;
@@ -660,6 +677,8 @@ fn go_validation_error(args: &[String]) -> Option<&'static str> {
             return Some("accepts 1 arg(s), received 2");
         }
     }
+    let filtered_args = without_output_flags(all_args);
+    let args = filtered_args.get(1..)?;
     let error = match args {
         [command] if command == "call" => "requires at least 2 arg(s), only received 0",
         [command, _service] if command == "call" => "requires at least 2 arg(s), only received 1",
