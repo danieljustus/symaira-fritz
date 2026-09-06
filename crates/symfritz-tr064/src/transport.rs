@@ -223,9 +223,10 @@ impl BlockingHttpTransport {
             }
             write_request(&mut tls, request, url, deadline)
                 .map_err(|error| classify_io_error(error, url, "writing request"))?;
-            let (status, headers) = read_response_headers(&mut tls, url, deadline)?;
+            let mut reader = BufferedReader::new(tls);
+            let (status, headers) = read_response_headers(&mut reader, url, deadline)?;
             let body = read_response_body(
-                &mut tls,
+                &mut reader,
                 status,
                 &headers,
                 request.response_limit.min(DEFAULT_RESPONSE_LIMIT),
@@ -240,9 +241,10 @@ impl BlockingHttpTransport {
         } else {
             write_request(&mut stream, request, url, deadline)
                 .map_err(|error| classify_io_error(error, url, "writing request"))?;
-            let (status, headers) = read_response_headers(&mut stream, url, deadline)?;
+            let mut reader = BufferedReader::new(stream);
+            let (status, headers) = read_response_headers(&mut reader, url, deadline)?;
             let body = read_response_body(
-                &mut stream,
+                &mut reader,
                 status,
                 &headers,
                 request.response_limit.min(DEFAULT_RESPONSE_LIMIT),
@@ -493,6 +495,46 @@ fn request_target(url: &Url) -> String {
     match url.query() {
         Some(query) => format!("{}?{query}", url.path()),
         None => url.path().to_owned(),
+    }
+}
+
+const RESPONSE_READ_BUFFER_SIZE: usize = 8 * 1024;
+
+/// Buffers response reads while retaining bytes read past the current parser token.
+struct BufferedReader<S> {
+    inner: S,
+    buffer: [u8; RESPONSE_READ_BUFFER_SIZE],
+    start: usize,
+    end: usize,
+}
+
+impl<S> BufferedReader<S> {
+    fn new(inner: S) -> Self {
+        Self {
+            inner,
+            buffer: [0; RESPONSE_READ_BUFFER_SIZE],
+            start: 0,
+            end: 0,
+        }
+    }
+}
+
+impl<S: Read> Read for BufferedReader<S> {
+    fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+        if output.is_empty() {
+            return Ok(0);
+        }
+        if self.start == self.end {
+            self.start = 0;
+            self.end = self.inner.read(&mut self.buffer)?;
+            if self.end == 0 {
+                return Ok(0);
+            }
+        }
+        let count = output.len().min(self.end - self.start);
+        output[..count].copy_from_slice(&self.buffer[self.start..self.start + count]);
+        self.start += count;
+        Ok(count)
     }
 }
 
@@ -1019,7 +1061,13 @@ signature_verifier_impl!(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, sync::Mutex};
+    use std::{
+        fs,
+        sync::{
+            Mutex,
+            atomic::{AtomicUsize, Ordering as AtomicOrdering},
+        },
+    };
 
     #[test]
     fn fallback_classifier_rejects_tls_and_accepts_refused() {
@@ -1128,6 +1176,39 @@ mod tests {
         )
         .unwrap();
         assert_eq!(body, b"0123456789abcdef");
+    }
+
+    struct CountingReader {
+        input: io::Cursor<Vec<u8>>,
+        reads: Arc<AtomicUsize>,
+    }
+
+    impl std::io::Read for CountingReader {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            self.reads.fetch_add(1, AtomicOrdering::Relaxed);
+            self.input.read(buffer)
+        }
+    }
+
+    #[test]
+    fn buffered_response_reader_reduces_header_and_chunk_line_reads() {
+        let url = Url::parse("https://fritz.box:49443/health").unwrap();
+        let wire = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n"
+            .to_vec();
+        let reads = Arc::new(AtomicUsize::new(0));
+        let reader = CountingReader {
+            input: io::Cursor::new(wire.clone()),
+            reads: reads.clone(),
+        };
+        let mut buffered = BufferedReader::new(reader);
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let (status, headers) = read_response_headers(&mut buffered, &url, deadline).unwrap();
+        let body =
+            read_response_body(&mut buffered, status, &headers, 1024, &url, deadline).unwrap();
+
+        assert_eq!(body, b"hello");
+        assert_eq!(reads.load(AtomicOrdering::Relaxed), 1);
+        assert!(reads.load(AtomicOrdering::Relaxed) < wire.len());
     }
 
     #[test]

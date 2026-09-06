@@ -24,6 +24,10 @@ import sys
 import tempfile
 import threading
 import time
+try:
+    import pty
+except ImportError:  # Windows has no PTY module.
+    pty = None
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -573,6 +577,43 @@ def run(binary: str, args: list[str], **kwargs: Any) -> Result:
     return run_process(binary, args, **kwargs)[0]
 
 
+def run_pty_process(binary: str, args: list[str], *, fake: bool = False, path_prefix: Path | None = None, password: str = PASSWORD) -> Result:
+    if pty is None:
+        raise AssertionError("auth login PTY coverage is unavailable on this platform")
+    with tempfile.TemporaryDirectory(prefix="symfritz-login-") as raw:
+        home = Path(raw)
+        for name in ("tmp", "config", "cache", "data"):
+            (home / name).mkdir()
+        master, slave = pty.openpty()
+        process = subprocess.Popen(
+            [binary, *args],
+            cwd=home,
+            env=environment(home, fake=fake, path_prefix=path_prefix),
+            stdin=slave,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        os.close(slave)
+        os.write(master, password.encode() + b"\n")
+        stdout, stderr = process.communicate(timeout=8)
+        os.close(master)
+        return Result(process.returncode, stdout, stderr)
+
+
+def assert_success_object(label: str, result: Result, kind: str) -> Any:
+    if result.code != 0:
+        raise AssertionError(f"{label}: command failed with {result.code}: {result.stderr!r}")
+    try:
+        value = json.loads(result.stdout) if kind == "json" else parse_minimal_yaml(result.stdout)
+    except (json.JSONDecodeError, AssertionError) as exc:
+        raise AssertionError(f"{label}: structured output is invalid: {result.stdout!r}") from exc
+    if not isinstance(value, dict) or value.get("ok") is not True:
+        raise AssertionError(f"{label}: success object missing ok=true: {value!r}")
+    if any(marker in result.stdout for marker in (b"Dialing ", b"Hanging up", b"Reboot triggered", b"Wake-on-LAN", b"Guest WLAN", b"Verified:", b"Stored in ", b"OK: ")):
+        raise AssertionError(f"{label}: human prose leaked into structured stdout: {result.stdout!r}")
+    return value
+
+
 def normalize_paths(value: bytes, homes: list[Path]) -> bytes:
     for home in homes: value = value.replace(str(home).encode(), b"<HOME>")
     return value
@@ -742,6 +783,19 @@ def run_pair(server: StrictFakeBox, label: str, go: str, rust: str, args: list[s
     print(f"PASS {label}")
 
 
+def run_structured_matrix(server: StrictFakeBox, binary: str, label: str, args: list[str], expected: list[tuple[str, str, str]], *, extra: dict[str, str] | None = None, unordered_requests: bool = False) -> None:
+    for format_name, kind in (("json", "json"), ("yaml", "yaml")):
+        format_args = args + (["--json"] if format_name == "json" else ["--output", "yaml"])
+        server.reset()
+        result = run(binary, format_args, fake=True, extra=extra)
+        assert_server(server, f"{label}-{format_name}", expected)
+        assert_success_object(f"{label}-{format_name}", result, kind)
+        if unordered_requests:
+            # This helper is used only for deterministic mutation routes.
+            raise AssertionError(f"{label}: unordered structured mutation coverage is unsupported")
+        print(f"PASS {label}-{format_name}")
+
+
 def parse_validation(root: Path) -> list[dict[str, Any]]:
     values = json.loads((root / "testdata/port/cli/command-contracts.json").read_text())["validation"]
     if len(values) != 17: raise AssertionError(f"fixture validation count changed: {len(values)}")
@@ -831,6 +885,63 @@ def run_auth_store_pair(go: str, rust: str) -> None:
         if len(records) != 2 or any(record != {"args": ["set", "fritz.password", "--stdin-value"], "length": len(PASSWORD) + 1, "newline": True} for record in records): raise AssertionError(f"auth store mock metadata mismatch: {records!r}")
         if PASSWORD.encode() in left.stdout + left.stderr + right.stdout + right.stderr: raise AssertionError("auth store leaked password")
         print("PASS auth-store-symvault")
+        for format_name, kind in (("json", "json"), ("yaml", "yaml")):
+            metadata.write_text("")
+            flag = ["--json"] if format_name == "json" else ["--output", "yaml"]
+            result = run(rust, ["auth", "store", "--symvault", "fritz.password", *flag], fake=True, path_prefix=directory)
+            assert_success_object(f"auth-store-symvault-{format_name}", result, kind)
+            records = [json.loads(line) for line in metadata.read_text().splitlines() if line]
+            if len(records) != 1 or records[0] != {"args": ["set", "fritz.password", "--stdin-value"], "length": len(PASSWORD) + 1, "newline": True}:
+                raise AssertionError(f"auth store {format_name} mock metadata mismatch: {records!r}")
+            if PASSWORD.encode() in result.stdout + result.stderr:
+                raise AssertionError(f"auth store {format_name} leaked password")
+            print(f"PASS auth-store-symvault-{format_name}")
+
+
+def run_auth_login_contracts(server: StrictFakeBox, binary: str) -> None:
+    if pty is None:
+        print("SKIP auth-login-pty (PTY unavailable)")
+        return
+    expected = [("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("POST", "/upnp/control/deviceinfo", "GetInfo")]
+    with tempfile.TemporaryDirectory(prefix="symfritz-login-vault-") as raw:
+        directory = Path(raw)
+        metadata = directory / "symvault.meta"
+        mock_symvault(directory, metadata)
+        cases = (("text", None), ("json", ["--json"]), ("yaml", ["--output", "yaml"]))
+        for format_name, flags in cases:
+            metadata.write_text("")
+            server.reset()
+            result = run_pty_process(
+                binary,
+                ["auth", "login", "--symvault", "fritz.password", *(flags or [])],
+                fake=True,
+                path_prefix=directory,
+            )
+            if not server.accepted:
+                raise AssertionError(f"auth-login-{format_name}: command result {result!r}")
+            assert_server(server, f"auth-login-{format_name}", expected)
+            if PASSWORD.encode() in result.stdout + result.stderr:
+                raise AssertionError(f"auth login {format_name} leaked password")
+            if format_name == "text":
+                if b"Verified: web login" not in result.stdout or b"Stored in symvault" not in result.stdout:
+                    raise AssertionError(f"auth login text output mismatch: {result.stdout!r}")
+            else:
+                assert_success_object(f"auth-login-{format_name}", result, format_name)
+            records = [json.loads(line) for line in metadata.read_text().splitlines() if line]
+            if len(records) != 1 or records[0] != {"args": ["set", "fritz.password", "--stdin-value"], "length": len(PASSWORD) + 1, "newline": True}:
+                raise AssertionError(f"auth login {format_name} mock metadata mismatch: {records!r}")
+            print(f"PASS auth-login-{format_name}")
+
+
+def auth_trust_contracts(binary: str) -> None:
+    for format_name, flags in (("text", []), ("json", ["--json"]), ("yaml", ["--output", "yaml"])):
+        result = run(binary, ["auth", "trust", "--reset", "no-pin-recorded", *flags])
+        if format_name == "text":
+            if result.code != 0 or result.stdout != b"No pin recorded for no-pin-recorded.\n":
+                raise AssertionError(f"auth trust text output mismatch: {result!r}")
+        else:
+            assert_success_object(f"auth-trust-{format_name}", result, format_name)
+        print(f"PASS auth-trust-{format_name}")
 
 
 def completion_markers(shell: str, output: bytes) -> bool:
@@ -907,6 +1018,9 @@ def run_suite(go: str, rust: str, root: Path) -> None:
         run_pair(server, "detect-success", go, rust, ["detect", "--json"], kind="json", extra={"SYMFRITZ_HOST": PRIVATE_IP})
         run_pair(server, "config-detect-success", go, rust, ["config", "detect", "--json"], kind="json", extra={"SYMFRITZ_HOST": PRIVATE_IP})
         run_pair(server, "diagnose-private-port", go, rust, ["diagnose", PRIVATE_IP, "--port", str(PORT), "--json"], kind="json", expected=[("POST", "/upnp/control/hosts", "X_AVM-DE_GetSpecificHostEntryByIP")])
+        run_pair(server, "diagnose-router-json", go, rust, ["diagnose", "router", "--json"], kind="json", extra={"SYMFRITZ_HOST": PRIVATE_IP})
+        run_pair(server, "diagnose-router-output-json", go, rust, ["diagnose", "router", "--output", "json"], kind="json", extra={"SYMFRITZ_HOST": PRIVATE_IP})
+        run_pair(server, "diagnose-output-after-target", go, rust, ["diagnose", PRIVATE_IP, "--port", str(PORT), "--output", "json"], kind="json", expected=[("POST", "/upnp/control/hosts", "X_AVM-DE_GetSpecificHostEntryByIP")])
         run_pair(server, "status-json", go, rust, ["status", "--output", "json"], kind="json")
         run_pair(server, "hosts-list", go, rust, ["hosts", "list", "--json"], kind="json")
         run_pair(server, "hosts-active", go, rust, ["hosts", "active", "--json"], kind="json")
@@ -922,7 +1036,9 @@ def run_suite(go: str, rust: str, root: Path) -> None:
         run_pair(server, "log", go, rust, ["log", "--json"], kind="json")
         run_pair(server, "raw-call", go, rust, ["call", "deviceinfo", "GetInfo"], kind="json")
         run_pair(server, "mesh-path-and-sid", go, rust, ["mesh", "--output", "json"], kind="json")
-        run_pair(server, "home-list-aha", go, rust, ["home", "list", "--output", "json"], kind="json")
+        server.reset(); home_list_go = run(go, ["home", "list", "--output", "json"], fake=True); assert_server(server, "home-list-aha Go")
+        server.reset(); home_list_rust = run(rust, ["home", "list", "--output", "json"], fake=True); assert_server(server, "home-list-aha Rust", [("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("GET", "/webservices/homeautoswitch.lua", "getdevicelistinfos")])
+        assert_json("home-list-aha", home_list_go, home_list_rust); print("PASS home-list-aha")
         run_pair(server, "home-list-tr064", go, rust, ["home", "list", "--tr064", "--output", "json"], kind="json")
         yaml_cases = [
             ("status-yaml", ["status", "--output", "yaml"], None, False),
@@ -944,8 +1060,13 @@ def run_suite(go: str, rust: str, root: Path) -> None:
             run_pair(server, label, go, rust, args, kind="yaml", expected=expected, unordered_requests=unordered)
         run_pair(server, "scrape-data-lua", go, rust, ["scrape", "netDev", "foo=bar"], expected=[("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("POST", "/data.lua", "")])
         run_pair(server, "auth-test-http", go, rust, ["auth", "test"], expected=[("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("POST", "/upnp/control/deviceinfo", "GetInfo")])
+        run_structured_matrix(server, rust, "auth-test-http", ["auth", "test"], [("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("POST", "/upnp/control/deviceinfo", "GetInfo")])
+        auth_trust_contracts(rust)
+        run_auth_login_contracts(server, rust)
         mutations = [("wol", ["wol", "--mac", MAC], [("POST", "/upnp/control/hosts", "X_AVM-DE_WakeOnLANByMACAddress")]), ("dial", ["dial", "123"], [("POST", "/upnp/control/x_voip", "X_AVM-DE_DialNumber")]), ("hangup", ["hangup"], [("POST", "/upnp/control/x_voip", "X_AVM-DE_DialHangup")]), ("guest-on", ["wlan", "guest", "on"], [("POST", "/upnp/control/wlanconfig3", "SetEnable")]), ("guest-off", ["wlan", "guest", "off"], [("POST", "/upnp/control/wlanconfig3", "SetEnable")]), ("home-switch-on", ["home", "switch", AIN, "on"], [("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("GET", "/webservices/homeautoswitch.lua", "setswitchon")]), ("home-temp", ["home", "temp", AIN, "20.5"], [("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("GET", "/webservices/homeautoswitch.lua", "sethkrtsoll")]), ("home-switch-tr064", ["home", "switch", AIN, "on", "--tr064"], [("POST", "/upnp/control/x_homeauto", "SetSwitch")]), ("reboot-confirmed", ["reboot", "--yes"], [("POST", "/upnp/control/deviceconfig", "Reboot")])]
-        for label, args, expected in mutations: run_pair(server, label, go, rust, args, expected=expected)
+        for label, args, expected in mutations:
+            run_pair(server, label, go, rust, args, expected=expected)
+            run_structured_matrix(server, rust, label, args, expected)
         config_init_pair(go, rust, False, False); config_init_pair(go, rust, False, True); config_init_pair(go, rust, True, True)
         run_auth_store_pair(go, rust)
         noauth_left = run(go, ["auth", "test", "--output", "json"])

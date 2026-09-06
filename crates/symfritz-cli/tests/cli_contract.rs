@@ -283,3 +283,89 @@ fn help_flags_precede_positional_validation_and_exit_successfully() {
         );
     }
 }
+
+#[test]
+fn diagnose_parser_accepts_router_and_trailing_output_flags() {
+    for args in [
+        vec!["symfritz", "diagnose", "router", "--json"],
+        vec!["symfritz", "diagnose", "router", "--output", "json"],
+        vec!["symfritz", "diagnose", "host", "--json"],
+        vec!["symfritz", "diagnose", "host", "--output", "json"],
+    ] {
+        assert!(
+            symfritz_cli::cli::parse_args(
+                &args.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            )
+            .is_ok(),
+            "parser rejected valid arguments: {args:?}"
+        );
+    }
+}
+
+#[test]
+fn diagnose_parser_preserves_extra_positional_error() {
+    let args = ["symfritz", "diagnose", "host", "extra"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    match symfritz_cli::cli::parse_args(&args) {
+        Err(symfritz_cli::cli::ParseError::Invalid(message)) => {
+            assert_eq!(message, "accepts 1 arg(s), received 2");
+        }
+        other => panic!("expected the Go-compatible positional error, got {other:?}"),
+    }
+}
+
+#[test]
+fn selector_validation_rejects_zero_and_multiple_cli_selectors_before_execution() {
+    let binary = env!("CARGO_BIN_EXE_symfritz");
+    let cases = [
+        vec!["hosts", "get"],
+        vec!["hosts", "get", "name", "--mac", "AA:BB:CC:DD:EE:FF"],
+        vec!["hosts", "get", "name", "--ip", "192.0.2.1"],
+        vec![
+            "hosts",
+            "get",
+            "--mac",
+            "AA:BB:CC:DD:EE:FF",
+            "--ip",
+            "192.0.2.1",
+        ],
+        vec!["wol"],
+        vec!["wol", "host", "--mac", "AA:BB:CC:DD:EE:FF"],
+    ];
+    for args in cases {
+        let output = ProcessCommand::new(binary)
+            .args(&args)
+            .env_remove("SYMFRITZ_BOX_HOST")
+            .env_remove("SYMFRITZ_HOST")
+            .env_remove("SYMFRITZ_PASSWORD")
+            .output()
+            .unwrap_or_else(|error| panic!("run invalid selector {:?}: {error}", args));
+        assert_ne!(
+            output.status.code(),
+            Some(0),
+            "selector unexpectedly accepted: {args:?}"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("configuration file"),
+            "router access happened: {args:?}: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn selector_validation_accepts_equals_syntax() {
+    for args in [
+        ["symfritz", "hosts", "get", "--mac=AA:BB:CC:DD:EE:FF"].as_slice(),
+        ["symfritz", "hosts", "get", "--ip=192.0.2.1"].as_slice(),
+        ["symfritz", "wol", "--mac=AA:BB:CC:DD:EE:FF"].as_slice(),
+    ] {
+        let args = args.iter().map(ToString::to_string).collect::<Vec<_>>();
+        assert!(
+            symfritz_cli::cli::parse_args(&args).is_ok(),
+            "parser rejected valid equals syntax: {args:?}"
+        );
+    }
+}
