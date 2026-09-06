@@ -354,3 +354,18 @@ fn selector_validation_rejects_zero_and_multiple_cli_selectors_before_execution(
         );
     }
 }
+
+#[test]
+fn selector_validation_accepts_equals_syntax() {
+    for args in [
+        ["symfritz", "hosts", "get", "--mac=AA:BB:CC:DD:EE:FF"].as_slice(),
+        ["symfritz", "hosts", "get", "--ip=192.0.2.1"].as_slice(),
+        ["symfritz", "wol", "--mac=AA:BB:CC:DD:EE:FF"].as_slice(),
+    ] {
+        let args = args.iter().map(ToString::to_string).collect::<Vec<_>>();
+        assert!(
+            symfritz_cli::cli::parse_args(&args).is_ok(),
+            "parser rejected valid equals syntax: {args:?}"
+        );
+    }
+}

@@ -585,8 +585,11 @@ fn selector_validation_error(args: &[String]) -> Option<&'static str> {
             continue;
         } else if argument == "--output" {
             skip_next = true;
-        } else if (kind == "hosts" && matches!(argument.as_str(), "--mac" | "--ip"))
-            || (kind == "wol" && argument == "--mac")
+        } else if (kind == "hosts"
+            && (matches!(argument.as_str(), "--mac" | "--ip")
+                || argument.starts_with("--mac=")
+                || argument.starts_with("--ip=")))
+            || (kind == "wol" && (argument == "--mac" || argument.starts_with("--mac=")))
         {
             option_selectors += 1;
             skip_next = !argument.contains('=');
