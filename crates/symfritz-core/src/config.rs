@@ -44,6 +44,10 @@ password = ""
 # Use the TLS TR-064 endpoint (https, port 49443).
 use_tls = true
 
+# Allow retrying an unavailable TLS endpoint over unencrypted HTTP.
+# Keep disabled unless this legacy compatibility fallback is required.
+allow_http_fallback = false
+
 # Skip TLS certificate verification (disables TOFU certificate pinning;
 # optional opt-out for legacy setups).
 insecure_tls = false
@@ -62,6 +66,7 @@ pub struct BoxConfig {
     pub keychain: bool,
     pub keychain_account: String,
     pub use_tls: bool,
+    pub allow_http_fallback: bool,
     pub insecure_tls: bool,
     pub timeout_seconds: i64,
 }
@@ -76,6 +81,7 @@ impl Default for BoxConfig {
             keychain: false,
             keychain_account: String::new(),
             use_tls: true,
+            allow_http_fallback: false,
             insecure_tls: false,
             timeout_seconds: 15,
         }
@@ -93,6 +99,7 @@ impl fmt::Debug for BoxConfig {
             .field("keychain", &self.keychain)
             .field("keychain_account", &self.keychain_account)
             .field("use_tls", &self.use_tls)
+            .field("allow_http_fallback", &self.allow_http_fallback)
             .field("insecure_tls", &self.insecure_tls)
             .field("timeout_seconds", &self.timeout_seconds)
             .finish()
@@ -278,6 +285,7 @@ struct RawBoxConfig {
     keychain: Option<bool>,
     keychain_account: Option<String>,
     use_tls: Option<bool>,
+    allow_http_fallback: Option<bool>,
     insecure_tls: Option<bool>,
     timeout_seconds: Option<i64>,
 }
@@ -340,8 +348,11 @@ fn apply_nonzero_file_values(config: &mut BoxConfig, raw: RawBoxConfig) {
     if let Some(value) = raw.keychain_account.filter(|value| !value.is_empty()) {
         config.keychain_account = value;
     }
-    if raw.use_tls == Some(true) {
-        config.use_tls = true;
+    if let Some(value) = raw.use_tls {
+        config.use_tls = value;
+    }
+    if let Some(value) = raw.allow_http_fallback {
+        config.allow_http_fallback = value;
     }
     if raw.insecure_tls == Some(true) {
         config.insecure_tls = true;
@@ -378,6 +389,11 @@ where
         &mut config.box_config.use_tls,
         "SYMFRITZ_BOX_USE_TLS",
         get_env("SYMFRITZ_BOX_USE_TLS"),
+    )?;
+    apply_bool(
+        &mut config.box_config.allow_http_fallback,
+        "SYMFRITZ_BOX_ALLOW_HTTP_FALLBACK",
+        get_env("SYMFRITZ_BOX_ALLOW_HTTP_FALLBACK"),
     )?;
     apply_bool(
         &mut config.box_config.insecure_tls,

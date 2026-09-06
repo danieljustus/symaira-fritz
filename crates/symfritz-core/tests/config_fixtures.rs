@@ -36,6 +36,8 @@ struct BoxVector {
     keychain: bool,
     keychain_account: String,
     use_tls: bool,
+    #[serde(default)]
+    allow_http_fallback: bool,
     insecure_tls: bool,
     timeout_seconds: i64,
 }
@@ -95,6 +97,7 @@ impl From<BoxConfig> for BoxVector {
             keychain: value.keychain,
             keychain_account: value.keychain_account,
             use_tls: value.use_tls,
+            allow_http_fallback: value.allow_http_fallback,
             insecure_tls: value.insecure_tls,
             timeout_seconds: value.timeout_seconds,
         }
@@ -235,6 +238,29 @@ fn config_init_vectors_match_go() {
         );
         assert_mode(&path, &vector.mode, &vector.id);
     }
+}
+
+#[test]
+fn http_fallback_requires_explicit_configuration() {
+    let root = TestDir::new("http-fallback-policy");
+    let home = root.0.join("home");
+    let cwd = root.0.join("cwd");
+    fs::create_dir_all(&home).unwrap();
+    fs::create_dir_all(&cwd).unwrap();
+    let path = default_config_path(&home);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, "[box]\nallow_http_fallback=true\nuse_tls=false\n").unwrap();
+
+    let config = load_config_with(&home, &cwd, |_| None).unwrap();
+    assert!(!config.box_config.use_tls);
+    assert!(config.box_config.allow_http_fallback);
+
+    let env = HashMap::from([(
+        "SYMFRITZ_BOX_ALLOW_HTTP_FALLBACK".to_owned(),
+        "false".to_owned(),
+    )]);
+    let config = load_config_with(&home, &cwd, map_env(&env)).unwrap();
+    assert!(!config.box_config.allow_http_fallback);
 }
 
 #[cfg(unix)]

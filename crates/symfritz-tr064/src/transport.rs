@@ -36,6 +36,7 @@ pub struct HttpTransportConfig {
     pub origin: Url,
     pub pin_store: PinStore,
     pub insecure_tls: bool,
+    pub allow_http_fallback: bool,
     pub timeout: Duration,
     pub warning_sink: Option<WarningSink>,
 }
@@ -47,6 +48,7 @@ impl HttpTransportConfig {
             origin,
             pin_store,
             insecure_tls: false,
+            allow_http_fallback: false,
             timeout: Duration::from_secs(15),
             warning_sink: None,
         }
@@ -66,6 +68,7 @@ impl fmt::Debug for HttpTransportConfig {
             .field("origin", &redact_url(&self.origin))
             .field("pin_store", &self.pin_store.path())
             .field("insecure_tls", &self.insecure_tls)
+            .field("allow_http_fallback", &self.allow_http_fallback)
             .field("timeout", &self.timeout)
             .finish_non_exhaustive()
     }
@@ -105,6 +108,7 @@ pub struct BlockingHttpTransport {
     pin_store: PinStore,
     pin_key: String,
     insecure_tls: bool,
+    allow_http_fallback: bool,
     tls_enabled: AtomicBool,
     fallback_warned: Once,
     warning_sink: Option<WarningSink>,
@@ -116,6 +120,7 @@ impl fmt::Debug for BlockingHttpTransport {
             .debug_struct("BlockingHttpTransport")
             .field("origin", &redact_url(&self.origin))
             .field("insecure_tls", &self.insecure_tls)
+            .field("allow_http_fallback", &self.allow_http_fallback)
             .field("tls_enabled", &self.tls_enabled.load(Ordering::Relaxed))
             .finish_non_exhaustive()
     }
@@ -160,6 +165,7 @@ impl BlockingHttpTransport {
             pin_store: config.pin_store,
             pin_key,
             insecure_tls: config.insecure_tls,
+            allow_http_fallback: config.allow_http_fallback,
             tls_enabled: AtomicBool::new(config.origin.scheme() == "https"),
             fallback_warned: Once::new(),
             warning_sink: config.warning_sink,
@@ -174,7 +180,7 @@ impl BlockingHttpTransport {
     fn warn_once(&self) {
         self.fallback_warned.call_once(|| {
             let warning = format!(
-                "warning: TLS endpoint on {} did not answer, falling back to HTTP (set use_tls = false to silence)",
+                "warning: TLS endpoint on {} did not answer, falling back to HTTP because [box].allow_http_fallback is enabled",
                 self.origin.host_str().unwrap_or("router")
             );
             if let Some(sink) = &self.warning_sink {
@@ -330,7 +336,7 @@ impl Transport for BlockingHttpTransport {
             )
         })?;
         let tls_attempt = self.tls_enabled() && requested.scheme() == "https";
-        let target = if tls_attempt {
+        let target = if tls_attempt || !self.allow_http_fallback {
             requested.clone()
         } else if requested.scheme() == "https" {
             fallback_url(&requested).map_err(|error| TransportError(error.to_string()))?
@@ -339,13 +345,20 @@ impl Transport for BlockingHttpTransport {
         };
         match self.execute(&request, &target) {
             Ok(response) => Ok(response),
-            Err(error) if tls_attempt && is_endpoint_unreachable(&error) => {
+            Err(error)
+                if tls_attempt && is_endpoint_unreachable(&error) && self.allow_http_fallback =>
+            {
                 let fallback =
                     fallback_url(&requested).map_err(|error| TransportError(error.to_string()))?;
                 self.warn_once();
                 self.tls_enabled.store(false, Ordering::Release);
                 self.execute(&request, &fallback)
                     .map_err(|error| TransportError(error.to_string()))
+            }
+            Err(error) if tls_attempt && is_endpoint_unreachable(&error) => {
+                Err(TransportError(format!(
+                    "{error}; refusing unencrypted HTTP fallback; set [box].allow_http_fallback = true to opt in, or set [box].use_tls = false to use HTTP directly"
+                )))
             }
             Err(error) => Err(TransportError(error.to_string())),
         }

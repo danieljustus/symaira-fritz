@@ -1523,6 +1523,7 @@ fn make_tr064(
         origin: origin.clone(),
         pin_store: PinStore::new(pin_store),
         insecure_tls: box_config.insecure_tls,
+        allow_http_fallback: box_config.allow_http_fallback,
         timeout: box_config.timeout(),
         warning_sink: Some(std::sync::Arc::new(|message| {
             eprintln!("warning: {message}")
@@ -1549,6 +1550,7 @@ fn make_web(
         origin: origin.clone(),
         pin_store: PinStore::new(pin_store),
         insecure_tls: box_config.insecure_tls,
+        allow_http_fallback: box_config.allow_http_fallback,
         timeout: box_config.timeout(),
         warning_sink: Some(std::sync::Arc::new(|message| {
             eprintln!("warning: {message}")
