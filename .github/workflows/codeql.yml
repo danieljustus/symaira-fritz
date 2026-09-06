@@ -26,9 +26,9 @@ jobs:
           - language: actions
             os: ubuntu-latest
             build_mode: none
-          - language: go
+          - language: rust
             os: ubuntu-latest
-            build_mode: autobuild
+            build_mode: none
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
