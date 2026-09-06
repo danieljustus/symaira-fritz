@@ -1553,7 +1553,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "ctrlc",
- "getrandom 0.2.17",
+ "getrandom 0.4.3",
  "hex",
  "reqwest",
  "rustls",
@@ -1570,8 +1570,8 @@ dependencies = [
 name = "symfritz-core"
 version = "0.0.0"
 dependencies = [
- "base64 0.22.1",
- "getrandom 0.2.17",
+ "base64 0.23.1",
+ "getrandom 0.4.3",
  "hex",
  "md-5",
  "pbkdf2",

@@ -225,7 +225,7 @@ static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn secure_temp_path(path: &Path) -> Result<PathBuf, PinStoreError> {
     let mut nonce = [0_u8; 16];
-    getrandom::getrandom(&mut nonce).map_err(|error| PinStoreError::Io {
+    getrandom::fill(&mut nonce).map_err(|error| PinStoreError::Io {
         path: path.to_path_buf(),
         message: format!("could not create secure temporary filename: {error}"),
     })?;
