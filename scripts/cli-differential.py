@@ -925,7 +925,9 @@ def run_suite(go: str, rust: str, root: Path) -> None:
         run_pair(server, "log", go, rust, ["log", "--json"], kind="json")
         run_pair(server, "raw-call", go, rust, ["call", "deviceinfo", "GetInfo"], kind="json")
         run_pair(server, "mesh-path-and-sid", go, rust, ["mesh", "--output", "json"], kind="json")
-        run_pair(server, "home-list-aha", go, rust, ["home", "list", "--output", "json"], kind="json")
+        server.reset(); home_list_go = run(go, ["home", "list", "--output", "json"], fake=True); assert_server(server, "home-list-aha Go")
+        server.reset(); home_list_rust = run(rust, ["home", "list", "--output", "json"], fake=True); assert_server(server, "home-list-aha Rust", [("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("GET", "/webservices/homeautoswitch.lua", "getdevicelistinfos")])
+        assert_json("home-list-aha", home_list_go, home_list_rust); print("PASS home-list-aha")
         run_pair(server, "home-list-tr064", go, rust, ["home", "list", "--tr064", "--output", "json"], kind="json")
         yaml_cases = [
             ("status-yaml", ["status", "--output", "yaml"], None, False),

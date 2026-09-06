@@ -2227,10 +2227,11 @@ fn execute_home_list(args: HomeListArgs, format: OutputFormat) -> Result<(), Han
         return Ok(());
     }
     let mut web = make_web(&config.box_config, &password)?;
-    let devices = web
-        .devices()
+    let list = web
+        .device_list()
         .map_err(|error| HandlerError::from_aha("device list failed", &error))?;
-    let groups = web.groups().unwrap_or_default();
+    let devices = list.devices;
+    let groups = list.groups;
     if format != OutputFormat::Text {
         let payload = AhaCombinedOutput {
             devices: devices.iter().map(AhaDeviceOutput::from).collect(),
