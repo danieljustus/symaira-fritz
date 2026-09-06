@@ -225,9 +225,57 @@ fn calls_filters_by_type_and_preserves_query_and_order() {
     assert_eq!(calls[0].duration, 90_000_000_000);
     let transport = client.into_transport();
     assert_eq!(transport.requests[1].method, Method::Get);
+    // The router applies `max` before the type filter, so a filtered request
+    // must not carry it — otherwise the cap silently eats matching calls.
     assert_eq!(
         transport.requests[1].url,
-        "http://fritz.box:49000/calls.xml?days=7&existing=1&max=2&sid=mock"
+        "http://fritz.box:49000/calls.xml?days=7&existing=1&sid=mock"
+    );
+}
+
+#[test]
+fn calls_limit_counts_matching_calls_not_router_rows() {
+    let xml = "<root><Call><Type>1</Type><Caller>a</Caller><Called>1</Called><Name></Name><Date>29.06.26 14:15</Date><Duration>0:15</Duration></Call><Call><Type>1</Type><Caller>b</Caller><Called>2</Called><Name></Name><Date>29.06.26 14:16</Date><Duration>0:15</Duration></Call><Call><Type>2</Type><Caller>c</Caller><Called>3</Called><Name></Name><Date>29.06.26 14:17</Date><Duration>90</Duration></Call><Call><Type>2</Type><Caller>d</Caller><Called>4</Called><Name></Name><Date>29.06.26 14:18</Date><Duration>90</Duration></Call></root>";
+    let mut client = client([
+        soap(
+            "GetCallList",
+            &[(
+                "NewCallListURL",
+                "http://fritz.box:49000/calls.xml?sid=mock",
+            )],
+        ),
+        get(xml),
+    ]);
+    // Two missed calls exist, but they sit behind two incoming ones. A limit of
+    // 2 must still return both of them, not the tail of a truncated raw list.
+    let calls = client.calls(CALL_MISSED, 2, 0).unwrap();
+    assert_eq!(
+        calls
+            .iter()
+            .map(|call| call.caller.as_str())
+            .collect::<Vec<_>>(),
+        ["c", "d"]
+    );
+}
+
+#[test]
+fn calls_without_type_filter_still_caps_router_side() {
+    let xml = "<root><Call><Type>1</Type><Caller>a</Caller><Called>1</Called><Name></Name><Date>29.06.26 14:15</Date><Duration>0:15</Duration></Call></root>";
+    let mut client = client([
+        soap(
+            "GetCallList",
+            &[(
+                "NewCallListURL",
+                "http://fritz.box:49000/calls.xml?sid=mock",
+            )],
+        ),
+        get(xml),
+    ]);
+    client.calls(CALL_ALL, 5, 0).unwrap();
+    let transport = client.into_transport();
+    assert_eq!(
+        transport.requests[1].url,
+        "http://fritz.box:49000/calls.xml?max=5&sid=mock"
     );
 }
 
@@ -333,4 +381,94 @@ fn public_service_constructors_cover_all_remaining_raw_capabilities() {
 #[allow(dead_code)]
 fn _empty_args() -> BTreeMap<String, String> {
     BTreeMap::new()
+}
+
+fn tr64desc(wlan_indices: &[usize]) -> Response {
+    let services = wlan_indices
+        .iter()
+        .map(|index| {
+            format!(
+                "<service><serviceType>urn:dslforum-org:service:WLANConfiguration:{index}</serviceType><controlURL>/upnp/control/wlanconfig{index}</controlURL></service>"
+            )
+        })
+        .collect::<String>();
+    get(&format!(
+        "<root><device><serviceList><service><serviceType>urn:dslforum-org:service:DeviceInfo:1</serviceType><controlURL>/upnp/control/deviceinfo</controlURL></service>{services}</serviceList></device></root>"
+    ))
+}
+
+#[test]
+fn guest_wlan_index_follows_the_box_instead_of_assuming_three() {
+    // Dual-band: 1 = 2.4 GHz, 2 = 5 GHz, 3 = guest.
+    let mut dual = client([tr64desc(&[1, 2, 3])]);
+    assert_eq!(dual.wlan_config_indices().unwrap(), [1, 2, 3]);
+    assert_eq!(dual.guest_wlan_index().unwrap(), 3);
+
+    // Tri-band (FRITZ!Box 4060/7690): index 3 is a production 5 GHz radio and
+    // the guest access point moves to 4. Assuming 3 would disable real clients.
+    let mut tri = client([tr64desc(&[1, 2, 3, 4])]);
+    assert_eq!(tri.guest_wlan_index().unwrap(), 4);
+}
+
+#[test]
+fn guest_wlan_index_reports_a_box_without_wlan_services() {
+    let mut none = client([tr64desc(&[])]);
+    assert!(
+        none.guest_wlan_index()
+            .unwrap_err()
+            .to_string()
+            .contains("no WLANConfiguration service")
+    );
+}
+
+#[test]
+fn radios_probe_every_advertised_wlan_configuration() {
+    let info = |ssid: &str| soap("GetInfo", &[("NewSSID", ssid), ("NewEnable", "1")]);
+    let mut client = client([
+        tr64desc(&[1, 2, 3, 4]),
+        info("radio-1"),
+        info("radio-2"),
+        info("radio-3"),
+        info("guest"),
+    ]);
+    let radios = client.radios(0).unwrap();
+    assert_eq!(
+        radios.iter().map(|radio| radio.index).collect::<Vec<_>>(),
+        [1, 2, 3, 4]
+    );
+    assert_eq!(radios[3].ssid, "guest");
+}
+
+#[test]
+fn box_timestamps_are_not_labelled_utc() {
+    // The box reports its own wall clock and sends no zone information, so a
+    // trailing `Z` asserted an instant that was off by the box's UTC offset.
+    let log = "<DeviceLog><Event><id>1</id><group>sys</group><date>29.06.26</date><time>14:15:00</time><msg>started</msg></Event></DeviceLog>";
+    let mut log_client = client([
+        soap(
+            "X_AVM-DE_GetDeviceLogPath",
+            &[("NewDeviceLogPath", "/log.lua?sid=one")],
+        ),
+        get(log),
+    ]);
+    assert_eq!(
+        log_client.device_log("all").unwrap()[0].time,
+        "2026-06-29T14:15:00"
+    );
+
+    let calls = "<root><Call><Type>1</Type><Caller>1</Caller><Called>2</Called><Name></Name><Date>29.06.26 14:15</Date><Duration>0:15</Duration></Call></root>";
+    let mut call_client = client([
+        soap(
+            "GetCallList",
+            &[(
+                "NewCallListURL",
+                "http://fritz.box:49000/calls.xml?sid=mock",
+            )],
+        ),
+        get(calls),
+    ]);
+    assert_eq!(
+        call_client.calls(CALL_ALL, 0, 0).unwrap()[0].date,
+        "2026-06-29T14:15:00"
+    );
 }

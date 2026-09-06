@@ -442,10 +442,9 @@ pub struct WlanCommand {
     #[arg(
         long = "guest-index",
         global = true,
-        default_value_t = 3,
-        help = "WLANConfiguration index of the guest radio"
+        help = "WLANConfiguration index of the guest radio (default: highest index the box advertises)"
     )]
-    pub guest_index: u16,
+    pub guest_index: Option<u16>,
     #[command(subcommand)]
     pub command: Option<WlanSubcommand>,
 }

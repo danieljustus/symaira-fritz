@@ -482,7 +482,7 @@
         "wlan"
       ],
       "exit_code": 0,
-      "stdout": "WLAN radios, clients, and guest network\n\nUsage:\n  symfritz wlan [command]\n\nAvailable Commands:\n  clients     List devices associated with the WLAN radios\n  guest       Guest WLAN status/enable/disable\n  radios      List WLAN radios (SSID, band, channel, state)\n\nFlags:\n      --guest-index int   WLANConfiguration index of the guest radio (default 3)\n  -h, --help              help for wlan\n      --json              Output as JSON\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n\nUse \"symfritz wlan [command] --help\" for more information about a command.\n",
+      "stdout": "WLAN radios, clients, and guest network\n\nUsage:\n  symfritz wlan [command]\n\nAvailable Commands:\n  clients     List devices associated with the WLAN radios\n  guest       Guest WLAN status/enable/disable\n  radios      List WLAN radios (SSID, band, channel, state)\n\nFlags:\n      --guest-index int   WLANConfiguration index of the guest radio (default: highest index the box advertises)\n  -h, --help              help for wlan\n      --json              Output as JSON\n\nGlobal Flags:\n      --output string   Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n\nUse \"symfritz wlan [command] --help\" for more information about a command.\n",
       "stderr": "",
       "comparison": "semantic-help"
     },
@@ -494,7 +494,7 @@
         "clients"
       ],
       "exit_code": 0,
-      "stdout": "List devices associated with the WLAN radios\n\nUsage:\n  symfritz wlan clients [flags]\n\nFlags:\n  -h, --help   help for clients\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default 3)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stdout": "List devices associated with the WLAN radios\n\nUsage:\n  symfritz wlan clients [flags]\n\nFlags:\n  -h, --help   help for clients\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default: highest index the box advertises)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
       "stderr": "",
       "comparison": "semantic-help"
     },
@@ -506,7 +506,7 @@
         "guest"
       ],
       "exit_code": 0,
-      "stdout": "Guest WLAN status/enable/disable\n\nUsage:\n  symfritz wlan guest [command]\n\nAvailable Commands:\n  off         Disable guest WLAN\n  on          Enable guest WLAN\n  status      Show guest WLAN state\n\nFlags:\n  -h, --help   help for guest\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default 3)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n\nUse \"symfritz wlan guest [command] --help\" for more information about a command.\n",
+      "stdout": "Guest WLAN status/enable/disable\n\nUsage:\n  symfritz wlan guest [command]\n\nAvailable Commands:\n  off         Disable guest WLAN\n  on          Enable guest WLAN\n  status      Show guest WLAN state\n\nFlags:\n  -h, --help   help for guest\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default: highest index the box advertises)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n\nUse \"symfritz wlan guest [command] --help\" for more information about a command.\n",
       "stderr": "",
       "comparison": "semantic-help"
     },
@@ -519,7 +519,7 @@
         "off"
       ],
       "exit_code": 0,
-      "stdout": "Disable guest WLAN\n\nUsage:\n  symfritz wlan guest off [flags]\n\nFlags:\n  -h, --help   help for off\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default 3)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stdout": "Disable guest WLAN\n\nUsage:\n  symfritz wlan guest off [flags]\n\nFlags:\n  -h, --help   help for off\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default: highest index the box advertises)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
       "stderr": "",
       "comparison": "semantic-help"
     },
@@ -532,7 +532,7 @@
         "on"
       ],
       "exit_code": 0,
-      "stdout": "Enable guest WLAN\n\nUsage:\n  symfritz wlan guest on [flags]\n\nFlags:\n  -h, --help   help for on\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default 3)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stdout": "Enable guest WLAN\n\nUsage:\n  symfritz wlan guest on [flags]\n\nFlags:\n  -h, --help   help for on\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default: highest index the box advertises)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
       "stderr": "",
       "comparison": "semantic-help"
     },
@@ -545,7 +545,7 @@
         "status"
       ],
       "exit_code": 0,
-      "stdout": "Show guest WLAN state\n\nUsage:\n  symfritz wlan guest status [flags]\n\nFlags:\n  -h, --help   help for status\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default 3)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stdout": "Show guest WLAN state\n\nUsage:\n  symfritz wlan guest status [flags]\n\nFlags:\n  -h, --help   help for status\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default: highest index the box advertises)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
       "stderr": "",
       "comparison": "semantic-help"
     },
@@ -557,7 +557,7 @@
         "radios"
       ],
       "exit_code": 0,
-      "stdout": "List WLAN radios (SSID, band, channel, state)\n\nUsage:\n  symfritz wlan radios [flags]\n\nFlags:\n  -h, --help   help for radios\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default 3)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
+      "stdout": "List WLAN radios (SSID, band, channel, state)\n\nUsage:\n  symfritz wlan radios [flags]\n\nFlags:\n  -h, --help   help for radios\n\nGlobal Flags:\n      --guest-index int   WLANConfiguration index of the guest radio (default: highest index the box advertises)\n      --json              Output as JSON\n      --output string     Output format: text|json|yaml (--json is shorthand for --output json) (default \"text\")\n",
       "stderr": "",
       "comparison": "semantic-help"
     },

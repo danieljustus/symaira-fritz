@@ -363,10 +363,22 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
     }
 
     /// Probe WLAN configuration services in ascending index order.
+    ///
+    /// `max_n` caps the probed range; pass 0 to use the indices the box
+    /// advertises in `tr64desc.xml`.
     pub fn radios(&mut self, max_n: usize) -> Result<Vec<Radio>, ClientError> {
-        let max_n = if max_n == 0 { 3 } else { max_n };
+        // `max_n == 0` means "whatever the box advertises" — tri-band models
+        // expose a fourth WLANConfiguration that the old fixed 1..=3 window hid.
+        let indices: Vec<usize> = if max_n == 0 {
+            self.wlan_config_indices()
+                .ok()
+                .filter(|indices| !indices.is_empty())
+                .unwrap_or_else(|| (1..=3).collect())
+        } else {
+            (1..=max_n).collect()
+        };
         let mut radios = Vec::new();
-        for index in 1..=max_n {
+        for index in indices {
             match self.call(&wlan_service(index), "GetInfo", &BTreeMap::new()) {
                 Ok(info) => radios.push(Radio::from_info(index, &info)),
                 Err(error) if index == 1 || is_unauthorized(&error) || is_transport(&error) => {
@@ -440,6 +452,42 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
         Ok(Radio::from_info(guest_index, &info))
     }
 
+    /// Highest `WLANConfiguration` index the box advertises in `tr64desc.xml`.
+    ///
+    /// The list is sorted ascending and deduplicated; it is empty when the box
+    /// advertises no WLAN service.
+    pub fn wlan_config_indices(&mut self) -> Result<Vec<usize>, ClientError> {
+        const PREFIX: &str = ":service:WLANConfiguration:";
+        let mut indices: Vec<usize> = self
+            .discover()?
+            .iter()
+            .filter_map(|service| {
+                service
+                    .service_type
+                    .split_once(PREFIX)
+                    .and_then(|(_, index)| index.parse().ok())
+            })
+            .collect();
+        indices.sort_unstable();
+        indices.dedup();
+        Ok(indices)
+    }
+
+    /// Resolve the guest WLAN index from `tr64desc.xml`.
+    ///
+    /// AVM exposes the guest access point as the *last* `WLANConfiguration`
+    /// service. Dual-band boxes therefore report 3, while tri-band models
+    /// (FRITZ!Box 4060/7690 and the tri-band repeaters) report 4 — assuming 3
+    /// there targets a production radio instead of the guest network.
+    pub fn guest_wlan_index(&mut self) -> Result<usize, ClientError> {
+        self.wlan_config_indices()?.last().copied().ok_or_else(|| {
+            ClientError::Transport(
+                "wlan: box advertises no WLANConfiguration service to use as guest radio"
+                    .to_owned(),
+            )
+        })
+    }
+
     /// Enable or disable the explicitly selected guest WLAN configuration.
     pub fn set_guest_wlan(&mut self, guest_index: usize, enable: bool) -> Result<(), ClientError> {
         let args = BTreeMap::from([(
@@ -509,6 +557,8 @@ pub struct DslLineStats {
 pub struct Call {
     #[serde(rename = "type")]
     pub call_type: i32,
+    /// Call time as reported by the box, in the box's own local time.
+    /// ISO 8601 without an offset — the call list carries no zone information.
     pub date: String,
     pub caller: String,
     pub caller_number: String,
@@ -557,6 +607,8 @@ pub struct TrafficData {
 pub struct LogEvent {
     pub id: String,
     pub group: String,
+    /// Event time as reported by the box, in the box's own local time.
+    /// ISO 8601 without an offset — the device log carries no zone information.
     pub time: String,
     pub msg: String,
 }
@@ -678,12 +730,18 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
         if days > 0 {
             updates.push(("days", days.to_string()));
         }
-        if max > 0 {
+        // The router applies `max` to the unfiltered list, so it may only cap
+        // the request when no type filter narrows the result afterwards.
+        if max > 0 && call_type == CALL_ALL {
             updates.push(("max", max.to_string()));
         }
         replace_query_params(&mut parsed, &updates);
         let response = self.authenticated_get(parsed.as_ref())?;
-        parse_calls(&response.body, call_type)
+        let mut calls = parse_calls(&response.body, call_type)?;
+        if max > 0 {
+            calls.truncate(max);
+        }
+        Ok(calls)
     }
 
     /// Ask the VoIP service to dial a number.
@@ -838,7 +896,7 @@ fn valid_call_date(value: &str) -> String {
             .and_then(|field| field.parse().ok())
             .unwrap_or_default();
         if valid_calendar(day, month, year) && hour <= 23 && minute <= 59 && second <= 59 {
-            return format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z");
+            return format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}");
         }
     }
     let (date, clock) = value.split_once(' ').unwrap_or(("", ""));
@@ -860,7 +918,7 @@ fn valid_call_date(value: &str) -> String {
         let minute: u32 = clock_fields[1].parse().ok().unwrap_or_default();
         let second: u32 = clock_fields[2].parse().ok().unwrap_or_default();
         if valid_calendar(day, month, year) && hour <= 23 && minute <= 59 && second <= 59 {
-            return format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z");
+            return format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}");
         }
     }
     String::new()
@@ -960,7 +1018,7 @@ fn valid_log_time(date: &str, time: &str) -> String {
     if !valid_calendar(day, month, year) || hour > 23 || minute > 59 || second > 59 {
         return String::new();
     }
-    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}")
 }
 
 fn valid_calendar(day: u32, month: u32, year: u32) -> bool {
@@ -1147,7 +1205,12 @@ pub struct MeshInterface {
 #[serde(default)]
 pub struct MeshLink {
     pub state: String,
+    /// UID of the link's first endpoint. FRITZ!OS names this key `node_1_uid`;
+    /// the alias keeps the older `node_1` spelling readable too.
+    #[serde(alias = "node_1_uid")]
     pub node_1: String,
+    /// UID of the link's second endpoint (FRITZ!OS: `node_2_uid`).
+    #[serde(alias = "node_2_uid")]
     pub node_2: String,
     pub max_data_rate_rx: i64,
     pub max_data_rate_tx: i64,

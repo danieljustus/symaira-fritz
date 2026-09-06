@@ -636,6 +636,24 @@ fn render_hosts(hosts: &[Host], format: OutputFormat) -> Result<(), HandlerError
     Ok(())
 }
 
+/// Resolve the guest WLAN index, preferring an explicit `--guest-index`.
+///
+/// Without the flag the index comes from `tr64desc.xml`: AVM publishes the
+/// guest access point as the last `WLANConfiguration` service, which is 3 on
+/// dual-band boxes but 4 on tri-band models. Assuming 3 everywhere would target
+/// a production radio on those boxes.
+fn resolve_guest_index(
+    client: &mut Tr064Client<BlockingHttpTransport, RandomCnonce>,
+    explicit: Option<u16>,
+) -> Result<usize, HandlerError> {
+    match explicit {
+        Some(index) => Ok(usize::from(index)),
+        None => client
+            .guest_wlan_index()
+            .map_err(|error| HandlerError::from_client("guest index discovery failed", &error)),
+    }
+}
+
 fn execute_wlan(
     command: symfritz_cli::cli::WlanCommand,
     format: OutputFormat,
@@ -650,7 +668,7 @@ fn execute_wlan(
     match subcommand {
         WlanSubcommand::Radios => {
             let radios = client
-                .radios(3)
+                .radios(0)
                 .map_err(|error| HandlerError::from_client("wlan radios failed", &error))?;
             if format != OutputFormat::Text {
                 output::write(&mut std::io::stdout(), &radios, format)
@@ -700,8 +718,9 @@ fn execute_wlan(
         }
         WlanSubcommand::Guest(guest) => match guest {
             WlanGuestCommand::Status => {
+                let index = resolve_guest_index(&mut client, command.guest_index)?;
                 let radio = client
-                    .guest_wlan_status(usize::from(command.guest_index))
+                    .guest_wlan_status(index)
                     .map_err(|error| HandlerError::from_client("guest status failed", &error))?;
                 if format != OutputFormat::Text {
                     output::write(&mut std::io::stdout(), &radio, format)
@@ -716,22 +735,22 @@ fn execute_wlan(
             }
             WlanGuestCommand::On | WlanGuestCommand::Off => {
                 let enable = matches!(guest, WlanGuestCommand::On);
+                let index = resolve_guest_index(&mut client, command.guest_index)?;
                 client
-                    .set_guest_wlan(usize::from(command.guest_index), enable)
+                    .set_guest_wlan(index, enable)
                     .map_err(|error| HandlerError::from_client("guest toggle failed", &error))?;
                 if format != OutputFormat::Text {
                     let payload = GuestWlanOutput {
                         ok: true,
                         action: "wlan_guest",
-                        index: usize::from(command.guest_index),
+                        index,
                         enabled: enable,
                     };
                     output::write(&mut std::io::stdout(), &payload, format)
                         .map_err(|error| HandlerError::operation(error.to_string()))?;
                 } else {
                     println!(
-                        "Guest WLAN (index {}) {}.",
-                        command.guest_index,
+                        "Guest WLAN (index {index}) {}.",
                         if enable { "enabled" } else { "disabled" }
                     );
                 }

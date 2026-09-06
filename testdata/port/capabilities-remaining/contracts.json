@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "oracle": "Go internal/fritz/{status,dsl,phone,traffic,log} production models and request seams; reboot uses cmd/symfritz/reboot.go raw Call",
+  "divergence": "call/log timestamps intentionally drop the Go oracle's trailing Z: the box reports its own local time and carries no zone information, so the suffix asserted a UTC instant that was never true",
   "models": {
     "dsl": {
       "upstream_noise_margin": 60,
@@ -13,7 +14,7 @@
     "calls": [
       {
         "type": 1,
-        "date": "2026-06-29T14:15:00Z",
+        "date": "2026-06-29T14:15:00",
         "caller": "Alice",
         "caller_number": "01712345",
         "called_number": "089123",
@@ -22,7 +23,7 @@
       },
       {
         "type": 3,
-        "date": "2026-06-29T14:16:00Z",
+        "date": "2026-06-29T14:16:00",
         "caller": "089123",
         "caller_number": "",
         "called_number": "01712345",
@@ -68,13 +69,13 @@
       {
         "id": "10",
         "group": "sys",
-        "time": "2026-06-29T14:15:00Z",
+        "time": "2026-06-29T14:15:00",
         "msg": "System started"
       },
       {
         "id": "11",
         "group": "net",
-        "time": "2026-06-29T14:16:00Z",
+        "time": "2026-06-29T14:16:00",
         "msg": "Link up"
       }
     ]
