@@ -283,7 +283,7 @@ struct RandomCnonce;
 impl CnonceSource for RandomCnonce {
     fn next_cnonce(&mut self) -> Result<String, String> {
         let mut bytes = [0_u8; 16];
-        getrandom::getrandom(&mut bytes).map_err(|error| error.to_string())?;
+        getrandom::fill(&mut bytes).map_err(|error| error.to_string())?;
         Ok(hex::encode(bytes))
     }
 }
