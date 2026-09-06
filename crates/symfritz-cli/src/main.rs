@@ -6,13 +6,16 @@ use std::{
     fmt::Display,
     io::{self, Read, Write},
     net::{IpAddr, ToSocketAddrs},
-    process::{Command as ProcessCommand, ExitCode, Stdio},
+    process::{Command as ProcessCommand, ExitCode},
     sync::{
         OnceLock,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
+
+#[cfg(unix)]
+use std::process::Stdio;
 
 use clap::CommandFactory;
 use clap_complete::{generate, shells};
