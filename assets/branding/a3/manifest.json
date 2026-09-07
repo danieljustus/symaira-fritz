@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "product": "symaira-fritz",
+  "design": "A3 (Verzahnt)",
+  "role": "brand-only",
+  "native_app_bundle": false,
+  "source_handoff": "symaira-icons-release/symaira-fritz",
+  "product_signet_group": "Symaira Fritz — Router",
+  "existing_wordmark_preserved": true,
+  "files": {
+    "AppIcon.icon/icon.json": "43e34f7e71720c598de2abfa98842c06cbfcdd310c8ac496713f9aee253320b3",
+    "AppIcon.icon/Assets/S.png": "76dbfd933a4a5af3084e8a36f70c9fef7a1d7cc605d2e2d78fa0dc4c4f4b9110",
+    "AppIcon.icon/Assets/signet.png": "5610a249b66e264a7af7e92801a8541ec9128be07b6e1fb3a5561f573a3d74d9",
+    "source/signet.svg": "8ebaf7d13cae258e8002e7820fdfc6ea4779a8f6f00815e27aa55fd430b044d4",
+    "symaira-fritz-a3.png": "92c945e37c7203a540b10ff4c02345801a6ae3615028a42aeca03895c47ac5f5"
+  },
+  "png_contract": {
+    "symaira-fritz-a3.png": {
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "color_mode": "RGB"
+    }
+  }
+}
