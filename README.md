@@ -1,5 +1,7 @@
 # Symaira Fritz
 
+> **Accepted product direction — implementation pending:** Fritz remains an independent FRITZ!Box tool. The standalone symvault credential service remains optional and usable without Brain. The accepted ecosystem consolidation does not change Fritz protocols, secret resolution or installation. See [PB-2026-09-09](docs/product-boundaries.md).
+
 [![CI](https://github.com/danieljustus/symaira-fritz/actions/workflows/ci.yml/badge.svg)](https://github.com/danieljustus/symaira-fritz/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/danieljustus/symaira-fritz)](https://github.com/danieljustus/symaira-fritz/releases/latest)
 [![License](https://img.shields.io/github/license/danieljustus/symaira-fritz)](LICENSE)
