@@ -31,9 +31,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-build-and-test-cargo-rust-1.98.0-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/Cargo.toml', '**/build.rs', '**/*.rs') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-${{ runner.arch }}-build-and-test-cargo-rust-1.98.0-${{ hashFiles('**/Cargo.lock') }}-
+            ${{ runner.os }}-${{ runner.arch }}-build-and-test-cargo-rust-1.98.0-
 
       - name: Validate release contracts
         run: |
@@ -91,9 +92,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cross-platform-cargo-rust-1.98.0-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/Cargo.toml', '**/build.rs', '**/*.rs') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-${{ runner.arch }}-cross-platform-cargo-rust-1.98.0-${{ hashFiles('**/Cargo.lock') }}-
+            ${{ runner.os }}-${{ runner.arch }}-cross-platform-cargo-rust-1.98.0-
 
       - name: Format
         run: cargo fmt --all --check

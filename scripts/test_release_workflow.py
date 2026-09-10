@@ -118,6 +118,18 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
         self.assertIn("codesign --verify --strict", (ROOT / "scripts" / "sign-and-notarize.sh").read_text())
 
 
+    def test_ci_cargo_cache_key_is_scoped_and_refreshable(self) -> None:
+        ci_text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        self.assertEqual(ci_text.count("${{ runner.arch }}"), 6)
+        self.assertEqual(ci_text.count("cargo-rust-1.98.0-"), 6)
+        self.assertEqual(ci_text.count("${{ hashFiles('**/Cargo.toml', '**/build.rs', '**/*.rs') }}"), 2)
+        self.assertIn("build-and-test-cargo-rust-1.98.0-", ci_text)
+        self.assertIn("cross-platform-cargo-rust-1.98.0-", ci_text)
+        self.assertIn("${{ hashFiles('**/Cargo.lock') }}-\n            ${{ runner.os }}-${{ runner.arch }}-build-and-test", ci_text)
+        self.assertIn("${{ hashFiles('**/Cargo.lock') }}-\n            ${{ runner.os }}-${{ runner.arch }}-cross-platform", ci_text)
+        self.assertNotIn("${{ runner.os }}-cargo-", ci_text)
+
+
 if __name__ == "__main__":
     sys.path.insert(0, str(ROOT / "scripts"))
     unittest.main()
