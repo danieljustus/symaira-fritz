@@ -59,10 +59,11 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-features --locked
 
-      - name: CLI black-box contracts
+      - name: CLI black-box contract guardrails
+        shell: bash
         run: |
-          cargo build --workspace --locked
-          python3 scripts/cli-differential.py --binary ./target/debug/symfritz
+          cargo build -p symfritz-cli --bin symfritz --locked
+          python3 scripts/test_cli_differential.py
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --version 0.20.2 --locked
@@ -80,7 +81,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.98.0 --profile minimal --component clippy,rustfmt
@@ -109,10 +110,8 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-features --locked
 
-      - name: CLI black-box contracts
+      - name: CLI black-box contract guardrails
         shell: bash
         run: |
-          cargo build --workspace --locked
-          suffix=""
-          if [ "$RUNNER_OS" = "Windows" ]; then suffix=".exe"; fi
-          python3 scripts/cli-differential.py --binary "./target/debug/symfritz${suffix}"
+          cargo build -p symfritz-cli --bin symfritz --locked
+          python3 scripts/test_cli_differential.py

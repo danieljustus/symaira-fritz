@@ -61,8 +61,9 @@ rust-parser-properties:
 	$(CARGO) test -p symfritz-mcp --test property_framing --locked
 
 .PHONY: cli-contract
-cli-contract: rust-build
-	python3 scripts/cli-differential.py --binary ./$(RUST_BINARY)
+cli-contract:
+	$(CARGO) build -p symfritz-cli --bin symfritz --locked
+	python3 scripts/run-cli-differential.py --root . --rust ./$(RUST_BINARY)
 
 .PHONY: release-manifest-test
 release-manifest-test:

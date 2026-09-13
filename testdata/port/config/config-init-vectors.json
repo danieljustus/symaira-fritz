@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "oracle": "Go cmd/symfritz initConfigFile production helper",
+  "oracle": "v0.7.0 Go initConfigFile baseline plus approved TLS HTTP-fallback opt-in",
   "cases": [
     {
       "id": "fresh",

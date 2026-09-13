@@ -99,17 +99,21 @@ The exact release measurements are recorded in
 make build                  # Rust production binary → ./symfritz
 make test                   # complete Rust workspace
 make lint                   # rustfmt + Clippy
-make cli-contract           # fake-box CLI and frozen fixture contracts
+make cli-contract           # strict fake-box v0.7.0-Go↔Rust CLI contracts
 make rust-parser-properties # untrusted parser/framing properties
 make release-manifest-test  # archive and manifest contract
 make release-snapshot       # host release artifact smoke
 ```
 
-`make cli-contract` runs the Rust binary with fresh `HOME`/XDG trees, fixed
-locale/timezone, a strict local fake TR-064 endpoint, deterministic
+`make cli-contract` builds the Rust candidate and an immutable v0.7.0 Go
+oracle from the pinned commit, then runs both with fresh `HOME`/XDG trees,
+fixed locale/timezone, a strict local fake TR-064 endpoint, deterministic
 text/JSON/YAML traffic cases, watch NDJSON flushing,
 confirmation/no-side-effect behavior, and SIGINT cancellation. Every network
-route, SOAP action, argument and mutation sequence is allow-listed.
+route, SOAP action, argument and mutation sequence is allow-listed. Approved
+target changes are exact, case-scoped rules in
+[`divergence-policy.json`](../../testdata/port/divergence-policy.json); all
+other behavior is a strict comparison.
 
 The remaining typed capabilities are split by protocol boundary: TR-064 owns
 SOAP/digest operations, while `symfritz-aha::Client` owns session-authenticated
