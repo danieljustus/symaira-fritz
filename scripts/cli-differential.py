@@ -531,7 +531,7 @@ def _trace(value: object, label: str) -> list[tuple[str, str, str]]:
 def load_policy(root: Path) -> dict[str, Any]:
     path = root / "testdata/port/divergence-policy.json"
     try:
-        policy = json.loads(path.read_text())
+        policy = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise AssertionError(f"invalid divergence policy {path}: {exc}") from exc
     if not isinstance(policy, dict) or policy.get("schema_version") != 1:
@@ -1117,7 +1117,7 @@ def run_structured_matrix(server: StrictFakeBox, binary: str, label: str, args: 
 
 
 def parse_validation(root: Path) -> list[dict[str, Any]]:
-    values = json.loads((root / "testdata/port/cli/command-contracts.json").read_text())["validation"]
+    values = json.loads((root / "testdata/port/cli/command-contracts.json").read_text(encoding="utf-8"))["validation"]
     if len(values) != 17: raise AssertionError(f"fixture validation count changed: {len(values)}")
     return values
 
@@ -1313,7 +1313,7 @@ def run_suite(go: str, rust: str, root: Path) -> None:
     PRIVATE_IP = private_address()
     server = StrictFakeBox(("0.0.0.0", PORT), PRIVATE_IP); thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
     try:
-        fixture_data = json.loads((root / "testdata/port/cli/command-contracts.json").read_text())
+        fixture_data = json.loads((root / "testdata/port/cli/command-contracts.json").read_text(encoding="utf-8"))
         command_cases = {case["path"]: case for case in fixture_data["commands"]}
         if len(command_cases) != 49:
             raise AssertionError(f"fixture command count changed: {len(command_cases)}")
