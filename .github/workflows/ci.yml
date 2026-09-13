@@ -41,7 +41,6 @@ jobs:
           python3 scripts/test_release_workflow.py
           python3 scripts/test_release_manifest.py
           python3 scripts/test_brand_assets.py
-          python3 scripts/test_cli_differential.py
 
       - name: Gitleaks
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3
@@ -60,10 +59,25 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-features --locked
 
+      - name: CLI black-box contract guardrails
+        shell: bash
+        run: |
+          cargo build -p symfritz-cli --bin symfritz --locked
+          python3 scripts/test_cli_differential.py
+
       - name: CLI black-box contracts
+        if: runner.os != 'Windows'
+        shell: bash
         run: |
           cargo build --workspace --locked
-          python3 scripts/cli-differential.py --binary ./target/debug/symfritz
+          python3 scripts/run-cli-differential.py --root . --rust ./target/debug/symfritz
+
+      - name: CLI black-box contracts (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo build --workspace --locked
+          python scripts/run-cli-differential.py --root . --rust .\target\debug\symfritz.exe
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --version 0.20.2 --locked
@@ -81,7 +95,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.98.0 --profile minimal --component clippy,rustfmt
@@ -110,16 +124,22 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-features --locked
 
+      - name: CLI black-box contract guardrails
+        shell: bash
+        run: |
+          cargo build -p symfritz-cli --bin symfritz --locked
+          python3 scripts/test_cli_differential.py
+
       - name: CLI black-box contracts
         if: runner.os != 'Windows'
         shell: bash
         run: |
           cargo build --workspace --locked
-          python3 scripts/cli-differential.py --binary ./target/debug/symfritz
+          python3 scripts/run-cli-differential.py --root . --rust ./target/debug/symfritz
 
       - name: CLI black-box contracts (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           cargo build --workspace --locked
-          python scripts/cli-differential.py --binary .\target\debug\symfritz.exe
+          python scripts/run-cli-differential.py --root . --rust .\target\debug\symfritz.exe

@@ -1,0 +1,219 @@
+{
+  "schema_version": 1,
+  "oracle": {
+    "implementation": "Go",
+    "tag": "v0.7.0",
+    "commit": "b1491793aea173eac926e1a0c9db5ba6dd4604a9"
+  },
+  "harness": {
+    "help_flag_overrides": [
+      {
+        "id": "CAP-WLAN-ADVERTISED-INDEX",
+        "paths": [
+          "symfritz wlan",
+          "symfritz wlan clients",
+          "symfritz wlan guest",
+          "symfritz wlan guest off",
+          "symfritz wlan guest on",
+          "symfritz wlan guest status",
+          "symfritz wlan radios"
+        ],
+        "flag": "--guest-index",
+        "oracle": {
+          "default": "3",
+          "description": "WLANConfiguration index of the guest radio"
+        },
+        "candidate": {
+          "default": null,
+          "description": "WLANConfiguration index of the guest radio (default: highest index the box advertises)"
+        },
+        "test": "symfritz-tr064/tests/remaining_capabilities.rs::guest_wlan_index_follows_the_box_instead_of_assuming_three"
+      }
+    ],
+    "request_trace_overrides": [
+      {
+        "id": "CAP-WLAN-ADVERTISED-INDEX",
+        "cases": {
+          "wlan-radios": {
+            "go": [
+              ["POST", "/upnp/control/wlanconfig1", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig2", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig3", "GetInfo"]
+            ],
+            "rust": [
+              ["GET", "/tr64desc.xml", ""],
+              ["POST", "/upnp/control/wlanconfig1", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig2", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig3", "GetInfo"]
+            ]
+          },
+          "wlan-radios-yaml": {
+            "go": [
+              ["POST", "/upnp/control/wlanconfig1", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig2", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig3", "GetInfo"]
+            ],
+            "rust": [
+              ["GET", "/tr64desc.xml", ""],
+              ["POST", "/upnp/control/wlanconfig1", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig2", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig3", "GetInfo"]
+            ]
+          },
+          "wlan-guest-status": {
+            "go": [["POST", "/upnp/control/wlanconfig3", "GetInfo"]],
+            "rust": [
+              ["GET", "/tr64desc.xml", ""],
+              ["POST", "/upnp/control/wlanconfig3", "GetInfo"]
+            ]
+          },
+          "guest-on": {
+            "go": [["POST", "/upnp/control/wlanconfig3", "SetEnable"]],
+            "rust": [
+              ["GET", "/tr64desc.xml", ""],
+              ["POST", "/upnp/control/wlanconfig3", "SetEnable"]
+            ]
+          },
+          "guest-off": {
+            "go": [["POST", "/upnp/control/wlanconfig3", "SetEnable"]],
+            "rust": [
+              ["GET", "/tr64desc.xml", ""],
+              ["POST", "/upnp/control/wlanconfig3", "SetEnable"]
+            ]
+          }
+        },
+        "test": "symfritz-tr064/tests/remaining_capabilities.rs::guest_wlan_index_follows_the_box_instead_of_assuming_three"
+      },
+      {
+        "id": "CAP-AHA-HOME-LIST-SINGLE-FETCH",
+        "cases": {
+          "home-list-aha": {
+            "go": [
+              ["GET", "/login_sid.lua", ""],
+              ["GET", "/login_sid.lua", ""],
+              ["GET", "/webservices/homeautoswitch.lua", "getdevicelistinfos"],
+              ["GET", "/webservices/homeautoswitch.lua", "getdevicelistinfos"]
+            ],
+            "rust": [
+              ["GET", "/login_sid.lua", ""],
+              ["GET", "/login_sid.lua", ""],
+              ["GET", "/webservices/homeautoswitch.lua", "getdevicelistinfos"]
+            ]
+          },
+          "home-list-yaml": {
+            "go": [
+              ["GET", "/login_sid.lua", ""],
+              ["GET", "/login_sid.lua", ""],
+              ["GET", "/webservices/homeautoswitch.lua", "getdevicelistinfos"],
+              ["GET", "/webservices/homeautoswitch.lua", "getdevicelistinfos"]
+            ],
+            "rust": [
+              ["GET", "/login_sid.lua", ""],
+              ["GET", "/login_sid.lua", ""],
+              ["GET", "/webservices/homeautoswitch.lua", "getdevicelistinfos"]
+            ]
+          }
+        },
+        "test": "scripts/cli-differential.py::run_suite home-list-aha/home-list-yaml"
+      }
+    ],
+    "structured_transforms": [
+      {
+        "id": "CAP-CALL-LOG-LOCAL-WALLCLOCK",
+        "cases": ["calls", "calls-yaml", "log", "log-yaml"],
+        "kind": "remove_one_terminal_z",
+        "keys": ["Date", "Time"],
+        "test": "symfritz-tr064/tests/remaining_capabilities.rs::box_timestamps_are_not_labelled_utc"
+      },
+      {
+        "id": "CAP-AHA-HOME-LIST-SINGLE-FETCH",
+        "cases": ["home-list-aha", "home-list-yaml"],
+        "kind": "null_to_empty_array",
+        "keys": ["groups"],
+        "test": "scripts/cli-differential.py::run_suite home-list-aha/home-list-yaml"
+      }
+    ],
+    "config_template_overrides": [
+      {
+        "id": "TLS-HTTP-FALLBACK-OPT-IN",
+        "cases": ["config-init-fresh", "config-init-existing-force"],
+        "candidate_insert": "# Allow retrying an unavailable TLS endpoint over unencrypted HTTP.\n# Keep disabled unless this legacy compatibility fallback is required.\nallow_http_fallback = false\n\n",
+        "test": "symfritz-core/tests/config_fixtures.rs::http_fallback_requires_explicit_configuration"
+      }
+    ],
+    "byte_stream_overrides": [
+      {
+        "id": "CLI-STRUCTURED-ERROR-CLEAN",
+        "cases": {
+          "auth-unauthorized": {
+            "oracle_stdout_prefix": "Credential source: env\nBox:               {private_ip}:{port} (user \"admin\")\n  ✗ Web session login (login_sid.lua)\n  ✗ TR-064 access (DeviceInfo)\n\nNote: TR-064 must be enabled on the box: Home Network → Network →\nNetwork Settings → \"Allow access for applications\".\n",
+            "candidate_stdout_prefix": ""
+          }
+        },
+        "test": "scripts/cli-differential.py::run_suite auth-unauthorized"
+      }
+    ]
+  },
+  "approved_target_changes": [
+    {
+      "id": "TLS-HTTP-FALLBACK-OPT-IN",
+      "surface": "transport",
+      "reason": "Rust refuses HTTP downgrade unless explicitly configured.",
+      "test": "symfritz-tr064/tests/tls_transport.rs"
+    },
+    {
+      "id": "CAP-WLAN-ADVERTISED-INDEX",
+      "surface": "CLI and TR-064 requests",
+      "reason": "Rust discovers advertised WLANConfiguration services so tri-band boxes do not target a production radio as guest WLAN.",
+      "test": "symfritz-tr064/tests/remaining_capabilities.rs::guest_wlan_index_follows_the_box_instead_of_assuming_three"
+    },
+    {
+      "id": "CAP-AHA-HOME-LIST-SINGLE-FETCH",
+      "surface": "AHA home-list request sequence",
+      "reason": "The Go command fetched the same combined AHA device/group document twice and rendered an absent group list as null; Rust obtains the document once and renders an absent collection as an empty list.",
+      "test": "scripts/cli-differential.py::run_suite home-list-aha/home-list-yaml"
+    },
+    {
+      "id": "CAP-CALL-LIMIT-AFTER-FILTER",
+      "surface": "call list query and result set",
+      "reason": "Rust applies the requested limit after type filtering because the router applies max before the filter.",
+      "test": "scripts/cli-differential.py::run_calls_filter_limit_target"
+    },
+    {
+      "id": "CAP-CALL-LOG-LOCAL-WALLCLOCK",
+      "surface": "call and log timestamps",
+      "reason": "Rust does not label a device-local wall clock as UTC when FRITZ!OS supplies no timezone metadata.",
+      "test": "symfritz-tr064/tests/remaining_capabilities.rs::box_timestamps_are_not_labelled_utc"
+    },
+    {
+      "id": "CAP-MESH-UID-ALIASES",
+      "surface": "mesh parser",
+      "reason": "Rust accepts the node_1_uid and node_2_uid keys emitted by current FRITZ!OS while preserving legacy serialized names.",
+      "test": "symfritz-tr064/tests/mesh_optional.rs::mesh_links_resolve_peers_from_the_uid_keys_fritzos_actually_sends"
+    },
+    {
+      "id": "SEC-HOST-SELECTOR-EXACTLY-ONE",
+      "surface": "hosts get and wol argument validation",
+      "reason": "Rust rejects zero or conflicting host selectors before router access.",
+      "test": "symfritz-cli/tests/cli_contract.rs::selector_validation_rejects_zero_and_multiple_cli_selectors_before_execution"
+    },
+    {
+      "id": "MCP-HOME-SWITCH-BOOLEAN",
+      "surface": "MCP input validation",
+      "reason": "Rust requires a boolean on field before capability dispatch.",
+      "test": "symfritz-mcp/src/lib.rs"
+    },
+    {
+      "id": "CLI-STRUCTURED-MUTATION-OUTPUT",
+      "surface": "JSON and YAML mutation responses",
+      "reason": "Rust exposes the project-wide structured success object for mutation and credential commands; it is a target contract extension, not Go-byte parity.",
+      "test": "scripts/cli-differential.py::run_structured_matrix"
+    },
+    {
+      "id": "CLI-STRUCTURED-ERROR-CLEAN",
+      "surface": "structured CLI error stdout",
+      "reason": "Rust emits only the requested structured error document; the Go oracle prepended human diagnostics and thereby broke machine-readable output.",
+      "test": "scripts/cli-differential.py::run_suite auth-unauthorized"
+    }
+  ]
+}

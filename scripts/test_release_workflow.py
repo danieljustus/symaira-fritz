@@ -129,25 +129,25 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
         self.assertIn("${{ hashFiles('**/Cargo.lock') }}-\n            ${{ runner.os }}-${{ runner.arch }}-cross-platform", ci_text)
         self.assertNotIn("${{ runner.os }}-cargo-", ci_text)
 
-    def test_windows_cli_contract_step_uses_native_commands(self) -> None:
+    def test_cli_contract_steps_use_native_commands(self) -> None:
         ci_text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-        match = re.search(
+        self.assertEqual(ci_text.count("- name: CLI black-box contracts (Windows)"), 2)
+        self.assertEqual(ci_text.count("scripts/run-cli-differential.py --root . --rust ./target/debug/symfritz"), 2)
+        self.assertEqual(ci_text.count("scripts/run-cli-differential.py --root . --rust .\\target\\debug\\symfritz.exe"), 2)
+        for match in re.finditer(
             r"^      - name: CLI black-box contracts \(Windows\)\n(?P<body>.*?)(?=^      - name:|\Z)",
             ci_text,
             re.MULTILINE | re.DOTALL,
-        )
-        self.assertIsNotNone(match)
-        windows_step = match.group("body") if match else ""
-        self.assertIn("if: runner.os == 'Windows'", windows_step)
-        self.assertIn("shell: pwsh", windows_step)
-        self.assertIn("cargo build --workspace --locked", windows_step)
-        self.assertIn(
-            r"python scripts/cli-differential.py --binary .\target\debug\symfritz.exe",
-            windows_step,
-        )
-        for forbidden in ("make", "bash", "python3"):
-            self.assertNotIn(forbidden, windows_step)
-        self.assertIn("- name: CLI black-box contracts\n        if: runner.os != 'Windows'", ci_text)
+        ):
+            body = match.group("body")
+            self.assertIn("if: runner.os == 'Windows'", body)
+            self.assertIn("shell: pwsh", body)
+            self.assertIn("cargo build --workspace --locked", body)
+            self.assertIn("python scripts/run-cli-differential.py", body)
+            self.assertNotIn("bash", body)
+            self.assertNotIn("python3", body)
+        self.assertIn("if: runner.os != 'Windows'", ci_text)
+        self.assertNotIn("make cli-contract", ci_text)
 
 
 if __name__ == "__main__":

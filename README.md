@@ -279,7 +279,7 @@ Test:
 ```bash
 make test            # complete Rust workspace
 make rust-test
-make cli-contract    # strict local fake-box CLI suite
+make cli-contract    # strict local v0.7.0-Go↔Rust fake-box CLI suite
 ```
 
 Lint:
