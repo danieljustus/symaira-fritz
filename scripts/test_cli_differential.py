@@ -54,6 +54,20 @@ class CliDifferentialPortabilityTests(unittest.TestCase):
             )
             self.assertEqual(path, str(home / "empty-path"))
 
+    def test_non_windows_helper_path_retains_runtime_tools_only_with_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            home = Path(raw)
+            path = cli_differential.isolated_path(
+                home,
+                home / "helper",
+                {"PATH": "/system-tools:/untrusted-helper"},
+                is_windows=False,
+            )
+            self.assertEqual(
+                path.split(":"),
+                [str(home / "helper"), str(home / "empty-path"), "/system-tools", "/untrusted-helper"],
+            )
+
     def test_temporary_directory_uses_the_platform_temp_root(self) -> None:
         with (
             mock.patch.object(cli_differential.tempfile, "gettempdir", return_value=r"C:\runner-temp"),

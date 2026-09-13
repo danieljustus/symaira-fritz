@@ -569,8 +569,12 @@ def runtime_path_entries(source: Mapping[str, str], *, is_windows: bool) -> list
 def isolated_path(home: Path, path_prefix: Path | None, source: Mapping[str, str], *, is_windows: bool) -> str:
     backend_free = home / "empty-path"; backend_free.mkdir(exist_ok=True)
     entries = ([str(path_prefix)] if path_prefix is not None else []) + [str(backend_free)]
+    if path_prefix is not None and not is_windows:
+        # The Unix auth-store/login tests launch the configured helper and PTY
+        # utilities; retain the host runtime PATH only for that explicit helper path.
+        entries.append(source.get("PATH", ""))
     entries.extend(runtime_path_entries(source, is_windows=is_windows))
-    return (";" if is_windows else os.pathsep).join(entries)
+    return (";" if is_windows else os.pathsep).join(entry for entry in entries if entry)
 
 
 def environment(home: Path, *, fake: bool, extra: dict[str, str] | None = None, path_prefix: Path | None = None) -> dict[str, str]:
