@@ -130,6 +130,7 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
 
     def test_cli_contract_steps_use_native_commands(self) -> None:
         ci_text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        self.assertIn('go-version: "1.26.6"', ci_text)
         self.assertEqual(ci_text.count("- name: CLI black-box contracts (Windows)"), 2)
         self.assertEqual(ci_text.count("scripts/run-cli-differential.py --root . --rust ./target/debug/symfritz"), 2)
         self.assertEqual(ci_text.count("scripts/run-cli-differential.py --root . --rust .\\target\\debug\\symfritz.exe"), 2)
