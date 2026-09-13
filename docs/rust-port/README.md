@@ -75,6 +75,18 @@ warmups). That is 87.7% smaller and 58.6% faster at the median than the Go
 oracle in this paired run. This only proves the tiny first slice has low
 overhead; it says nothing yet about the complete network/MCP implementation.
 
+## Post-cutover hardening
+
+Six real-hardware and audit-driven fixes landed after this record's v0.7.0/
+v0.8.0 cutover text was written (PRs #227, #228, #232, #233, #234; see
+[`contract-matrix.md`](contract-matrix.md#post-v070-hardening-2026-09-13-audit)
+for the full evidence trail). The most significant, PR #234, was found by
+exercising the CLI against a real FRITZ!Box 4060 and fixed a guest-WLAN index
+bug that would have let `wlan guest off` disable a live production radio on
+tri-band boxes; it is merged to `main` but **not yet in a released tag** —
+the latest release is `v0.8.1` (2026-09-06). This repository was Rust-only
+(no Go source) at the time of this note, tagged through `v0.8.1`.
+
 ## Value gate
 
 The stable cutover required all of the following, and every item passed for

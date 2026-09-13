@@ -139,3 +139,13 @@ that run; no numbers are inferred or copied from a debug build.
 - LIVE router smoke: **PASS** for the sanitized read-only Go↔Rust run recorded
   in `live-smoke-20260905.json`; no command output or router identifiers were
   persisted.
+- **Unreleased fix, flagged 2026-09-13:** `v0.8.1` (2026-09-06T13:44Z) is the
+  latest published tag. PR #234 (guest WLAN index, mesh peer names, call/log
+  timestamps, `calls --limit` ordering — see `contract-matrix.md` "Post-v0.7.0
+  hardening") merged to `main` afterwards, at `8d7eed6`
+  (2026-09-06T16:37Z), and is not in `v0.8.1` or any later tag. The PR
+  describes the guest-WLAN defect it fixes as one that would have disabled a
+  live production radio on tri-band boxes. No release trust-chain evidence
+  (DIST-002/DIST-006-style) exists yet for a build containing this fix. Cutting
+  that release is outside Phase 1 register-hygiene scope; this note exists so
+  it is not silently dropped.
