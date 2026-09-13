@@ -21,9 +21,8 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
         self.assertEqual(tracked_go, "")
         self.assertFalse((ROOT / "go.mod").exists())
         self.assertFalse((ROOT / "go.sum").exists())
-        for workflow in (WORKFLOW_TEXT, (ROOT / ".github/workflows/ci.yml").read_text()):
-            self.assertNotIn("actions/" + "setup-go", workflow)
-            self.assertIsNone(re.search(r"\bgo (?:build|test|install|vet|run)\b", workflow))
+        self.assertNotIn("actions/" + "setup-go", WORKFLOW_TEXT)
+        self.assertIsNone(re.search(r"\bgo (?:build|test|install|vet|run)\b", WORKFLOW_TEXT))
 
     def test_linux_arm64_uses_a_cross_compiler_and_ring_environment(self) -> None:
         self.assertIn("gcc-aarch64-linux-gnu", WORKFLOW_TEXT)
@@ -128,6 +127,27 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
         self.assertIn("${{ hashFiles('**/Cargo.lock') }}-\n            ${{ runner.os }}-${{ runner.arch }}-build-and-test", ci_text)
         self.assertIn("${{ hashFiles('**/Cargo.lock') }}-\n            ${{ runner.os }}-${{ runner.arch }}-cross-platform", ci_text)
         self.assertNotIn("${{ runner.os }}-cargo-", ci_text)
+
+    def test_cli_contract_steps_use_native_commands(self) -> None:
+        ci_text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        self.assertIn('go-version: "1.26.6"', ci_text)
+        self.assertEqual(ci_text.count("- name: CLI black-box contracts (Windows)"), 2)
+        self.assertEqual(ci_text.count("scripts/run-cli-differential.py --root . --rust ./target/debug/symfritz"), 2)
+        self.assertEqual(ci_text.count("scripts/run-cli-differential.py --root . --rust .\\target\\debug\\symfritz.exe"), 2)
+        for match in re.finditer(
+            r"^      - name: CLI black-box contracts \(Windows\)\n(?P<body>.*?)(?=^      - name:|\Z)",
+            ci_text,
+            re.MULTILINE | re.DOTALL,
+        ):
+            body = match.group("body")
+            self.assertIn("if: runner.os == 'Windows'", body)
+            self.assertIn("shell: pwsh", body)
+            self.assertIn("cargo build --workspace --locked", body)
+            self.assertIn("python scripts/run-cli-differential.py", body)
+            self.assertNotIn("bash", body)
+            self.assertNotIn("python3", body)
+        self.assertIn("if: runner.os != 'Windows'", ci_text)
+        self.assertNotIn("make cli-contract", ci_text)
 
 
 if __name__ == "__main__":

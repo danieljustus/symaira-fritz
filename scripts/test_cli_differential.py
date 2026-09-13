@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "cli-differential.py"
@@ -121,6 +122,48 @@ class CliDifferentialTests(unittest.TestCase):
             MODULE._config_template_transform(
                 "config-init-fresh", before, self.policy, "candidate"
             )
+
+    def test_windows_path_keeps_only_explicit_helper_empty_dir_and_system_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            home = Path(raw)
+            helper = home / "mock-symvault"
+            helper.mkdir()
+            path = MODULE.isolated_path(
+                home,
+                helper,
+                {
+                    "PATH": r"C:\host-tools;C:\untrusted-helper",
+                    "SystemRoot": r"C:\Windows",
+                },
+                is_windows=True,
+            )
+            self.assertEqual(
+                path.split(";"),
+                [str(helper), str(home / "empty-path"), r"C:\Windows\System32"],
+            )
+            self.assertNotIn("host-tools", path)
+            self.assertNotIn("untrusted-helper", path)
+
+    def test_non_windows_path_is_empty_without_explicit_helper(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            home = Path(raw)
+            self.assertEqual(
+                MODULE.isolated_path(
+                    home,
+                    None,
+                    {"PATH": "/host-tools:/untrusted-helper"},
+                    is_windows=False,
+                ),
+                str(home / "empty-path"),
+            )
+
+    def test_temporary_directory_uses_platform_temp_root(self) -> None:
+        with (
+            mock.patch.object(MODULE.tempfile, "gettempdir", return_value=r"C:\runner-temp"),
+            mock.patch.object(MODULE.tempfile, "TemporaryDirectory") as directory,
+        ):
+            MODULE.temporary_directory("symfritz-cli-")
+        directory.assert_called_once_with(prefix="symfritz-cli-", dir=r"C:\runner-temp")
 
 
 if __name__ == "__main__":

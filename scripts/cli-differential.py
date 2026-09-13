@@ -29,8 +29,8 @@ try:
 except ImportError:  # Windows has no PTY module.
     pty = None
 from dataclasses import dataclass, replace
-from pathlib import Path
-from typing import Any, Callable
+from pathlib import Path, PureWindowsPath
+from typing import Any, Callable, Mapping
 from urllib.parse import parse_qs, urlsplit
 
 PORT = 49000
@@ -531,7 +531,7 @@ def _trace(value: object, label: str) -> list[tuple[str, str, str]]:
 def load_policy(root: Path) -> dict[str, Any]:
     path = root / "testdata/port/divergence-policy.json"
     try:
-        policy = json.loads(path.read_text())
+        policy = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise AssertionError(f"invalid divergence policy {path}: {exc}") from exc
     if not isinstance(policy, dict) or policy.get("schema_version") != 1:
@@ -671,17 +671,35 @@ def private_address() -> str:
     raise AssertionError("could not discover a private RFC1918 interface address")
 
 
-def environment(home: Path, *, fake: bool, extra: dict[str, str] | None = None, path_prefix: Path | None = None) -> dict[str, str]:
-    env = {key: value for key, value in os.environ.items() if not key.upper().startswith("SYMFRITZ_")}
+def temporary_directory(prefix: str) -> tempfile.TemporaryDirectory[str]:
+    """Create harness state below Python's native platform temporary root."""
+    return tempfile.TemporaryDirectory(prefix=prefix, dir=tempfile.gettempdir())
+
+
+def runtime_path_entries(source: Mapping[str, str], *, is_windows: bool) -> list[str]:
+    if not is_windows:
+        return []
+    system_root = source.get("SystemRoot") or source.get("WINDIR")
+    if not system_root:
+        raise AssertionError("Windows runtime PATH requires SystemRoot or WINDIR")
+    return [str(PureWindowsPath(system_root) / "System32")]
+
+
+def isolated_path(home: Path, path_prefix: Path | None, source: Mapping[str, str], *, is_windows: bool) -> str:
     backend_free = home / "empty-path"; backend_free.mkdir(exist_ok=True)
-    if path_prefix is None:
-        path_parts = [str(backend_free)]
-        if os.name == "nt":
-            system_root = os.environ.get("SystemRoot", r"C:\Windows")
-            path_parts.extend((system_root, str(Path(system_root) / "System32")))
-        path = os.pathsep.join(path_parts)
-    else:
-        path = f"{path_prefix}{os.pathsep}{os.environ.get('PATH', '')}"
+    entries = ([str(path_prefix)] if path_prefix is not None else []) + [str(backend_free)]
+    if path_prefix is not None and not is_windows:
+        # Unix helper and PTY tests need the host runtime only in explicit helper mode.
+        entries.append(source.get("PATH", ""))
+    entries.extend(runtime_path_entries(source, is_windows=is_windows))
+    separator = ";" if is_windows else os.pathsep
+    return separator.join(entry for entry in entries if entry)
+
+
+def environment(home: Path, *, fake: bool, extra: dict[str, str] | None = None, path_prefix: Path | None = None) -> dict[str, str]:
+    source = os.environ
+    env = {key: value for key, value in source.items() if not key.upper().startswith("SYMFRITZ_")}
+    path = isolated_path(home, path_prefix, source, is_windows=os.name == "nt")
     env.update({"HOME": str(home), "USERPROFILE": str(home), "XDG_CONFIG_HOME": str(home / "config"), "XDG_CACHE_HOME": str(home / "cache"), "XDG_DATA_HOME": str(home / "data"), "TMPDIR": str(home / "tmp"), "TMP": str(home / "tmp"), "TEMP": str(home / "tmp"), "PATH": path, "LC_ALL": "C", "LANG": "C", "TZ": "UTC"})
     if fake:
         env.update({"SYMFRITZ_BOX_HOST": f"{PRIVATE_IP}:{PORT}", "SYMFRITZ_BOX_USER": USER, "SYMFRITZ_BOX_USE_TLS": "false", "SYMFRITZ_PASSWORD": PASSWORD, "SYMFRITZ_BOX_TIMEOUT_SECONDS": "1"})
@@ -690,7 +708,7 @@ def environment(home: Path, *, fake: bool, extra: dict[str, str] | None = None, 
 
 
 def run_process(binary: str, args: list[str], *, fake: bool = False, setup: Callable[[Path], None] | None = None, extra: dict[str, str] | None = None, path_prefix: Path | None = None, timeout: float = 8) -> tuple[Result, Path]:
-    temp = tempfile.TemporaryDirectory(prefix="symfritz-cli-"); home = Path(temp.name)
+    temp = temporary_directory("symfritz-cli-"); home = Path(temp.name)
     (home / "tmp").mkdir(); (home / "config").mkdir(); (home / "cache").mkdir(); (home / "data").mkdir()
     if setup: setup(home)
     try:
@@ -709,7 +727,7 @@ def run(binary: str, args: list[str], **kwargs: Any) -> Result:
 def run_pty_process(binary: str, args: list[str], *, fake: bool = False, path_prefix: Path | None = None, password: str = PASSWORD) -> Result:
     if pty is None:
         raise AssertionError("auth login PTY coverage is unavailable on this platform")
-    with tempfile.TemporaryDirectory(prefix="symfritz-login-") as raw:
+    with temporary_directory("symfritz-login-") as raw:
         home = Path(raw)
         for name in ("tmp", "config", "cache", "data"):
             (home / name).mkdir()
@@ -1096,7 +1114,7 @@ def run_structured_matrix(server: StrictFakeBox, binary: str, label: str, args: 
 
 
 def parse_validation(root: Path) -> list[dict[str, Any]]:
-    values = json.loads((root / "testdata/port/cli/command-contracts.json").read_text())["validation"]
+    values = json.loads((root / "testdata/port/cli/command-contracts.json").read_text(encoding="utf-8"))["validation"]
     if len(values) != 17: raise AssertionError(f"fixture validation count changed: {len(values)}")
     return values
 
@@ -1127,7 +1145,7 @@ def _config_template_transform(label: str, value: bytes | None, policy: dict[str
 
 def config_init_pair(go: str, rust: str, force: bool, existing: bool, policy: dict[str, Any]) -> None:
     def run_config(binary: str) -> tuple[Result, bytes | None, int | None, str]:
-        with tempfile.TemporaryDirectory(prefix="symfritz-config-") as raw:
+        with temporary_directory("symfritz-config-") as raw:
             home = Path(raw)
             for name in ("tmp", "config", "cache", "data"): (home / name).mkdir()
             if existing: config_setup(home, "# existing\n[box]\nhost = \"old\"\n")
@@ -1190,7 +1208,7 @@ def mock_symvault(directory: Path, metadata: Path) -> None:
 
 
 def run_auth_store_pair(go: str, rust: str) -> None:
-    with tempfile.TemporaryDirectory(prefix="symfritz-vault-mock-") as raw:
+    with temporary_directory("symfritz-vault-mock-") as raw:
         directory = Path(raw)
         metadata = directory / "symvault.meta"
         mock_symvault(directory, metadata)
@@ -1219,7 +1237,7 @@ def run_auth_login_contracts(server: StrictFakeBox, binary: str) -> None:
         print("SKIP auth-login-pty (PTY unavailable)")
         return
     expected = [("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("POST", "/upnp/control/deviceinfo", "GetInfo")]
-    with tempfile.TemporaryDirectory(prefix="symfritz-login-vault-") as raw:
+    with temporary_directory("symfritz-login-vault-") as raw:
         directory = Path(raw)
         metadata = directory / "symvault.meta"
         mock_symvault(directory, metadata)
@@ -1292,7 +1310,7 @@ def run_suite(go: str, rust: str, root: Path) -> None:
     PRIVATE_IP = private_address()
     server = StrictFakeBox(("0.0.0.0", PORT), PRIVATE_IP); thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
     try:
-        fixture_data = json.loads((root / "testdata/port/cli/command-contracts.json").read_text())
+        fixture_data = json.loads((root / "testdata/port/cli/command-contracts.json").read_text(encoding="utf-8"))
         command_cases = {case["path"]: case for case in fixture_data["commands"]}
         if len(command_cases) != 49:
             raise AssertionError(f"fixture command count changed: {len(command_cases)}")
@@ -1414,7 +1432,7 @@ def run_suite(go: str, rust: str, root: Path) -> None:
             # and stop issuing requests after a short cancellation grace period.
             def watch(binary: str) -> Result:
                 server.reset()
-                temp = tempfile.TemporaryDirectory(prefix="symfritz-watch-")
+                temp = temporary_directory("symfritz-watch-")
                 home = Path(temp.name)
                 for name in ("tmp", "config", "cache", "data"):
                     (home / name).mkdir()
