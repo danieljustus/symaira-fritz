@@ -28,7 +28,7 @@ try:
     import pty
 except ImportError:  # Windows has no PTY module.
     pty = None
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlsplit
@@ -62,6 +62,7 @@ HOSTS_XML = b'''<?xml version="1.0"?><List><Item><IPAddress>192.168.1.20</IPAddr
 MESH_JSON = b'''{"schema_version":"1","nodes":[{"uid":"node-1","device_name":"fritz.box","device_model":"FRITZ!Box","is_meshed":true,"mesh_role":"master","node_interfaces":[]}]}'''
 LOG_XML = b'''<?xml version="1.0"?><DeviceLog><Event><id>1</id><group>sys</group><date>01.01.26</date><time>12:00:00</time><msg>Started</msg></Event></DeviceLog>'''
 CALLS_XML = b'''<?xml version="1.0"?><CallList><Call><Type>1</Type><Caller>123</Caller><Called>456</Called><Name>Alice</Name><Date>01.01.26 12:00</Date><Duration>00:01</Duration></Call></CallList>'''
+FILTERED_CALLS_XML = b'''<?xml version="1.0"?><CallList><Call><Type>1</Type><Caller>111</Caller><Called>999</Called><Name>Incoming</Name><Date>01.01.26 12:00</Date><Duration>00:01</Duration></Call><Call><Type>2</Type><Caller>222</Caller><Called>999</Called><Name>Missed</Name><Date>01.01.26 12:01</Date><Duration>00:01</Duration></Call></CallList>'''
 AHA_XML = f'''<devicelist><device identifier="{AIN}" id="id-1"><name>Desk</name><present>1</present><switch><state>1</state></switch><temperature><celsius>210</celsius></temperature><hkr><tist>40</tist><tsoll>42</tsoll><batterylow>0</batterylow><battery>100</battery><windowopenactiv>0</windowopenactiv><errorcode>0</errorcode><nextchange><end></end><start></start><tchange>0</tchange></nextchange></hkr><powermeter><power>1250</power><energy>12</energy></powermeter></device></devicelist>'''.encode()
 
 EXPECTED_ACTIONS = {
@@ -101,6 +102,13 @@ def legacy_response(challenge: str, password: str) -> str:
     return challenge + "-" + hashlib.md5(clear, usedforsecurity=False).hexdigest()
 
 
+def cap_call_list_xml(body: bytes, limit: int) -> bytes:
+    start = body.index(b"<CallList>") + len(b"<CallList>")
+    end = body.rindex(b"</CallList>")
+    calls = re.findall(br"<Call>.*?</Call>", body[start:end], flags=re.DOTALL)
+    return body[:start] + b"".join(calls[:limit]) + body[end:]
+
+
 class StrictFakeBox(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
@@ -113,6 +121,7 @@ class StrictFakeBox(socketserver.ThreadingTCPServer):
         self.failures: list[str] = []
         self.authenticated: set[tuple[str, str]] = set()
         self.reject_auth = False
+        self.call_list_xml = CALLS_XML
 
     def reset(self) -> None:
         self.requests.clear()
@@ -120,6 +129,7 @@ class StrictFakeBox(socketserver.ThreadingTCPServer):
         self.failures.clear()
         self.authenticated.clear()
         self.reject_auth = False
+        self.call_list_xml = CALLS_XML
 
 
 class StrictHandler(http.server.BaseHTTPRequestHandler):
@@ -176,12 +186,14 @@ class StrictHandler(http.server.BaseHTTPRequestHandler):
             self.server.accepted.append(("GET", path, "", b""))
             self.reply(body, "application/json")
             return
-        bodies = {"/tr64desc.xml": (DESC_XML, "text/xml"), "/hosts.xml": (HOSTS_XML, "text/xml"), "/mesh.json": (MESH_JSON, "application/json"), "/log.xml": (LOG_XML, "text/xml"), "/calls.xml": (CALLS_XML, "text/xml"), "/devicelog.lua": (LOG_XML, "text/xml")}
+        bodies = {"/tr64desc.xml": (DESC_XML, "text/xml"), "/hosts.xml": (HOSTS_XML, "text/xml"), "/mesh.json": (MESH_JSON, "application/json"), "/log.xml": (LOG_XML, "text/xml"), "/calls.xml": (self.server.call_list_xml, "text/xml"), "/devicelog.lua": (LOG_XML, "text/xml")}
         if path not in bodies:
             self.server.failures.append(f"GET unexpected path {self.path!r}")
             self.reply(b"", "text/plain", status=404)
             return
         body, content_type = bodies[path]
+        if path == "/calls.xml" and query.get("max"):
+            body = cap_call_list_xml(body, int(query["max"][0]))
         self.record("GET", "", b"", 200)
         self.server.accepted.append(("GET", path, "", b""))
         self.reply(body, content_type)
@@ -505,7 +517,114 @@ def aliases_for(path: str, contracts: dict[str, HelpContract]) -> tuple[str, ...
     return tuple(sorted(aliases))
 
 
-def compare_help_contract(label: str, expected: HelpContract, actual: HelpContract, root_expected: HelpContract, root_actual: HelpContract, path: str, expected_aliases: tuple[str, ...], actual_aliases: tuple[str, ...], expected_contracts: dict[str, HelpContract], actual_contracts: dict[str, HelpContract]) -> None:
+def _trace(value: object, label: str) -> list[tuple[str, str, str]]:
+    if not isinstance(value, list):
+        raise AssertionError(f"{label}: trace must be a list")
+    trace: list[tuple[str, str, str]] = []
+    for index, entry in enumerate(value):
+        if not isinstance(entry, list) or len(entry) != 3 or not all(isinstance(part, str) for part in entry):
+            raise AssertionError(f"{label}: trace entry {index} must contain method, path, action strings")
+        trace.append((entry[0], entry[1], entry[2]))
+    return trace
+
+
+def load_policy(root: Path) -> dict[str, Any]:
+    path = root / "testdata/port/divergence-policy.json"
+    try:
+        policy = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise AssertionError(f"invalid divergence policy {path}: {exc}") from exc
+    if not isinstance(policy, dict) or policy.get("schema_version") != 1:
+        raise AssertionError("divergence policy schema_version must be 1")
+    oracle = policy.get("oracle")
+    if oracle != {
+        "implementation": "Go",
+        "tag": "v0.7.0",
+        "commit": "b1491793aea173eac926e1a0c9db5ba6dd4604a9",
+    }:
+        raise AssertionError("divergence policy must pin the immutable v0.7.0 Go oracle")
+    harness = policy.get("harness")
+    if not isinstance(harness, dict):
+        raise AssertionError("divergence policy harness must be an object")
+    help_rules = harness.get("help_flag_overrides")
+    trace_rules = harness.get("request_trace_overrides")
+    transforms = harness.get("structured_transforms")
+    templates = harness.get("config_template_overrides")
+    byte_streams = harness.get("byte_stream_overrides")
+    target_changes = policy.get("approved_target_changes")
+    if not isinstance(help_rules, list) or not isinstance(trace_rules, list) or not isinstance(transforms, list) or not isinstance(templates, list) or not isinstance(byte_streams, list) or not isinstance(target_changes, list):
+        raise AssertionError("divergence policy rule collections must be lists")
+    target_ids = {entry.get("id") for entry in target_changes if isinstance(entry, dict) and isinstance(entry.get("id"), str) and isinstance(entry.get("test"), str)}
+    if len(target_ids) != len(target_changes):
+        raise AssertionError("every approved target change needs a unique id and executable test reference")
+    seen_help: set[tuple[str, str]] = set()
+    for rule in help_rules:
+        if not isinstance(rule, dict) or rule.get("id") not in target_ids or not isinstance(rule.get("paths"), list) or not isinstance(rule.get("flag"), str):
+            raise AssertionError("invalid help override policy rule")
+        for side in ("oracle", "candidate"):
+            value = rule.get(side)
+            if not isinstance(value, dict) or set(value) != {"default", "description"} or not isinstance(value["description"], str):
+                raise AssertionError(f"invalid {side} help override for {rule.get('id')}")
+        for command_path in rule["paths"]:
+            if not isinstance(command_path, str) or (command_path, rule["flag"]) in seen_help:
+                raise AssertionError("help override paths must be unique strings")
+            seen_help.add((command_path, rule["flag"]))
+    seen_cases: set[str] = set()
+    for rule in trace_rules:
+        if not isinstance(rule, dict) or rule.get("id") not in target_ids or not isinstance(rule.get("cases"), dict):
+            raise AssertionError("invalid request trace override policy rule")
+        for case, traces in rule["cases"].items():
+            if not isinstance(case, str) or case in seen_cases or not isinstance(traces, dict):
+                raise AssertionError("request trace override case ids must be unique")
+            _trace(traces.get("go"), f"{rule['id']} {case} Go")
+            _trace(traces.get("rust"), f"{rule['id']} {case} Rust")
+            seen_cases.add(case)
+    seen_transform_cases: set[str] = set()
+    for rule in transforms:
+        if not isinstance(rule, dict) or rule.get("id") not in target_ids or rule.get("kind") not in {"remove_one_terminal_z", "null_to_empty_array"}:
+            raise AssertionError("invalid structured transform policy rule")
+        if not isinstance(rule.get("keys"), list) or not all(isinstance(key, str) for key in rule["keys"]):
+            raise AssertionError("structured transform keys must be strings")
+        for case in rule.get("cases", []):
+            if not isinstance(case, str) or case in seen_transform_cases:
+                raise AssertionError("structured transform case ids must be unique strings")
+            seen_transform_cases.add(case)
+    seen_template_cases: set[str] = set()
+    for rule in templates:
+        if not isinstance(rule, dict) or rule.get("id") not in target_ids or not isinstance(rule.get("candidate_insert"), str):
+            raise AssertionError("invalid config template override policy rule")
+        for case in rule.get("cases", []):
+            if not isinstance(case, str) or case in seen_template_cases:
+                raise AssertionError("config template override case ids must be unique strings")
+            seen_template_cases.add(case)
+    seen_byte_cases: set[str] = set()
+    for rule in byte_streams:
+        if not isinstance(rule, dict) or rule.get("id") not in target_ids or not isinstance(rule.get("cases"), dict):
+            raise AssertionError("invalid byte stream override policy rule")
+        for case, prefixes in rule["cases"].items():
+            if not isinstance(case, str) or case in seen_byte_cases or not isinstance(prefixes, dict):
+                raise AssertionError("byte stream override case ids must be unique")
+            if not isinstance(prefixes.get("oracle_stdout_prefix"), str) or not isinstance(prefixes.get("candidate_stdout_prefix"), str):
+                raise AssertionError("byte stream override prefixes must be strings")
+            seen_byte_cases.add(case)
+    return policy
+
+
+def _apply_help_overrides(path: str, flags: dict[str, FlagContract], policy: dict[str, Any], side: str) -> dict[str, FlagContract]:
+    result = dict(flags)
+    for rule in policy["harness"]["help_flag_overrides"]:
+        if path not in rule["paths"]:
+            continue
+        flag_name = rule["flag"]
+        flag = result.get(flag_name)
+        expected = rule[side]
+        if flag is None or flag.default != expected["default"] or flag.description != expected["description"]:
+            raise AssertionError(f"{rule['id']} {path}: unexpected {side} help flag contract for {flag_name}: {flag!r}")
+        result[flag_name] = replace(flag, default="<approved-target-change>", description=rule["id"])
+    return result
+
+
+def compare_help_contract(label: str, expected: HelpContract, actual: HelpContract, root_expected: HelpContract, root_actual: HelpContract, path: str, expected_aliases: tuple[str, ...], actual_aliases: tuple[str, ...], expected_contracts: dict[str, HelpContract], actual_contracts: dict[str, HelpContract], policy: dict[str, Any]) -> None:
     if expected.description != actual.description:
         raise AssertionError(f"{label}: long description mismatch Go={expected.description!r} Rust={actual.description!r}")
     if expected.usage != actual.usage:
@@ -528,8 +647,8 @@ def compare_help_contract(label: str, expected: HelpContract, actual: HelpContra
                 expected_inherited[name] = expected_ancestor.flags[name]
             if actual_ancestor and name in actual_ancestor.flags:
                 actual_inherited[name] = actual_ancestor.flags[name]
-    expected_flags = _effective_flags(expected, root_expected, path, expected_inherited)
-    actual_flags = _effective_flags(actual, root_actual, path, actual_inherited)
+    expected_flags = _apply_help_overrides(path, _effective_flags(expected, root_expected, path, expected_inherited), policy, "oracle")
+    actual_flags = _apply_help_overrides(path, _effective_flags(actual, root_actual, path, actual_inherited), policy, "candidate")
     if expected_flags != actual_flags:
         raise AssertionError(f"{label}: flags mismatch Go={expected_flags!r} Rust={actual_flags!r}")
 
@@ -555,7 +674,14 @@ def private_address() -> str:
 def environment(home: Path, *, fake: bool, extra: dict[str, str] | None = None, path_prefix: Path | None = None) -> dict[str, str]:
     env = {key: value for key, value in os.environ.items() if not key.upper().startswith("SYMFRITZ_")}
     backend_free = home / "empty-path"; backend_free.mkdir(exist_ok=True)
-    path = str(backend_free) if path_prefix is None else f"{path_prefix}{os.pathsep}{os.environ.get('PATH', '')}"
+    if path_prefix is None:
+        path_parts = [str(backend_free)]
+        if os.name == "nt":
+            system_root = os.environ.get("SystemRoot", r"C:\Windows")
+            path_parts.extend((system_root, str(Path(system_root) / "System32")))
+        path = os.pathsep.join(path_parts)
+    else:
+        path = f"{path_prefix}{os.pathsep}{os.environ.get('PATH', '')}"
     env.update({"HOME": str(home), "USERPROFILE": str(home), "XDG_CONFIG_HOME": str(home / "config"), "XDG_CACHE_HOME": str(home / "cache"), "XDG_DATA_HOME": str(home / "data"), "TMPDIR": str(home / "tmp"), "TMP": str(home / "tmp"), "TEMP": str(home / "tmp"), "PATH": path, "LC_ALL": "C", "LANG": "C", "TZ": "UTC"})
     if fake:
         env.update({"SYMFRITZ_BOX_HOST": f"{PRIVATE_IP}:{PORT}", "SYMFRITZ_BOX_USER": USER, "SYMFRITZ_BOX_USE_TLS": "false", "SYMFRITZ_PASSWORD": PASSWORD, "SYMFRITZ_BOX_TIMEOUT_SECONDS": "1"})
@@ -622,24 +748,43 @@ def normalize_paths(value: bytes, homes: list[Path]) -> bytes:
     return value
 
 
-def assert_bytes(label: str, left: Result, right: Result, homes: list[Path] | None = None) -> None:
+def _byte_stream_transform(label: str, value: bytes, policy: dict[str, Any] | None, side: str) -> bytes:
+    if policy is None:
+        return value
+    matches: list[dict[str, Any]] = []
+    for rule in policy["harness"]["byte_stream_overrides"]:
+        cases = rule["cases"]
+        if label in cases:
+            matches.append(cases[label])
+    if not matches:
+        return value
+    if len(matches) != 1:
+        raise AssertionError(f"{label}: multiple byte stream overrides apply")
+    key = f"{side}_stdout_prefix"
+    prefix = matches[0][key].format(private_ip=PRIVATE_IP, port=PORT).encode()
+    if not value.startswith(prefix):
+        raise AssertionError(f"{label}: {side} stdout did not match the declared approved prefix")
+    return value[len(prefix) :]
+
+
+def assert_bytes(
+    label: str,
+    left: Result,
+    right: Result,
+    homes: list[Path] | None = None,
+    policy: dict[str, Any] | None = None,
+) -> None:
     homes = homes or []
-    values = [(left.code, normalize_paths(left.stdout, homes), normalize_paths(left.stderr, homes)), (right.code, normalize_paths(right.stdout, homes), normalize_paths(right.stderr, homes))]
+    values = [
+        (left.code, _byte_stream_transform(label, normalize_paths(left.stdout, homes), policy, "oracle"), normalize_paths(left.stderr, homes)),
+        (right.code, _byte_stream_transform(label, normalize_paths(right.stdout, homes), policy, "candidate"), normalize_paths(right.stderr, homes)),
+    ]
     if values[0] != values[1]: raise AssertionError(f"{label}: exact mismatch Go={values[0]!r} Rust={values[1]!r}")
-
-
-def _semantic_key(key: str) -> str:
-    """Compare model fields by semantic snake_case, not Go/Rust casing."""
-    first = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", key)
-    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", first).lower()
 
 
 def _normalize_structured(value: Any) -> Any:
     if isinstance(value, dict):
-        normalized = {_semantic_key(key): _normalize_structured(item) for key, item in value.items()}
-        if normalized.get("groups") is None:
-            normalized["groups"] = []
-        return normalized
+        return {key: _normalize_structured(item) for key, item in value.items()}
     if isinstance(value, list):
         return [_normalize_structured(item) for item in value]
     if isinstance(value, str):
@@ -651,11 +796,53 @@ def _normalize_structured(value: Any) -> Any:
     return value
 
 
-def assert_json(label: str, left: Result, right: Result) -> None:
+def _structured_transform(label: str, value: Any, policy: dict[str, Any] | None, side: str) -> Any:
+    normalized = _normalize_structured(value)
+    if policy is None:
+        return normalized
+    matches = [rule for rule in policy["harness"]["structured_transforms"] if label in rule["cases"]]
+    if not matches:
+        return normalized
+    if len(matches) != 1:
+        raise AssertionError(f"{label}: multiple structured transforms apply")
+    rule = matches[0]
+    kind = rule["kind"]
+    keys = set(rule["keys"])
+    changed = 0
+
+    def visit(item: Any) -> Any:
+        nonlocal changed
+        if isinstance(item, dict):
+            return {key: visit_value(key, child) for key, child in item.items()}
+        if isinstance(item, list):
+            return [visit(child) for child in item]
+        return item
+
+    def visit_value(key: str, item: Any) -> Any:
+        nonlocal changed
+        if key in keys:
+            if kind == "remove_one_terminal_z" and isinstance(item, str) and item.endswith("Z"):
+                changed += 1
+                return item[:-1]
+            if kind == "null_to_empty_array" and item is None:
+                changed += 1
+                return []
+        return visit(item)
+
+    transformed = visit(normalized)
+    if side == "oracle" and changed == 0:
+        raise AssertionError(f"{rule['id']} {label}: frozen Go output did not contain the declared difference")
+    if side == "candidate" and changed != 0:
+        raise AssertionError(f"{rule['id']} {label}: Rust output still contains the declared Go-only difference")
+    return transformed
+
+
+def assert_json(label: str, left: Result, right: Result, policy: dict[str, Any] | None = None) -> None:
     if left.code != right.code or left.stderr != right.stderr: raise AssertionError(f"{label}: exit/stderr mismatch: {left} != {right}")
     try: lobj, robj = json.loads(left.stdout), json.loads(right.stdout)
     except json.JSONDecodeError as exc: raise AssertionError(f"{label}: non-JSON output Go={left.stdout!r} Rust={right.stdout!r}") from exc
-    if _normalize_structured(lobj) != _normalize_structured(robj): raise AssertionError(f"{label}: JSON mismatch Go={lobj!r} Rust={robj!r}")
+    if _structured_transform(label, lobj, policy, "oracle") != _structured_transform(label, robj, policy, "candidate"):
+        raise AssertionError(f"{label}: JSON mismatch Go={lobj!r} Rust={robj!r}")
 
 
 def _yaml_scalar(value: str) -> Any:
@@ -744,11 +931,18 @@ def parse_minimal_yaml(output: bytes | str) -> Any:
     return parsed
 
 
-def assert_yaml(label: str, left: Result, right: Result) -> None:
+def assert_yaml(
+    label: str,
+    left: Result,
+    right: Result,
+    policy: dict[str, Any] | None = None,
+) -> None:
     if left.code != right.code or left.stderr != right.stderr:
         raise AssertionError(f"{label}: exit/stderr mismatch: {left} != {right}")
     lobj, robj = parse_minimal_yaml(left.stdout), parse_minimal_yaml(right.stdout)
-    if _normalize_structured(lobj) != _normalize_structured(robj):
+    lobj = _structured_transform(label, lobj, policy, "oracle")
+    robj = _structured_transform(label, robj, policy, "candidate")
+    if lobj != robj:
         raise AssertionError(f"{label}: YAML mismatch Go={lobj!r} Rust={robj!r}")
 
 
@@ -771,19 +965,121 @@ def assert_server(server: StrictFakeBox, label: str, expected: list[tuple[str, s
     if expected is not None and accepted_actions(server) != expected: raise AssertionError(f"{label}: request sequence mismatch got={accepted_actions(server)!r} want={expected!r}")
 
 
-def run_pair(server: StrictFakeBox, label: str, go: str, rust: str, args: list[str], *, kind: str = "bytes", expected: list[tuple[str, str, str]] | None = None, extra: dict[str, str] | None = None, unordered_requests: bool = False) -> None:
-    server.reset(); left = run(go, args, fake=True, extra=extra); assert_server(server, label + " Go", expected); go_requests = accepted_requests(server)
-    server.reset(); right = run(rust, args, fake=True, extra=extra); assert_server(server, label + " Rust", expected); rust_requests = accepted_requests(server)
-    requests_match = (
-        sorted(go_requests) == sorted(rust_requests)
-        if unordered_requests
-        else go_requests == rust_requests
-    )
-    if not requests_match: raise AssertionError(f"{label}: request/argument mismatch Go={go_requests!r} Rust={rust_requests!r}")
-    if kind == "json": assert_json(label, left, right)
-    elif kind == "yaml": assert_yaml(label, left, right)
+def _trace_override(policy: dict[str, Any] | None, label: str) -> tuple[list[tuple[str, str, str]], list[tuple[str, str, str]]] | None:
+    if policy is None:
+        return None
+    matches: list[dict[str, Any]] = []
+    for rule in policy["harness"]["request_trace_overrides"]:
+        cases = rule["cases"]
+        if label in cases:
+            matches.append(cases[label])
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise AssertionError(f"{label}: multiple request trace overrides apply")
+    traces = matches[0]
+    return _trace(traces["go"], f"{label} Go"), _trace(traces["rust"], f"{label} Rust")
+
+
+def assert_shared_request_bodies(
+    label: str,
+    go_requests: list[tuple[str, str, str, bytes]],
+    rust_requests: list[tuple[str, str, str, bytes]],
+    expected_go: list[tuple[str, str, str]],
+    expected_rust: list[tuple[str, str, str]],
+) -> None:
+    """Keep payloads strict for the request legs shared by an approved trace."""
+    shared = set(expected_go) & set(expected_rust)
+    for request in shared:
+        go_bodies = [body for method, path, action, body in go_requests if (method, path, action) == request]
+        rust_bodies = [body for method, path, action, body in rust_requests if (method, path, action) == request]
+        for index, (go_body, rust_body) in enumerate(zip(go_bodies, rust_bodies)):
+            if go_body != rust_body:
+                raise AssertionError(f"{label}: shared request body mismatch for {request} at occurrence {index}")
+
+
+def run_pair(
+    server: StrictFakeBox,
+    label: str,
+    go: str,
+    rust: str,
+    args: list[str],
+    *,
+    kind: str = "bytes",
+    expected: list[tuple[str, str, str]] | None = None,
+    extra: dict[str, str] | None = None,
+    unordered_requests: bool = False,
+    policy: dict[str, Any] | None = None,
+) -> None:
+    override = _trace_override(policy, label)
+    if override is not None:
+        expected_go, expected_rust = override
+        if expected is not None and expected != expected_rust:
+            raise AssertionError(f"{label}: inline expectation disagrees with divergence policy")
+    else:
+        expected_go = expected
+        expected_rust = expected
+    server.reset(); left = run(go, args, fake=True, extra=extra); assert_server(server, label + " Go", expected_go); go_requests = accepted_requests(server)
+    server.reset(); right = run(rust, args, fake=True, extra=extra); assert_server(server, label + " Rust", expected_rust); rust_requests = accepted_requests(server)
+    if override is None:
+        requests_match = (
+            sorted(go_requests) == sorted(rust_requests)
+            if unordered_requests
+            else go_requests == rust_requests
+        )
+        if not requests_match: raise AssertionError(f"{label}: request/argument mismatch Go={go_requests!r} Rust={rust_requests!r}")
+    else:
+        assert expected_go is not None and expected_rust is not None
+        assert_shared_request_bodies(label, go_requests, rust_requests, expected_go, expected_rust)
+    if kind == "json": assert_json(label, left, right, policy)
+    elif kind == "yaml": assert_yaml(label, left, right, policy)
     else: assert_bytes(label, left, right)
     print(f"PASS {label}")
+
+
+def run_calls_filter_limit_target(server: StrictFakeBox, go: str, rust: str) -> None:
+    args = ["calls", "--type", "missed", "--limit", "1", "--json"]
+
+    def run_target(binary: str, label: str) -> tuple[Result, str]:
+        server.reset()
+        server.call_list_xml = FILTERED_CALLS_XML
+        result = run(binary, args, fake=True)
+        assert_server(
+            server,
+            label,
+            [
+                ("POST", "/upnp/control/x_contact", "GetCallList"),
+                ("GET", "/calls.xml", ""),
+            ],
+        )
+        call_request = next(
+            request[1]
+            for request in reversed(server.requests)
+            if request[0] == "GET" and urlsplit(request[1]).path == "/calls.xml"
+        )
+        return result, call_request
+
+    oracle, oracle_request = run_target(go, "calls-filtered-limit Go")
+    candidate, candidate_request = run_target(rust, "calls-filtered-limit Rust")
+    if urlsplit(oracle_request).query != "max=1":
+        raise AssertionError(f"calls-filtered-limit: Go must pass router max before filtering: {oracle_request!r}")
+    if urlsplit(candidate_request).query:
+        raise AssertionError(f"calls-filtered-limit: Rust must omit router max while filtering: {candidate_request!r}")
+    oracle_json = json.loads(oracle.stdout)
+    candidate_json = json.loads(candidate.stdout)
+    if oracle.code != 0 or candidate.code != 0 or oracle.stderr or candidate.stderr:
+        raise AssertionError("calls-filtered-limit: command execution mismatch")
+    if oracle_json is not None:
+        raise AssertionError(f"calls-filtered-limit: Go baseline must lose the filtered row: {oracle_json!r}")
+    if (
+        not isinstance(candidate_json, list)
+        or len(candidate_json) != 1
+        or candidate_json[0].get("Type") != 2
+        or candidate_json[0].get("Caller") != "Missed"
+        or candidate_json[0].get("Date", "").endswith("Z")
+    ):
+        raise AssertionError(f"calls-filtered-limit: Rust target result mismatch: {candidate_json!r}")
+    print("PASS calls-filtered-limit")
 
 
 def run_structured_matrix(server: StrictFakeBox, binary: str, label: str, args: list[str], expected: list[tuple[str, str, str]], *, extra: dict[str, str] | None = None, unordered_requests: bool = False) -> None:
@@ -806,11 +1102,30 @@ def parse_validation(root: Path) -> list[dict[str, Any]]:
 
 
 def config_setup(home: Path, content: str) -> None:
-    path = home / "config" / "symfritz"; path.mkdir(parents=True)
+    path = home / ".config" / "symfritz"; path.mkdir(parents=True)
     (path / "config.toml").write_text(content)
 
 
-def config_init_pair(go: str, rust: str, force: bool, existing: bool) -> None:
+def _config_template_transform(label: str, value: bytes | None, policy: dict[str, Any], side: str) -> bytes | None:
+    if value is None:
+        return None
+    matches = [rule for rule in policy["harness"]["config_template_overrides"] if label in rule["cases"]]
+    if not matches:
+        return value
+    if len(matches) != 1:
+        raise AssertionError(f"{label}: multiple config template overrides apply")
+    rule = matches[0]
+    addition = rule["candidate_insert"].encode()
+    if side == "oracle":
+        if addition in value:
+            raise AssertionError(f"{rule['id']} {label}: frozen Go template unexpectedly contains the Rust-only setting")
+        return value
+    if value.count(addition) != 1:
+        raise AssertionError(f"{rule['id']} {label}: Rust template must contain exactly one approved setting block")
+    return value.replace(addition, b"", 1)
+
+
+def config_init_pair(go: str, rust: str, force: bool, existing: bool, policy: dict[str, Any]) -> None:
     def run_config(binary: str) -> tuple[Result, bytes | None, int | None, str]:
         with tempfile.TemporaryDirectory(prefix="symfritz-config-") as raw:
             home = Path(raw)
@@ -819,11 +1134,7 @@ def config_init_pair(go: str, rust: str, force: bool, existing: bool) -> None:
             args = ["config", "init"] + (["--force"] if force else [])
             process = subprocess.run([binary, *args], cwd=home, env=environment(home, fake=False), capture_output=True, timeout=8)
             result = Result(process.returncode, process.stdout, process.stderr)
-            candidates = (
-                home / "config" / "symfritz" / "config.toml",
-                home / ".config" / "symfritz" / "config.toml",
-            )
-            path = next((candidate for candidate in candidates if candidate.exists()), candidates[0])
+            path = home / ".config" / "symfritz" / "config.toml"
             if not path.exists(): return result, None, None, str(home)
             return result, path.read_bytes(), path.stat().st_mode & 0o777, str(home)
     left, left_bytes, left_mode, left_home = run_config(go); right, right_bytes, right_mode, right_home = run_config(rust)
@@ -840,6 +1151,8 @@ def config_init_pair(go: str, rust: str, force: bool, existing: bool) -> None:
     )
     if left_streams != right_streams:
         raise AssertionError(f"{label}: exact mismatch Go={left_streams!r} Rust={right_streams!r}")
+    left_bytes = _config_template_transform(label, left_bytes, policy, "oracle")
+    right_bytes = _config_template_transform(label, right_bytes, policy, "candidate")
     if (left_bytes, left_mode) != (right_bytes, right_mode): raise AssertionError(f"{label}: config bytes/mode mismatch")
     print(f"PASS {label}")
 
@@ -974,6 +1287,8 @@ def cli_inventory(binary: str, families: list[str]) -> tuple[frozenset[str], fro
 
 def run_suite(go: str, rust: str, root: Path) -> None:
     global PRIVATE_IP
+    go, rust = resolve_distinct_binaries(go, rust)
+    policy = load_policy(root)
     PRIVATE_IP = private_address()
     server = StrictFakeBox(("0.0.0.0", PORT), PRIVATE_IP); thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
     try:
@@ -984,31 +1299,35 @@ def run_suite(go: str, rust: str, root: Path) -> None:
         go_contracts: dict[str, HelpContract] = {}
         rust_contracts: dict[str, HelpContract] = {}
         for path, case in command_cases.items():
+            left = run(go, case["help_args"])
+            if left.code != 0 or left.stderr:
+                raise AssertionError(f"help-{path}: frozen Go oracle command failed")
+            if os.name != "nt":
+                assert_bytes(f"help-fixture-{path}", left, Result(case["exit_code"], case["stdout"].encode(), case["stderr"].encode()))
             right = run(rust, case["help_args"])
             if right.code != 0 or right.stderr:
                 raise AssertionError(f"help-{path}: command failed")
-            fixture_contract = parse_help(path, case["stdout"])
-            go_contracts[path] = fixture_contract
+            go_contracts[path] = parse_help(path, left.stdout)
             rust_contracts[path] = parse_help(path, right.stdout)
             print(f"PASS help-{path}")
         root_go = go_contracts["symfritz"]
         root_rust = rust_contracts["symfritz"]
-        if os.name != "nt":
-            for path in command_cases:
-                compare_help_contract(
-                    f"help-{path}",
-                    go_contracts[path],
-                    rust_contracts[path],
-                    root_go,
-                    root_rust,
-                    path,
-                    aliases_for(path, go_contracts),
-                    aliases_for(path, rust_contracts),
-                    go_contracts,
-                    rust_contracts,
-                )
-        # Windows console output escapes non-ASCII help glyphs. The Rust command
-        # inventory test still runs there; fixture text remains Unix-byte-frozen.
+        for path in command_cases:
+            compare_help_contract(
+                f"help-{path}",
+                go_contracts[path],
+                rust_contracts[path],
+                root_go,
+                root_rust,
+                path,
+                aliases_for(path, go_contracts),
+                aliases_for(path, rust_contracts),
+                go_contracts,
+                rust_contracts,
+                policy,
+            )
+        # The immutable fixture bytes are Unix-frozen. Both executable help trees
+        # remain structurally compared on every native platform, including Windows.
         print("PASS help-contracts-49")
         families = ["auth", "call", "calls", "completion", "config", "detect", "diagnose", "dial", "doctor", "dsl", "hangup", "help", "home", "hosts", "log", "mesh", "reboot", "scrape", "services", "status", "traffic", "version", "wlan", "wol"]
         for shell in ("bash", "fish", "powershell", "zsh"):
@@ -1028,20 +1347,19 @@ def run_suite(go: str, rust: str, root: Path) -> None:
         run_pair(server, "hosts-list", go, rust, ["hosts", "list", "--json"], kind="json")
         run_pair(server, "hosts-active", go, rust, ["hosts", "active", "--json"], kind="json")
         run_pair(server, "hosts-by-name", go, rust, ["hosts", "get", "laptop", "--output", "json"], kind="json")
-        run_pair(server, "wlan-radios", go, rust, ["wlan", "radios", "--json"], kind="json")
+        run_pair(server, "wlan-radios", go, rust, ["wlan", "radios", "--json"], kind="json", policy=policy)
         # The Go oracle probes per-radio association lists concurrently. Request
         # completion order is intentionally nondeterministic; the exact request
         # multiset and rendered client order remain contractual.
         run_pair(server, "wlan-clients", go, rust, ["wlan", "clients", "--json"], kind="json", unordered_requests=True)
-        run_pair(server, "wlan-guest-status", go, rust, ["wlan", "guest", "status", "--json"], kind="json")
+        run_pair(server, "wlan-guest-status", go, rust, ["wlan", "guest", "status", "--json"], kind="json", policy=policy)
         run_pair(server, "dsl", go, rust, ["dsl", "--output", "json"], kind="json")
-        run_pair(server, "calls", go, rust, ["calls", "--json"], kind="json")
-        run_pair(server, "log", go, rust, ["log", "--json"], kind="json")
+        run_pair(server, "calls", go, rust, ["calls", "--json"], kind="json", policy=policy)
+        run_calls_filter_limit_target(server, go, rust)
+        run_pair(server, "log", go, rust, ["log", "--json"], kind="json", policy=policy)
         run_pair(server, "raw-call", go, rust, ["call", "deviceinfo", "GetInfo"], kind="json")
         run_pair(server, "mesh-path-and-sid", go, rust, ["mesh", "--output", "json"], kind="json")
-        server.reset(); home_list_go = run(go, ["home", "list", "--output", "json"], fake=True); assert_server(server, "home-list-aha Go")
-        server.reset(); home_list_rust = run(rust, ["home", "list", "--output", "json"], fake=True); assert_server(server, "home-list-aha Rust", [("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("GET", "/webservices/homeautoswitch.lua", "getdevicelistinfos")])
-        assert_json("home-list-aha", home_list_go, home_list_rust); print("PASS home-list-aha")
+        run_pair(server, "home-list-aha", go, rust, ["home", "list", "--output", "json"], kind="json", policy=policy)
         run_pair(server, "home-list-tr064", go, rust, ["home", "list", "--tr064", "--output", "json"], kind="json")
         yaml_cases = [
             ("status-yaml", ["status", "--output", "yaml"], None, False),
@@ -1060,7 +1378,7 @@ def run_suite(go: str, rust: str, root: Path) -> None:
             ("services-yaml", ["services", "--output", "yaml"], None, False),
         ]
         for label, args, expected, unordered in yaml_cases:
-            run_pair(server, label, go, rust, args, kind="yaml", expected=expected, unordered_requests=unordered)
+            run_pair(server, label, go, rust, args, kind="yaml", expected=expected, unordered_requests=unordered, policy=policy)
         run_pair(server, "scrape-data-lua", go, rust, ["scrape", "netDev", "foo=bar"], expected=[("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("POST", "/data.lua", "")])
         run_pair(server, "auth-test-http", go, rust, ["auth", "test"], expected=[("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("POST", "/upnp/control/deviceinfo", "GetInfo")])
         run_structured_matrix(server, rust, "auth-test-http", ["auth", "test"], [("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("POST", "/upnp/control/deviceinfo", "GetInfo")])
@@ -1068,9 +1386,9 @@ def run_suite(go: str, rust: str, root: Path) -> None:
         run_auth_login_contracts(server, rust)
         mutations = [("wol", ["wol", "--mac", MAC], [("POST", "/upnp/control/hosts", "X_AVM-DE_WakeOnLANByMACAddress")]), ("dial", ["dial", "123"], [("POST", "/upnp/control/x_voip", "X_AVM-DE_DialNumber")]), ("hangup", ["hangup"], [("POST", "/upnp/control/x_voip", "X_AVM-DE_DialHangup")]), ("guest-on", ["wlan", "guest", "on"], [("GET", "/tr64desc.xml", ""), ("POST", "/upnp/control/wlanconfig3", "SetEnable")]), ("guest-off", ["wlan", "guest", "off"], [("GET", "/tr64desc.xml", ""), ("POST", "/upnp/control/wlanconfig3", "SetEnable")]), ("guest-on-explicit-index", ["wlan", "guest", "on", "--guest-index", "3"], [("POST", "/upnp/control/wlanconfig3", "SetEnable")]), ("home-switch-on", ["home", "switch", AIN, "on"], [("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("GET", "/webservices/homeautoswitch.lua", "setswitchon")]), ("home-temp", ["home", "temp", AIN, "20.5"], [("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("GET", "/webservices/homeautoswitch.lua", "sethkrtsoll")]), ("home-switch-tr064", ["home", "switch", AIN, "on", "--tr064"], [("POST", "/upnp/control/x_homeauto", "SetSwitch")]), ("reboot-confirmed", ["reboot", "--yes"], [("POST", "/upnp/control/deviceconfig", "Reboot")])]
         for label, args, expected in mutations:
-            run_pair(server, label, go, rust, args, expected=expected)
+            run_pair(server, label, go, rust, args, expected=expected, policy=policy)
             run_structured_matrix(server, rust, label, args, expected)
-        config_init_pair(go, rust, False, False); config_init_pair(go, rust, False, True); config_init_pair(go, rust, True, True)
+        config_init_pair(go, rust, False, False, policy); config_init_pair(go, rust, False, True, policy); config_init_pair(go, rust, True, True, policy)
         run_auth_store_pair(go, rust)
         noauth_left = run(go, ["auth", "test", "--output", "json"])
         noauth_right = run(rust, ["auth", "test", "--output", "json"])
@@ -1089,7 +1407,7 @@ def run_suite(go: str, rust: str, root: Path) -> None:
         assert_server(server, "auth unauthorized Rust")
         if unauthorized_left.code != 3 or unauthorized_right.code != 3:
             raise AssertionError(f"unauthorized must exit 3: {unauthorized_left.code}, {unauthorized_right.code}")
-        assert_bytes("auth-unauthorized", unauthorized_left, unauthorized_right)
+        assert_bytes("auth-unauthorized", unauthorized_left, unauthorized_right, policy=policy)
         print("PASS auth-unauthorized")
         if os.name != "nt":
             # SIGINT must flush at least two equivalent NDJSON snapshots, use 130,
@@ -1165,10 +1483,39 @@ def run_suite(go: str, rust: str, root: Path) -> None:
         server.shutdown(); server.server_close()
 
 
+def binary_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as binary:
+        for chunk in iter(lambda: binary.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def resolve_distinct_binaries(go: str, rust: str) -> tuple[str, str]:
+    go_path = Path(go).expanduser().resolve(strict=True)
+    rust_path = Path(rust).expanduser().resolve(strict=True)
+    for label, path in (("--go", go_path), ("--rust", rust_path)):
+        if not path.is_file():
+            raise AssertionError(f"{label} must resolve to a file: {path}")
+    if os.path.samefile(go_path, rust_path):
+        raise AssertionError("self-comparison is forbidden: --go and --rust resolve to the same executable")
+    if binary_digest(go_path) == binary_digest(rust_path):
+        raise AssertionError("self-comparison is forbidden: --go and --rust have identical binary content")
+    for label, path in (("--go", go_path), ("--rust", rust_path)):
+        if not os.access(path, os.X_OK):
+            raise AssertionError(f"{label} must resolve to an executable file: {path}")
+    return str(go_path), str(rust_path)
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__); parser.add_argument("--binary", default="./target/debug/symfritz"); parser.add_argument("--root", default="."); args = parser.parse_args()
-    binary = os.path.abspath(args.binary)
-    try: run_suite(binary, binary, Path(args.root).resolve())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--go", required=True, help="path to the immutable v0.7.0 Go oracle binary")
+    parser.add_argument("--rust", required=True, help="path to the current Rust candidate binary")
+    parser.add_argument("--root", default=".")
+    args = parser.parse_args()
+    try:
+        go, rust = resolve_distinct_binaries(args.go, args.rust)
+        run_suite(go, rust, Path(args.root).resolve())
     except (AssertionError, OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
         print(f"FAIL {exc}", file=sys.stderr); return 1
     return 0

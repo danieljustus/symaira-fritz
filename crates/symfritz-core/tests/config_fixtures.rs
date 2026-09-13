@@ -197,12 +197,12 @@ fn configuration_vectors_match_go() {
 }
 
 #[test]
-fn config_init_vectors_match_go() {
+fn config_init_vectors_preserve_approved_target_contract() {
     let fixture: InitFixture = load_json("config-init-vectors.json");
     assert_eq!(fixture.schema_version, 1);
     assert_eq!(
         fixture.oracle,
-        "Go cmd/symfritz initConfigFile production helper"
+        "v0.7.0 Go initConfigFile baseline plus approved TLS HTTP-fallback opt-in"
     );
 
     for vector in fixture.cases {

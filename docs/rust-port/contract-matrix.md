@@ -11,20 +11,20 @@ provenance; it does not require Go source in the current repository.
 | CLI-003 | Version JSON | `version --json`, `--output json`, uppercase format | Go binary | compact schema v1 object | same | all | bytes | PASS |
 | CLI-004 | Version YAML | `version --output yaml` | Go binary | ordered three-line YAML | same | all | bytes | PASS |
 | CLI-005 | Output errors | invalid and conflicting formats | Go binary | exit 9; exact stderr | same | all | bytes | PASS |
-| CLI-006 | Command tree | every command in `docs/cli.md` | frozen command fixture / `--help` | names, aliases, flags, defaults, inherited flags | `tests/cli_contract.rs` + `scripts/cli-differential.py` | all | semantic inventory/help | PASS |
+| CLI-006 | Command tree | every command in `docs/cli.md` | v0.7.0 Go binary + frozen help fixture | names, aliases, flags, defaults, inherited flags; only `CAP-WLAN-ADVERTISED-INDEX` has an exact policy exception | `tests/cli_contract.rs` + `scripts/cli-differential.py` | all | semantic inventory/help | PASS |
 | CLI-007 | Argument validation | missing/excess args per command | Go binary | deterministic parse exit/stream behavior | `tests/cli_contract.rs` + `scripts/cli-differential.py` | all | exit/stream semantics | PASS |
 | CLI-008 | Structured output | strict fake-box success across typed/raw/web handlers in text/JSON/YAML plus watch NDJSON | Go binary + local fake HTTP | field names, omission, stable values, append/flush | `scripts/cli-differential.py` | all; signal leg macOS/Linux | text bytes; structured semantic | PASS |
-| CLI-009 | Error taxonomy | output/config/auth/transport/confirmation failures | Go binary | exit codes 1/3/9, stream and structured error shape | `scripts/cli-differential.py` | all | bytes/structured semantic | PASS |
+| CLI-009 | Error taxonomy | output/config/auth/transport/confirmation failures | v0.7.0 Go binary | exit codes 1/3/9, stream and structured error shape; `CLI-STRUCTURED-ERROR-CLEAN` removes Go's non-JSON stdout preamble | `scripts/cli-differential.py` | all | bytes/structured semantic | PASS |
 | CLI-010 | Signals | SIGINT during traffic watch | Go binary | flushed output and exit 130 | `scripts/cli-differential.py` | macOS/Linux | semantic | PASS |
 
-| CFG-001 | Defaults | no file/env and timeout matrix | Go loader via generated fixture | host, TLS and 15 s timeout defaults | `symfritz-core/tests/config_fixtures.rs` | all | semantic | PASS |
+| CFG-001 | Defaults | no file/env and timeout matrix | v0.7.0 Go loader baseline + approved Rust target config | host, TLS, and 15 s timeout defaults; Rust additionally requires explicit HTTP-fallback opt-in | `symfritz-core/tests/config_fixtures.rs`, `symfritz-tr064/tests/tls_transport.rs` | all | semantic | PASS |
 | CFG-002 | Precedence | global/project TOML plus nested/shorthand env matrix | Go configkit via generated fixture | env overrides project file overrides global file overrides defaults; file zero-values stay ignored | `symfritz-core/tests/config_fixtures.rs` | all | semantic | PASS |
-| CFG-003 | Init file | isolated fresh/existing/force writes | Go `initConfigFile` via generated fixture | exact bytes, path-dependent streams, mode and overwrite behavior | `symfritz-core/tests/config_fixtures.rs` | all | bytes + metadata | PASS |
+| CFG-003 | Init file | isolated fresh/existing/force writes | v0.7.0 Go binary + generated fixture | exact bytes, path-dependent streams, mode and overwrite behavior; only the exact `TLS-HTTP-FALLBACK-OPT-IN` block differs | `symfritz-core/tests/config_fixtures.rs` + `scripts/cli-differential.py` | all | bytes + metadata | PASS |
 | SEC-001 | Credential order | env/ref/keychain/plaintext success and failure combinations | Go resolver via generated fixture | env → symvault → Keychain → config; configured backend failure stops | `symfritz-core/tests/secret_fixtures.rs` | all/macOS | semantic | PASS |
 | SEC-002 | Secret redaction | backend/network failures | Go binary | no password/SID in logs or errors | `symfritz-tr064/tests/tls_transport.rs`, `symfritz-tr064/tests/capabilities.rs`, safe-URL unit tests | all | semantic | PASS |
 | TLS-001 | SPKI TOFU | fixed certificate plus live local TLS rotation | Go production pin helper via generated fixture | pin-only router identity keyed by configured host; private/local DNS is bound to the socket; the first completed handshake pins exact SHA-256 SPKI before HTTP bytes; changed certificate fails; `insecure_tls` is an explicit opt-out | pin fixture + local rustls server | all | bytes/semantic | PASS |
 | TLS-002 | Pin persistence | missing/corrupt/reset stores | Go `PinStore` via generated fixture | exact JSON, modes, refusal to overwrite corrupt data, reset recovery | `symfritz-core/tests/pin_fixtures.rs` | all | bytes + metadata | PASS |
-| TLS-003 | HTTP fallback | refused/timeout/unreachable vs certificate/TLS/auth failures | Go fallback classifier via generated fixture | fallback only when endpoint does not answer; one warning; internal port rewrite only | transport fixture + unit suites | all | semantic | PASS |
+| TLS-003 | HTTP fallback | refused/timeout/unreachable vs certificate/TLS/auth failures | Go fallback classifier via generated fixture | Rust refuses HTTP downgrade unless `allow_http_fallback=true`; certificate/TLS/auth failures never downgrade | transport fixture + unit suites | all | semantic | PASS |
 | AUTH-001 | Legacy login | AVM `1234567z` / `äbc` plus surrogate-pair vector | Go production helper via generated fixture | UTF-16LE MD5 responses | `symfritz-core/tests/auth_fixtures.rs` | all | bytes | PASS |
 | AUTH-002 | Modern login | PBKDF2 success/error matrix | Go production helper via generated fixture | two-round SHA-256 response; malformed inputs rejected | `symfritz-core/tests/auth_fixtures.rs` | all | bytes | PASS |
 | AUTH-003 | SID lifecycle | ready SID, challenge, invalid SID, block time, expiry | Go fake box | request sequence, caching, retry, errors | `symfritz-aha/tests/client.rs` | all | semantic + bytes | PASS |
@@ -82,8 +82,10 @@ remains reserved for issue #191.
 
 ## Final CLI parity scope and gaps
 
-`make cli-contract` builds the Rust binary and runs
-`scripts/cli-differential.py` against an isolated strict fake TR-064 endpoint.
+`make cli-contract` builds the Rust candidate, materializes the immutable
+`b1491793aea173eac926e1a0c9db5ba6dd4604a9` v0.7.0 Go source with `git archive`,
+and runs `scripts/cli-differential.py` against both binaries and an isolated
+strict fake TR-064 endpoint.
 The retained harness exercises every non-MCP command family through executable
 help, validation, success, error, config, auth-test/store, and mutation checks.
 It binds the fake box on `0.0.0.0:49000`, discovers the local RFC1918 address,
@@ -98,13 +100,28 @@ The matrix below still tracks repository-wide work outside this issue,
 including release/live-box coverage; those rows are not claimed by the
 non-MCP CLI harness.
 
+## Approved target changes
+
+`testdata/port/divergence-policy.json` is the machine-readable exception
+ledger. It pins the Go oracle, requires one executable Rust test or strict
+harness case per ID, and permits only case-specific differences. The retained
+changes are: opt-in HTTP fallback and its config block; advertised guest-WLAN
+discovery; a single combined AHA home-list fetch with an empty absent collection; post-filter call limits;
+device-local call/log clocks; current FRITZ!OS mesh UID aliases; strict host
+selector and MCP boolean validation; clean structured CLI errors; and the
+documented Rust-only structured mutation output. All unspecified bytes,
+fields, request routes, SOAP actions, arguments, ordering, and modes remain
+strict comparisons.
+
 ## Rules
 
 - A row moves to **PASS** only when its Rust test, strict harness, or release
   validation is executable in CI.
 - Byte comparison is mandatory for protocol frames, version/help/error output,
-  generated artifacts, and persisted files unless this table records a reason.
+  generated artifacts, and persisted files unless the machine-readable policy
+  records an ID, exact oracle/candidate expectation, and executable evidence.
 - Randomness, clocks, locale, timezone, HOME, and network endpoints must be
-  controlled. No unexplained normalization is allowed.
+  controlled. No unexplained normalization is allowed; policy transforms may
+  only remove the exact declared difference for the named case.
 - Live fixtures must be sanitized and must never contain passwords, SIDs, MACs,
   public IPs, phone numbers, or other personal data.
