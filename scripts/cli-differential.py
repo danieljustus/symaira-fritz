@@ -781,7 +781,10 @@ def _byte_stream_transform(label: str, value: bytes, policy: dict[str, Any] | No
     key = f"{side}_stdout_prefix"
     prefix = matches[0][key].format(private_ip=PRIVATE_IP, port=PORT).encode()
     if not value.startswith(prefix):
-        raise AssertionError(f"{label}: {side} stdout did not match the declared approved prefix")
+        raise AssertionError(
+            f"{label}: {side} stdout did not match the declared approved prefix; "
+            f"actual={value[:300]!r}, expected={prefix!r}"
+        )
     return value[len(prefix) :]
 
 
