@@ -90,8 +90,23 @@ v0.7.0:
 5. Release names, archives, checksums, signing, notarization, Homebrew behavior,
    MCP framing, config files, and rollback are verified.
 
-The exact release measurements are recorded in
-[`value-gate-20260905.json`](value-gate-20260905.json).
+The current measurements are recorded in
+[`value-gate-a05811a8.json`](value-gate-a05811a8.json), produced by
+[`scripts/value_gate.py`](../../scripts/value_gate.py). That artifact states
+its own provenance: the candidate commit and clean state, the pinned Go
+oracle commit, both binaries by sha256, the toolchains, and every raw sample.
+Regenerate it with:
+
+```sh
+cargo build --release --locked
+python3 scripts/value_gate.py --root .
+```
+
+The earlier [`value-gate-20260905.json`](value-gate-20260905.json) is retained
+as historical evidence only. It records no commit, revision or oracle
+reference and no script produced it, so it cannot be attributed to a
+candidate or reproduced; it must not be cited as a gate result for any
+current head.
 
 ## Local workflow
 
