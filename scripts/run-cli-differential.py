@@ -25,7 +25,22 @@ def extract_oracle(root: Path, destination: Path) -> None:
             target = (destination / member.name).resolve()
             if not target.is_relative_to(destination.resolve()):
                 raise RuntimeError(f"refusing unsafe oracle archive member: {member.name}")
-        bundle.extractall(destination, filter="data")
+            # The "data" extraction filter is only available on Python 3.12+.
+            # Enforce the parts of its contract we rely on explicitly, so an
+            # older interpreter refuses the same members instead of silently
+            # extracting under weaker rules.
+            if not (member.isfile() or member.isdir()):
+                raise RuntimeError(
+                    f"refusing non-regular oracle archive member: {member.name}"
+                )
+            if member.mode & (0o4000 | 0o2000):
+                raise RuntimeError(
+                    f"refusing setuid/setgid oracle archive member: {member.name}"
+                )
+        if sys.version_info >= (3, 12):
+            bundle.extractall(destination, filter="data")
+        else:
+            bundle.extractall(destination)
 
 
 def run(command: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> None:
