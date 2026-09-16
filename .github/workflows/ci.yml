@@ -26,6 +26,36 @@ jobs:
         with:
           go-version: "1.26.6"
 
+      - name: Export trusted oracle tool paths (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git_path="$(command -v git)"
+          go_path="$(command -v go)"
+          for tool_path in "$git_path" "$go_path"; do
+            if [[ "$tool_path" != /* || "$tool_path" == *$'\n'* || "$tool_path" == *$'\r'* || ! -x "$tool_path" ]]; then
+              printf 'trusted oracle tool path is not an absolute executable: %s\n' "$tool_path" >&2
+              exit 1
+            fi
+          done
+          printf 'SYMAIRA_TRUSTED_GIT=%s\n' "$git_path" >> "$GITHUB_ENV"
+          printf 'SYMAIRA_TRUSTED_GO=%s\n' "$go_path" >> "$GITHUB_ENV"
+
+      - name: Export trusted oracle tool paths (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $git = Get-Command git -CommandType Application -ErrorAction Stop | Select-Object -First 1
+          $go = Get-Command go -CommandType Application -ErrorAction Stop | Select-Object -First 1
+          foreach ($toolPath in @($git.Source, $go.Source)) {
+            if ([string]::IsNullOrWhiteSpace($toolPath) -or -not [System.IO.Path]::IsPathRooted($toolPath) -or $toolPath -match '[\r\n]' -or -not (Test-Path -LiteralPath $toolPath -PathType Leaf)) {
+              throw "trusted oracle tool path is not an absolute executable: $toolPath"
+            }
+          }
+          "SYMAIRA_TRUSTED_GIT=$($git.Source)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SYMAIRA_TRUSTED_GO=$($go.Source)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.98.0 --profile minimal --component clippy,rustfmt
 
@@ -106,6 +136,36 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.26.6"
+
+      - name: Export trusted oracle tool paths (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git_path="$(command -v git)"
+          go_path="$(command -v go)"
+          for tool_path in "$git_path" "$go_path"; do
+            if [[ "$tool_path" != /* || "$tool_path" == *$'\n'* || "$tool_path" == *$'\r'* || ! -x "$tool_path" ]]; then
+              printf 'trusted oracle tool path is not an absolute executable: %s\n' "$tool_path" >&2
+              exit 1
+            fi
+          done
+          printf 'SYMAIRA_TRUSTED_GIT=%s\n' "$git_path" >> "$GITHUB_ENV"
+          printf 'SYMAIRA_TRUSTED_GO=%s\n' "$go_path" >> "$GITHUB_ENV"
+
+      - name: Export trusted oracle tool paths (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $git = Get-Command git -CommandType Application -ErrorAction Stop | Select-Object -First 1
+          $go = Get-Command go -CommandType Application -ErrorAction Stop | Select-Object -First 1
+          foreach ($toolPath in @($git.Source, $go.Source)) {
+            if ([string]::IsNullOrWhiteSpace($toolPath) -or -not [System.IO.Path]::IsPathRooted($toolPath) -or $toolPath -match '[\r\n]' -or -not (Test-Path -LiteralPath $toolPath -PathType Leaf)) {
+              throw "trusted oracle tool path is not an absolute executable: $toolPath"
+            }
+          }
+          "SYMAIRA_TRUSTED_GIT=$($git.Source)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SYMAIRA_TRUSTED_GO=$($go.Source)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.98.0 --profile minimal --component clippy,rustfmt

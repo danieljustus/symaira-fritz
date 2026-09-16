@@ -45,6 +45,26 @@ class CliDifferentialTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "identical binary content"):
                 MODULE.resolve_distinct_binaries(str(source), str(copy))
 
+    def test_resolved_symlink_alias_is_rejected_before_fake_box_startup(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            source = Path(raw) / "go-oracle"
+            alias = Path(raw) / "rust-alias"
+            source.write_bytes(b"different executable contents")
+            source.chmod(source.stat().st_mode | stat.S_IXUSR)
+            alias.symlink_to(source)
+            with self.assertRaisesRegex(AssertionError, "same executable"):
+                MODULE.resolve_distinct_binaries(str(source), str(alias))
+
+    def test_hardlinked_inode_is_rejected_before_fake_box_startup(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            source = Path(raw) / "go-oracle"
+            alias = Path(raw) / "rust-hardlink"
+            source.write_bytes(b"different executable contents")
+            source.chmod(source.stat().st_mode | stat.S_IXUSR)
+            os.link(source, alias)
+            with self.assertRaisesRegex(AssertionError, "same executable"):
+                MODULE.resolve_distinct_binaries(str(source), str(alias))
+
     def test_wlan_policy_requires_exact_asymmetric_traces(self) -> None:
         go_trace, rust_trace = MODULE._trace_override(self.policy, "wlan-guest-status")
         self.assertEqual(go_trace, [("POST", "/upnp/control/wlanconfig3", "GetInfo")])
