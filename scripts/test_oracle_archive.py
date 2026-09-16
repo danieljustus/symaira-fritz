@@ -157,6 +157,24 @@ class OracleArchiveTests(unittest.TestCase):
             self.assertEqual(digest, runner.ORACLE_ARCHIVE_SHA256)
             self.assertTrue((destination / "cmd" / "symfritz" / "main.go").is_file())
 
+    def test_live_archive_immune_to_hostile_autocrlf(self) -> None:
+        git_value = shutil.which("git")
+        if git_value is None:
+            self.skipTest("Git is unavailable")
+        git = Path(git_value).resolve()
+        with tempfile.TemporaryDirectory() as raw:
+            destination = Path(raw) / "oracle"
+            destination.mkdir()
+            env_override = {
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "core.autocrlf",
+                "GIT_CONFIG_VALUE_0": "true",
+            }
+            with patch.dict(os.environ, env_override):
+                digest = runner.extract_oracle(ROOT, destination, git=git)
+            self.assertEqual(digest, runner.ORACLE_ARCHIVE_SHA256)
+            self.assertTrue((destination / "cmd" / "symfritz" / "main.go").is_file())
+
     def test_live_fake_git_cannot_supply_an_arbitrary_archive(self) -> None:
         archive = base64.b64encode(_archive_bytes(b"attacker source")).decode("ascii")
         with tempfile.TemporaryDirectory() as raw:
