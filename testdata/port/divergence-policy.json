@@ -115,6 +115,62 @@
           }
         },
         "test": "scripts/cli-differential.py::run_suite home-list-aha/home-list-yaml"
+      },
+      {
+        "id": "CAP-WLAN-CLIENT-ADVERTISED-RADIO",
+        "cases": {
+          "wlan-clients": {
+            "go": [
+              ["POST", "/upnp/control/wlanconfig1", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig2", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig3", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig1", "GetTotalAssociations"],
+              ["POST", "/upnp/control/wlanconfig1", "GetGenericAssociatedDeviceInfo"],
+              ["POST", "/upnp/control/wlanconfig2", "GetTotalAssociations"],
+              ["POST", "/upnp/control/wlanconfig2", "GetGenericAssociatedDeviceInfo"],
+              ["POST", "/upnp/control/wlanconfig3", "GetTotalAssociations"],
+              ["POST", "/upnp/control/wlanconfig3", "GetGenericAssociatedDeviceInfo"]
+            ],
+            "rust": [
+              ["GET", "/tr64desc.xml", ""],
+              ["POST", "/upnp/control/wlanconfig1", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig2", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig3", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig1", "GetTotalAssociations"],
+              ["POST", "/upnp/control/wlanconfig1", "GetGenericAssociatedDeviceInfo"],
+              ["POST", "/upnp/control/wlanconfig2", "GetTotalAssociations"],
+              ["POST", "/upnp/control/wlanconfig2", "GetGenericAssociatedDeviceInfo"],
+              ["POST", "/upnp/control/wlanconfig3", "GetTotalAssociations"],
+              ["POST", "/upnp/control/wlanconfig3", "GetGenericAssociatedDeviceInfo"]
+            ]
+          },
+          "wlan-clients-yaml": {
+            "go": [
+              ["POST", "/upnp/control/wlanconfig1", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig2", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig3", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig1", "GetTotalAssociations"],
+              ["POST", "/upnp/control/wlanconfig1", "GetGenericAssociatedDeviceInfo"],
+              ["POST", "/upnp/control/wlanconfig2", "GetTotalAssociations"],
+              ["POST", "/upnp/control/wlanconfig2", "GetGenericAssociatedDeviceInfo"],
+              ["POST", "/upnp/control/wlanconfig3", "GetTotalAssociations"],
+              ["POST", "/upnp/control/wlanconfig3", "GetGenericAssociatedDeviceInfo"]
+            ],
+            "rust": [
+              ["GET", "/tr64desc.xml", ""],
+              ["POST", "/upnp/control/wlanconfig1", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig2", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig3", "GetInfo"],
+              ["POST", "/upnp/control/wlanconfig1", "GetTotalAssociations"],
+              ["POST", "/upnp/control/wlanconfig1", "GetGenericAssociatedDeviceInfo"],
+              ["POST", "/upnp/control/wlanconfig2", "GetTotalAssociations"],
+              ["POST", "/upnp/control/wlanconfig2", "GetGenericAssociatedDeviceInfo"],
+              ["POST", "/upnp/control/wlanconfig3", "GetTotalAssociations"],
+              ["POST", "/upnp/control/wlanconfig3", "GetGenericAssociatedDeviceInfo"]
+            ]
+          }
+        },
+        "test": "crates/symfritz-cli/tests/wlan_radio_clients.rs::cli_reports_the_client_associated_with_radio_four"
       }
     ],
     "structured_transforms": [
@@ -155,6 +211,12 @@
     ]
   },
   "approved_target_changes": [
+    {
+      "id": "CAP-WLAN-CLIENT-ADVERTISED-RADIO",
+      "surface": "CLI and MCP wlan clients request sequence",
+      "reason": "Rust aggregates WLAN clients from every WLANConfiguration service the box advertises, so tri-band boxes report their fourth radio's clients; the fixed three-radio Go oracle never fetches tr64desc.xml for this command, which is the one approved extra request.",
+      "test": "crates/symfritz-cli/tests/wlan_radio_clients.rs::cli_reports_the_client_associated_with_radio_four"
+    },
     {
       "id": "TLS-HTTP-FALLBACK-OPT-IN",
       "surface": "transport",
