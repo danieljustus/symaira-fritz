@@ -20,7 +20,7 @@
 
 Editable router/radio mark and ready-to-publish social, release, and README
 graphics: [public asset kit](assets/branding/public-kit/README.md). The approved
-A3 signet and existing product identity remain unchanged.
+A3 signet and existing CLI/repository identifiers remain unchanged.
 
 ## Why symfritz
 
