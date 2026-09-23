@@ -584,6 +584,26 @@ impl<S: Read> Read for BufferedReader<S> {
     }
 }
 
+fn read_retry_interrupted<S: Read>(
+    stream: &mut S,
+    buffer: &mut [u8],
+    deadline: Instant,
+) -> io::Result<usize> {
+    loop {
+        match stream.read(buffer) {
+            // A Unix signal may interrupt the socket before the handler
+            // thread records cancellation. Keep reading until the deadline;
+            // the transport checks cancellation after the response.
+            Err(error)
+                if error.kind() == io::ErrorKind::Interrupted && Instant::now() < deadline =>
+            {
+                continue;
+            }
+            result => return result,
+        }
+    }
+}
+
 fn read_response_headers<S: Read>(
     stream: &mut S,
     url: &Url,
@@ -598,8 +618,7 @@ fn read_response_headers<S: Read>(
                 message: "response headers exceed 64 KiB".to_owned(),
             });
         }
-        let count = stream
-            .read(&mut one)
+        let count = read_retry_interrupted(stream, &mut one, deadline)
             .map_err(|error| classify_io_error(error, url, "reading response headers"))?;
         if count == 0 {
             return Err(HttpTransportError::Request {
@@ -731,7 +750,7 @@ fn read_response_body<S: Read>(
     let mut buffer = [0_u8; 8192];
     while body.len() < limit {
         let wanted = (limit - body.len()).min(buffer.len());
-        match stream.read(&mut buffer[..wanted]) {
+        match read_retry_interrupted(stream, &mut buffer[..wanted], deadline) {
             Ok(0) => break,
             Ok(count) => body.extend_from_slice(&buffer[..count]),
             Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => break,
@@ -828,7 +847,7 @@ fn read_exact_deadline<S: Read>(
 ) -> Result<(), HttpTransportError> {
     let mut offset = 0;
     while offset < buffer.len() {
-        match stream.read(&mut buffer[offset..]) {
+        match read_retry_interrupted(stream, &mut buffer[offset..], deadline) {
             Ok(0) => {
                 return Err(HttpTransportError::Request {
                     url: redact_url(url),
@@ -1171,6 +1190,40 @@ mod tests {
             assert!(write_request(&mut wire, &request, &url, Instant::now()).is_err());
             assert!(wire.is_empty());
         }
+    }
+
+    #[test]
+    fn interrupted_response_reads_retry_before_classifying_failure() {
+        struct InterruptOnce<R> {
+            inner: R,
+            pending: bool,
+        }
+        impl<R: Read> Read for InterruptOnce<R> {
+            fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+                if self.pending {
+                    self.pending = false;
+                    return Err(io::ErrorKind::Interrupted.into());
+                }
+                self.inner.read(output)
+            }
+        }
+
+        let url = Url::parse("http://127.0.0.1/health").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let mut headers = InterruptOnce {
+            inner: io::Cursor::new(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n"),
+            pending: true,
+        };
+        let (status, parsed) = read_response_headers(&mut headers, &url, deadline).unwrap();
+        assert_eq!(status, 200);
+        let mut body = InterruptOnce {
+            inner: io::Cursor::new(b"ok"),
+            pending: true,
+        };
+        assert_eq!(
+            read_response_body(&mut body, status, &parsed, 2, &url, deadline).unwrap(),
+            b"ok"
+        );
     }
 
     #[test]
