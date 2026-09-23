@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import re
@@ -73,7 +74,7 @@ def main() -> None:
         assert phrase in readme, f"provenance README missing: {phrase}"
 
     public = json.loads((PUBLIC_KIT / "manifest.json").read_text(encoding="utf-8"))
-    assert public["schema_version"] == 1 and public["product"] == "symaira-fritz"
+    assert public["schema_version"] == 1 and public["product"] == "symaira-router"
     dimensions = {
         "brand/foreground-mark": (1024, 1024),
         "brand/foreground-mark-monochrome": (1024, 1024),
@@ -102,6 +103,11 @@ def main() -> None:
             assert png_info(path)[0] == expected
             continue
         source = path.read_text(encoding="utf-8")
+        assert "Symaira Fritz" not in source, f"third-party name used as a wordmark: {relative}"
+        assert "github.com/danieljustus/symaira-fritz" not in source, f"old slug in public artwork: {relative}"
+        for encoded in re.findall(r"data:image/svg\+xml;base64,([A-Za-z0-9+/=]+)", source):
+            embedded = base64.b64decode(encoded, validate=True).decode("utf-8")
+            assert "Symaira Fritz" not in embedded, f"embedded mark uses third-party name: {relative}"
         root = ET.fromstring(source)
         assert root.tag == "{http://www.w3.org/2000/svg}svg"
         assert (root.get("width"), root.get("height")) == tuple(map(str, expected))
