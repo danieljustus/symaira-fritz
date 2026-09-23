@@ -692,8 +692,10 @@ fn execute_wlan(
             Ok(())
         }
         WlanSubcommand::Clients => {
+            // `0` selects advertised-radio discovery: tri-band boxes expose a
+            // fourth WLANConfiguration whose clients a fixed 1..=3 window hid.
             let clients = client
-                .all_wlan_clients(3)
+                .all_wlan_clients(0)
                 .map_err(|error| HandlerError::from_client("wlan clients failed", &error))?;
             if format != OutputFormat::Text {
                 output::write(&mut std::io::stdout(), &clients, format)
@@ -1654,9 +1656,11 @@ impl McpCapabilities for FritzMcpCapabilities {
     }
 
     fn wlan_clients(&mut self) -> Result<serde_json::Value, String> {
+        // Same advertised-radio discovery as `symfritz wlan clients`: no fixed
+        // three-radio cap, so radio 4 on tri-band boxes is included.
         let clients = self
             .tr064
-            .all_wlan_clients(3)
+            .all_wlan_clients(0)
             .map_err(|error| format!("wlan_clients: {error}"))?;
         Ok(mcp_serialized(&clients))
     }

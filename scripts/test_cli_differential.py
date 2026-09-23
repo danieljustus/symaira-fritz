@@ -76,6 +76,46 @@ class CliDifferentialTests(unittest.TestCase):
             ],
         )
 
+    def test_wlan_clients_policy_adds_only_the_discovery_request(self) -> None:
+        discovery = ("GET", "/tr64desc.xml", "")
+        for case in ("wlan-clients", "wlan-clients-yaml"):
+            go_trace, rust_trace = MODULE._trace_override(self.policy, case)
+            self.assertNotIn(discovery, go_trace, case)
+            self.assertEqual(rust_trace[0], discovery, case)
+            self.assertEqual(rust_trace[1:], go_trace, case)
+
+    def test_unordered_trace_override_compares_a_multiset(self) -> None:
+        class StubServer:
+            def __init__(self, accepted):  # noqa: ANN001
+                self.accepted = accepted
+                self.failures = []
+
+        expected = [
+            ("POST", "/upnp/control/wlanconfig1", "GetInfo"),
+            ("POST", "/upnp/control/wlanconfig2", "GetInfo"),
+        ]
+        reordered = [expected[1], expected[0]]
+        # The oracle's radio fan-out has no contractual completion order.
+        MODULE.assert_server(
+            StubServer([(*entry, b"") for entry in reordered]),
+            "wlan-clients Go",
+            expected,
+            unordered=True,
+        )
+        with self.assertRaisesRegex(AssertionError, "request sequence mismatch"):
+            MODULE.assert_server(
+                StubServer([(*entry, b"") for entry in reordered]),
+                "wlan-clients Go",
+                expected,
+            )
+        with self.assertRaisesRegex(AssertionError, "request multiset mismatch"):
+            MODULE.assert_server(
+                StubServer([(*entry, b"") for entry in expected[:1]]),
+                "wlan-clients Go",
+                expected,
+                unordered=True,
+            )
+
     def test_asymmetric_traces_still_compare_shared_request_bodies(self) -> None:
         expected_go = [("POST", "/upnp/control/wlanconfig3", "SetEnable")]
         expected_rust = [

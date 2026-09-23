@@ -472,3 +472,103 @@ fn box_timestamps_are_not_labelled_utc() {
         "2026-06-29T14:15:00"
     );
 }
+
+#[test]
+fn all_wlan_clients_discovers_every_advertised_radio() {
+    let info = |ssid: &str| soap("GetInfo", &[("NewSSID", ssid), ("NewEnable", "1")]);
+    let total = |count: &str| soap("GetTotalAssociations", &[("NewTotalAssociations", count)]);
+    let associated = |mac: &str| {
+        soap(
+            "GetGenericAssociatedDeviceInfo",
+            &[
+                ("NewAssociatedDeviceMACAddress", mac),
+                ("NewAssociatedDeviceIPAddress", "192.168.1.20"),
+                ("NewAssociatedDeviceAuthState", "1"),
+            ],
+        )
+    };
+
+    // Tri-band box whose only associated client sits on the fourth radio: the
+    // fixed 1..=3 window queried radios 1..=3 and reported no clients at all.
+    let mut tri = client([
+        tr64desc(&[1, 2, 3, 4]),
+        info("radio-1"),
+        info("radio-2"),
+        info("radio-3"),
+        info("guest"),
+        total("0"),
+        total("0"),
+        total("0"),
+        total("1"),
+        associated("AA:BB:CC:DD:EE:04"),
+    ]);
+    let clients = tri.all_wlan_clients(0).unwrap();
+    assert_eq!(clients.len(), 1, "radio 4 client must be aggregated");
+    assert_eq!(clients[0].radio_index, 4);
+    assert_eq!(clients[0].mac, "AA:BB:CC:DD:EE:04");
+
+    let transport = tri.into_transport();
+    assert!(
+        transport.requests[0].url.ends_with("/tr64desc.xml"),
+        "aggregation must start with advertised-radio discovery"
+    );
+    assert!(
+        transport.requests.iter().any(|request| {
+            request.headers.get("SoapAction").map(String::as_str)
+                == Some("urn:dslforum-org:service:WLANConfiguration:4#GetTotalAssociations")
+        }),
+        "radio 4 must be probed for associations"
+    );
+}
+
+#[test]
+fn all_wlan_clients_keeps_three_radio_results_deterministic() {
+    let info = |ssid: &str| soap("GetInfo", &[("NewSSID", ssid), ("NewEnable", "1")]);
+    let total = |count: &str| soap("GetTotalAssociations", &[("NewTotalAssociations", count)]);
+    let associated = |mac: &str| {
+        soap(
+            "GetGenericAssociatedDeviceInfo",
+            &[
+                ("NewAssociatedDeviceMACAddress", mac),
+                ("NewAssociatedDeviceIPAddress", "192.168.1.20"),
+                ("NewAssociatedDeviceAuthState", "1"),
+            ],
+        )
+    };
+    let radio_body = || {
+        [
+            info("radio-1"),
+            info("radio-2"),
+            info("radio-3"),
+            total("1"),
+            associated("AA:BB:CC:DD:EE:01"),
+            total("0"),
+            total("1"),
+            associated("AA:BB:CC:DD:EE:03"),
+        ]
+    };
+
+    // A dual-band box advertises three radios: discovery must not change the
+    // client set or the ascending radio order the old fixed window produced.
+    let mut discovered = client([tr64desc(&[1, 2, 3])].into_iter().chain(radio_body()));
+    let from_discovery = discovered.all_wlan_clients(0).unwrap();
+    let mut fixed = client(radio_body());
+    let from_fixed_window = fixed.all_wlan_clients(3).unwrap();
+
+    assert_eq!(from_discovery, from_fixed_window);
+    assert_eq!(
+        from_discovery
+            .iter()
+            .map(|client| client.radio_index)
+            .collect::<Vec<_>>(),
+        [1, 3]
+    );
+    assert!(
+        fixed
+            .into_transport()
+            .requests
+            .iter()
+            .all(|request| !request.url.contains("tr64desc.xml")),
+        "the fixed window stays discovery-free"
+    );
+}
