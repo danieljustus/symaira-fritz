@@ -27,8 +27,20 @@ use crate::{Method, Request, Response, Transport, TransportError};
 /// Default maximum response size for a concrete transport.
 pub const DEFAULT_RESPONSE_LIMIT: usize = 8 << 20;
 
+/// Error text for a request refused at the cancellation boundary.
+const CANCELLED_REQUEST: &str = "request cancelled";
+
 /// Optional diagnostic sink used for the single fallback warning.
 pub type WarningSink = Arc<dyn Fn(&str) + Send + Sync>;
+
+/// Cooperative cancellation probe consulted before every request dispatch.
+///
+/// The CLI installs one probe backed by the shared flag its
+/// SIGINT/SIGTERM/SIGHUP handler sets, so TR-064 and web/AHA requests made
+/// after cancellation — including the authenticated retry that follows a
+/// pending Digest challenge — are refused at this boundary instead of being
+/// sent.
+pub type CancellationCheck = Arc<dyn Fn() -> bool + Send + Sync>;
 
 /// Configuration for [`BlockingHttpTransport`].
 #[derive(Clone)]
@@ -112,6 +124,7 @@ pub struct BlockingHttpTransport {
     tls_enabled: AtomicBool,
     fallback_warned: Once,
     warning_sink: Option<WarningSink>,
+    cancellation: Option<CancellationCheck>,
 }
 
 impl fmt::Debug for BlockingHttpTransport {
@@ -169,12 +182,28 @@ impl BlockingHttpTransport {
             tls_enabled: AtomicBool::new(config.origin.scheme() == "https"),
             fallback_warned: Once::new(),
             warning_sink: config.warning_sink,
+            cancellation: None,
         })
     }
 
     #[must_use]
     pub fn tls_enabled(&self) -> bool {
         self.tls_enabled.load(Ordering::Acquire)
+    }
+
+    /// Install the shared cancellation probe checked before each dispatch.
+    ///
+    /// Cancellation is observed at request boundaries only: a request
+    /// already in flight is never torn down mid-read and stays bounded by
+    /// [`HttpTransportConfig::timeout`] (box `timeout_seconds`, default 15 s).
+    pub fn set_cancellation(&mut self, cancelled: CancellationCheck) {
+        self.cancellation = Some(cancelled);
+    }
+
+    fn cancelled(&self) -> bool {
+        self.cancellation
+            .as_ref()
+            .is_some_and(|cancelled| cancelled())
     }
 
     fn warn_once(&self) {
@@ -319,6 +348,12 @@ impl BlockingHttpTransport {
 
 impl Transport for BlockingHttpTransport {
     fn send(&mut self, request: Request) -> Result<Response, TransportError> {
+        // Cooperative cancellation boundary: nothing dispatched after the
+        // signal — in particular no authenticated retry after a Digest
+        // challenge that was pending when cancellation was requested.
+        if self.cancelled() {
+            return Err(TransportError(CANCELLED_REQUEST.to_owned()));
+        }
         let requested = Url::parse(&request.url).map_err(|error| {
             TransportError(
                 HttpTransportError::Request {
@@ -350,6 +385,11 @@ impl Transport for BlockingHttpTransport {
             Err(error)
                 if tls_attempt && is_endpoint_unreachable(&error) && self.allow_http_fallback =>
             {
+                // The HTTP fallback is another dispatch: honor cancellation
+                // here too instead of retrying after the signal.
+                if self.cancelled() {
+                    return Err(TransportError(CANCELLED_REQUEST.to_owned()));
+                }
                 let fallback =
                     fallback_url(&requested).map_err(|error| TransportError(error.to_string()))?;
                 self.warn_once();
@@ -1246,6 +1286,39 @@ mod tests {
         transport.warn_once();
         transport.warn_once();
         assert_eq!(*calls.lock().unwrap(), 1);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn cancellation_refuses_dispatch_at_the_request_boundary() {
+        let path = std::env::temp_dir().join("symfritz-transport-cancel-pins.json");
+        let _ = fs::remove_file(&path);
+        let config = HttpTransportConfig::new(
+            Url::parse("http://127.0.0.1:9").unwrap(),
+            PinStore::new(&path),
+        );
+        let mut transport = BlockingHttpTransport::new(config).unwrap();
+        let request = Request {
+            method: Method::Get,
+            url: "http://127.0.0.1:9/tr64desc.xml".to_owned(),
+            headers: BTreeMap::new(),
+            body: Vec::new(),
+            response_limit: 1024,
+        };
+
+        transport.set_cancellation(Arc::new(|| true));
+        let refused = transport
+            .send(request.clone())
+            .expect_err("a cancelled dispatch must be refused before it reaches the network");
+        assert_eq!(refused.0, CANCELLED_REQUEST);
+
+        // Without the probe the same request goes to the socket, proving the
+        // message above came from the cancellation boundary itself.
+        transport.set_cancellation(Arc::new(|| false));
+        let reached_network = transport
+            .send(request)
+            .expect_err("port 9 must not answer the probe request");
+        assert_ne!(reached_network.0, CANCELLED_REQUEST);
         let _ = fs::remove_file(path);
     }
 }

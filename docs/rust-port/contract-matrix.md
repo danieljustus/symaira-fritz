@@ -52,6 +52,22 @@ provenance; it does not require Go source in the current repository.
 | DOC-001 | Docs/completions | generated CLI docs + four shells | Go/Cobra generation | no command/help drift | `tests/cli_contract.rs` + completion handler tests | all | semantic inventory + executable scripts | PASS |
 | LIVE-001 | Real box | `docs/rust-port/live-smoke-20260905.json` (no command output or identifiers persisted) | release-built Go binary | read-only command exit/schema parity without storing router data | release-built Rust candidate + `scripts/live_smoke.py` | macOS | semantic | PASS |
 
+## Cancellation contract (issue #257)
+
+Ordinary commands stop cooperatively at operation boundaries: the flag set by
+the shared SIGINT/SIGTERM/SIGHUP handler is checked before a command starts,
+before every HTTP request dispatch — which refuses the authenticated retry
+after a pending Digest challenge — before success output, and before any
+credential-store operation. Canceled commands exit 130 without success
+output. A request already in flight is not torn down mid-read; it stays
+bounded by `[box].timeout_seconds` (default 15 s, and the reboot regression
+configures 15 s while bounding termination at 20 s). Executable evidence:
+`crates/symfritz-cli/tests/reboot_cancellation.rs` (SIGINT, SIGTERM, SIGHUP —
+exactly one unauthenticated Reboot POST, no authenticated retry, no success
+payload, exit 130, bounded termination), the credential-store guard test in
+`crates/symfritz-cli/src/main.rs`, and the transport boundary test in
+`crates/symfritz-tr064/src/transport.rs`.
+
 ## Read-only handler slice
 
 Issue #190 subtask 2b wires the production Rust handlers for detection (`detect`
