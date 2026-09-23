@@ -75,6 +75,8 @@ pub trait CnonceSource {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ClientError {
     Transport(String),
+    /// A router table cannot be enumerated safely or completely.
+    TableEnumeration(String),
     Cnonce(String),
     UnauthorizedChallenge,
     Call {
@@ -97,7 +99,9 @@ pub enum ClientError {
 impl std::fmt::Display for ClientError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Transport(message) | Self::Cnonce(message) => formatter.write_str(message),
+            Self::Transport(message) | Self::TableEnumeration(message) | Self::Cnonce(message) => {
+                formatter.write_str(message)
+            }
             Self::UnauthorizedChallenge => {
                 formatter.write_str("401 without a parseable digest challenge")
             }
@@ -148,7 +152,7 @@ impl ClientError {
                 description,
                 ..
             } => (service.clone(), action.clone(), description.clone()),
-            Self::Transport(message) | Self::Cnonce(message) => {
+            Self::Transport(message) | Self::TableEnumeration(message) | Self::Cnonce(message) => {
                 (String::new(), String::new(), message.clone())
             }
             _ => (String::new(), String::new(), self.to_string()),
