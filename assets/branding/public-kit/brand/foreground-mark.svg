@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Symaira Fritz foreground mark</title>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="190" y="456" width="644" height="246" rx="64" stroke="#E5C397" stroke-width="36"/>
+    <path d="M512 456V316" stroke="#F8E6CD" stroke-width="34"/>
+    <path d="M384 374a181 181 0 0 1 256 0M319 302a273 273 0 0 1 386 0" stroke="#E9BC73" stroke-width="34"/>
+    <circle cx="512" cy="260" r="22" fill="#F8E6CD" stroke="none"/>
+    <circle cx="318" cy="580" r="18" fill="#73D6B2" stroke="none"/>
+    <circle cx="376" cy="580" r="18" fill="#E9BC73" stroke="none"/>
+    <path d="M624 580h112" stroke="#D4B285" stroke-width="28"/>
+  </g>
+</svg>

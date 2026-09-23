@@ -18,6 +18,10 @@
 
 ![symfritz terminal demo](docs/assets/symfritz-demo.svg)
 
+Editable router/radio mark and ready-to-publish social, release, and README
+graphics: [public asset kit](assets/branding/public-kit/README.md). The approved
+A3 signet and existing product identity remain unchanged.
+
 ## Why symfritz
 
 - **Single binary, no dependencies** — works on macOS, Linux, and Windows

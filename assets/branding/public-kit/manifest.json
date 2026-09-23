@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "product": "symaira-fritz",
+  "source": "OpenDesign symaira-fritz Brand & Assets handoff (0.23.0), reviewed for repository integration",
+  "role": "CLI/MCP public communications; not a native GUI or App Store icon",
+  "files": {
+    "brand/foreground-mark.svg": {
+      "sha256": "7463fa745044557b89cd3b82b950fb66183ed22ba16d72bcf61e04aed304650e",
+      "dimensions": [
+        1024,
+        1024
+      ]
+    },
+    "social/github-social-en.svg": {
+      "sha256": "947887f1fd968c7c140d58eee83039a4b94e4dc145df968bbb3b4be1d5f4afc3",
+      "dimensions": [
+        1280,
+        640
+      ]
+    },
+    "social/github-social-en.png": {
+      "sha256": "1ab878e59cd4bf24617a8c4e41e1d328fa22b1f806911726c5a3dee5e1a6ff1e",
+      "dimensions": [
+        1280,
+        640
+      ]
+    },
+    "social/open-graph-de.svg": {
+      "sha256": "0b1773b7e9ca88328ea6bb952372bef2adf06ab5f74fb5562f6298a771621436",
+      "dimensions": [
+        1200,
+        630
+      ]
+    },
+    "social/open-graph-de.png": {
+      "sha256": "b5c36d36686ab482f01cffbb2c0d104ad3ece33efed5fa7bdf7e113b0b8889c8",
+      "dimensions": [
+        1200,
+        630
+      ]
+    },
+    "social/square-de.svg": {
+      "sha256": "df77c613bb1a21687541e7affad3fae3c499500380f3ea9ae7139b5d35b7dc7f",
+      "dimensions": [
+        1080,
+        1080
+      ]
+    },
+    "social/square-de.png": {
+      "sha256": "5311108b6ce94354814eafbbe5ba797d94afc7e4605ddf67fe6049cfbbacb7b4",
+      "dimensions": [
+        1080,
+        1080
+      ]
+    },
+    "social/portrait-de.svg": {
+      "sha256": "281b708af255261e4ab10172520feba05d1258899462c9e335340169910b4dea",
+      "dimensions": [
+        1080,
+        1350
+      ]
+    },
+    "social/portrait-de.png": {
+      "sha256": "97d1a3a00a4a0baeea39df33c17f65497a4fc826e43db4dacfbcf7df04382abe",
+      "dimensions": [
+        1080,
+        1350
+      ]
+    },
+    "social/story-de.svg": {
+      "sha256": "b572fd2c16e3ac8755ee094639dbe6e01a0a23d94d202205cd5e3f42488fb0f0",
+      "dimensions": [
+        1080,
+        1920
+      ]
+    },
+    "social/story-de.png": {
+      "sha256": "23db7a2a5acd10fa25c683e603c13d1194a86e5b2331b1d1934407fd9824079f",
+      "dimensions": [
+        1080,
+        1920
+      ]
+    },
+    "release/release-card-en.svg": {
+      "sha256": "6becaafc2cece7407c9b61b6af7450a76f30e85395e65ffd0d822e4b87a913e2",
+      "dimensions": [
+        1600,
+        900
+      ]
+    },
+    "release/release-card-en.png": {
+      "sha256": "9e46928703cb9b262c98c6390000c9c55ad011b199ad4342c7d862120ae5dc7f",
+      "dimensions": [
+        1600,
+        900
+      ]
+    },
+    "readme/readme-hero-de.svg": {
+      "sha256": "1e9104f6b493ccbb7ee209f6c7d881366acbefbe731e0532f70c44ecec0528e6",
+      "dimensions": [
+        1600,
+        900
+      ]
+    },
+    "readme/readme-hero-de.png": {
+      "sha256": "c31b9d28dc5971c57b3380f6d2e9cfcddc9c2bf071ce8633aab21a3d48d45d66",
+      "dimensions": [
+        1600,
+        900
+      ]
+    },
+    "readme/terminal-demo.svg": {
+      "sha256": "149ffb601fcff39439e7e46cbdfaaf4eb9514570db09c2200ee74f5437a37f91",
+      "dimensions": [
+        1600,
+        900
+      ]
+    },
+    "readme/terminal-demo.png": {
+      "sha256": "2ab1d1cba26010d58bd3545b2477da9500bc243d57ee33329dcc9db04f3b610b",
+      "dimensions": [
+        1600,
+        900
+      ]
+    },
+    "brand/foreground-mark-monochrome.svg": {
+      "sha256": "cb2ef25ed54ae7921fa2b6d006a50c17e3214987baa4784042f81aeb4dd13cb1",
+      "dimensions": [
+        1024,
+        1024
+      ]
+    }
+  }
+}
