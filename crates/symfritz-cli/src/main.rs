@@ -1538,8 +1538,30 @@ fn prompt_hidden(prompt: &str) -> Result<String, HandlerError> {
     #[cfg(unix)]
     {
         let _echo_guard = TerminalEchoGuard::new()?;
-        let mut value = String::new();
-        let read_result = stdin.read_line(&mut value);
+        // Blocking stdin does not wake for the ctrlc handler on every Unix
+        // platform. Keep the echo guard on this thread so cancellation can
+        // restore the terminal before the process exits.
+        // ponytail: the reader thread may remain blocked until process exit;
+        // use pollable terminal input if this CLI ever continues after cancel.
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let mut value = String::new();
+            let read_result = stdin.read_line(&mut value);
+            let _ = sender.send((read_result, value));
+        });
+        let (read_result, value) = loop {
+            if CANCEL_REQUESTED.load(Ordering::SeqCst) {
+                eprintln!();
+                return Err(HandlerError::cancelled());
+            }
+            match receiver.recv_timeout(Duration::from_millis(50)) {
+                Ok(result) => break result,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(HandlerError::operation("password input stopped"));
+                }
+            }
+        };
         eprintln!();
         read_result
             .map_err(|error| HandlerError::operation(format!("reading password: {error}")))?;

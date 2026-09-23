@@ -33,7 +33,7 @@ const CANCELLED_REQUEST: &str = "request cancelled";
 /// Optional diagnostic sink used for the single fallback warning.
 pub type WarningSink = Arc<dyn Fn(&str) + Send + Sync>;
 
-/// Cooperative cancellation probe consulted before every request dispatch.
+/// Cooperative cancellation probe consulted before dispatch and after a response.
 ///
 /// The CLI installs one probe backed by the shared flag its
 /// SIGINT/SIGTERM/SIGHUP handler sets, so TR-064 and web/AHA requests made
@@ -191,7 +191,7 @@ impl BlockingHttpTransport {
         self.tls_enabled.load(Ordering::Acquire)
     }
 
-    /// Install the shared cancellation probe checked before each dispatch.
+    /// Install the shared cancellation probe checked at request boundaries.
     ///
     /// Cancellation is observed at request boundaries only: a request
     /// already in flight is never torn down mid-read and stays bounded by
@@ -380,7 +380,7 @@ impl Transport for BlockingHttpTransport {
         } else {
             requested.clone()
         };
-        match self.execute(&request, &target) {
+        let result = match self.execute(&request, &target) {
             Ok(response) => Ok(response),
             Err(error)
                 if tls_attempt && is_endpoint_unreachable(&error) && self.allow_http_fallback =>
@@ -403,7 +403,13 @@ impl Transport for BlockingHttpTransport {
                 )))
             }
             Err(error) => Err(TransportError(error.to_string())),
+        };
+        // A signal received while reading a successful response must not
+        // turn into a success payload from any ordinary CLI handler.
+        if self.cancelled() {
+            return Err(TransportError(CANCELLED_REQUEST.to_owned()));
         }
+        result
     }
 }
 
@@ -1320,5 +1326,40 @@ mod tests {
             .expect_err("port 9 must not answer the probe request");
         assert_ne!(reached_network.0, CANCELLED_REQUEST);
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn cancellation_during_response_refuses_success() {
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let signal = Arc::clone(&cancelled);
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 1024];
+            assert!(stream.read(&mut request).unwrap() > 0);
+            signal.store(true, Ordering::SeqCst);
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                .unwrap();
+        });
+        let url = Url::parse(&format!("http://{address}/tr64desc.xml")).unwrap();
+        let mut transport = BlockingHttpTransport::new(HttpTransportConfig::new(
+            Url::parse(&format!("http://{address}")).unwrap(),
+            PinStore::new(std::env::temp_dir().join("symfritz-cancel-response-pins.json")),
+        ))
+        .unwrap();
+        transport.set_cancellation(Arc::new(move || cancelled.load(Ordering::SeqCst)));
+        let result = transport.send(Request {
+            method: Method::Get,
+            url: url.to_string(),
+            headers: BTreeMap::new(),
+            body: Vec::new(),
+            response_limit: 1024,
+        });
+        server.join().unwrap();
+        assert_eq!(result.unwrap_err().0, CANCELLED_REQUEST);
     }
 }

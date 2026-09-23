@@ -56,17 +56,22 @@ provenance; it does not require Go source in the current repository.
 
 Ordinary commands stop cooperatively at operation boundaries: the flag set by
 the shared SIGINT/SIGTERM/SIGHUP handler is checked before a command starts,
-before every HTTP request dispatch — which refuses the authenticated retry
-after a pending Digest challenge — before success output, and before any
+before every HTTP request dispatch and after each response — which refuses
+the authenticated retry after a pending Digest challenge and prevents a
+completed in-flight response from being reported as success — before any
 credential-store operation. Canceled commands exit 130 without success
-output. A request already in flight is not torn down mid-read; it stays
+output. On Unix, hidden terminal input checks the flag at 50 ms intervals;
+the saved terminal echo mode is restored before returning exit 130. A request
+already in flight is not torn down mid-read; it stays
 bounded by `[box].timeout_seconds` (default 15 s, and the reboot regression
 configures 15 s while bounding termination at 20 s). Executable evidence:
 `crates/symfritz-cli/tests/reboot_cancellation.rs` (SIGINT, SIGTERM, SIGHUP —
 exactly one unauthenticated Reboot POST, no authenticated retry, no success
 payload, exit 130, bounded termination), the credential-store guard test in
-`crates/symfritz-cli/src/main.rs`, and the transport boundary test in
-`crates/symfritz-tr064/src/transport.rs`.
+`crates/symfritz-cli/src/main.rs`, and the dispatch/response boundary tests in
+`crates/symfritz-tr064/src/transport.rs`. A local PTY probe verified echo
+restoration and exit 130 for SIGINT, SIGTERM, and SIGHUP; it is not part of
+the portable Rust test suite.
 
 ## Read-only handler slice
 
