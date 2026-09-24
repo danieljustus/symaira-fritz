@@ -43,7 +43,9 @@ impl TestDir {
     fn new() -> Self {
         let mut nonce = [0_u8; 16];
         getrandom::fill(&mut nonce).expect("random test directory nonce");
-        let path = std::env::temp_dir().join(format!(
+        let base = std::env::temp_dir();
+        fs::create_dir_all(&base).expect("create test temp parent");
+        let path = base.join(format!(
             "symfritz-pin-fixture-{}-{}",
             std::process::id(),
             hex::encode(nonce)
