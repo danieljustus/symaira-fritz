@@ -79,7 +79,7 @@ brew install danieljustus/tap/symfritz
 ```bash
 symfritz config init                       # writes ~/.config/symfritz/config.toml
 # edit host/user in the file, then store the password securely:
-symfritz auth login                        # prompts, verifies against the box, stores it
+symfritz auth login                        # reads SYMFRITZ_PASSWORD or prompts, verifies, stores it
 symfritz auth test                         # confirm it resolves and works
 ```
 
@@ -96,8 +96,9 @@ symfritz resolves the password at runtime, in this order (first hit wins):
 3. **macOS Keychain** — set `keychain = true`; service `symfritz`, account = host.
 4. **`password`** plaintext in the config — least secure, convenience only.
 
-`auth login` captures the password once, verifies it, and stores it in the
-Keychain (default on macOS) or symvault (`--symvault fritz.password`). symvault
+`auth login` reads `SYMFRITZ_PASSWORD` when set (otherwise prompts), verifies
+the password, and stores it in the Keychain (default on macOS) or symvault
+(`--symvault fritz.password`). symvault
 and the Keychain are reached through their CLIs, so symfritz has **no build
 dependency** on either and works fine when they are absent.
 
