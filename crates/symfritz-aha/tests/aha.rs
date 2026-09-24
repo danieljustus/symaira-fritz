@@ -252,3 +252,20 @@ fn cpu_query_missing_key_preserves_go_error_string() {
         "query.lua response missing CPUTEMP key"
     );
 }
+
+#[test]
+fn device_list_fetches_one_document_for_devices_and_groups() {
+    let mut client = client([
+        Ok(login("sid")),
+        Ok(response(
+            200,
+            "<devicelist><device identifier=\"ain-1\"><name>Plug</name></device></devicelist>",
+        )),
+    ]);
+    let list = client.device_list().unwrap();
+    assert_eq!(list.devices.len(), 1);
+    assert!(list.groups.is_empty());
+    let requests = &client.transport_mut().requests;
+    assert_eq!(requests.len(), 2);
+    assert!(requests[1].url.contains("switchcmd=getdevicelistinfos"));
+}

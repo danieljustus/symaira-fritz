@@ -94,12 +94,11 @@ credential trust/test/store paths. The handlers use the shared Rust
 TR-064/AHA/core implementations; configured secret backends fail closed. The
 black-box harness exercises every non-MCP family with a strict local fake box,
 including mutation request sequences and an isolated SymVault executable.
-Interactive `auth login` is deliberately excluded from this non-interactive
-harness because terminal echo/prompt behavior is platform-specific; the
-injected credential and secret-resolution tests in
-`symfritz-core/tests/auth_fixtures.rs` and `internal/secret` cover the
-login/authentication logic without touching a real Keychain or backend. MCP
-remains reserved for issue #191.
+At this stage, interactive `auth login` was excluded from the harness because
+terminal echo/prompt behavior is platform-specific. The current differential
+harness covers text/JSON/YAML login through a PTY (or an injected credential on
+Windows) and a mock secret backend without touching a real Keychain. MCP
+framing was completed separately in issue #191.
 
 ## Final CLI parity scope and gaps
 
@@ -124,8 +123,9 @@ non-MCP CLI harness.
 ## Approved target changes
 
 `testdata/port/divergence-policy.json` is the machine-readable exception
-ledger. It pins the Go oracle, requires one executable Rust test or strict
-harness case per ID, and permits only case-specific differences. The retained
+ledger. It pins the Go oracle and requires every stable ID to declare an exact
+scope, rationale, and executable Rust assertion. Harness rules are additionally
+case-scoped, and only those declared differences are normalized. The retained
 changes are: opt-in HTTP fallback and its config block; advertised guest-WLAN
 discovery; a single combined AHA home-list fetch with an empty absent collection; post-filter call limits;
 device-local call/log clocks; current FRITZ!OS mesh UID aliases; strict host

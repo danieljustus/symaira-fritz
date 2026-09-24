@@ -2010,7 +2010,10 @@ fn _model_markers(_: (DslLineStats, LogEvent, Radio, WlanClient)) {}
 
 #[cfg(test)]
 mod tests {
-    use super::{duration_text, format_bit_rate, format_speed, service_by_shortcut, truncate};
+    use super::{
+        ErrorDetails, ErrorOutput, HandlerError, duration_text, format_bit_rate, format_speed,
+        service_by_shortcut, truncate,
+    };
 
     #[test]
     fn formatting_matches_go_boundaries() {
@@ -2042,6 +2045,29 @@ mod tests {
             assert!(service_by_shortcut(&shortcut.to_ascii_uppercase()).is_some());
         }
         assert!(service_by_shortcut("unknown").is_none());
+    }
+
+    #[test]
+    fn structured_errors_are_machine_readable() {
+        let error = HandlerError::auth("invalid credential: credential rejected by box");
+        let value = serde_json::to_value(ErrorOutput {
+            error: ErrorDetails {
+                kind: &error.kind,
+                service: &error.service,
+                action: &error.action,
+                raw: &error.raw,
+                message: &error.message,
+            },
+        })
+        .unwrap();
+        assert_eq!(value["error"]["kind"], "auth");
+        assert_eq!(
+            value["error"]["message"],
+            "invalid credential: credential rejected by box"
+        );
+        assert_eq!(value["error"].get("service"), None);
+        assert_eq!(value["error"].get("action"), None);
+        assert!(serde_json::to_string(&value).unwrap().starts_with('{'));
     }
 }
 
