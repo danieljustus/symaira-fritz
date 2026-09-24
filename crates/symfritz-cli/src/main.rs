@@ -1328,11 +1328,23 @@ fn verify_credential(box_config: &BoxConfig, password: &str) -> (bool, bool) {
 
 fn execute_auth_login(args: AuthStoreArgs, format: OutputFormat) -> Result<(), HandlerError> {
     let config = symfritz_core::config::load_config().map_err(config_error)?;
-    let password = prompt_hidden(&format!(
-        "FRITZ!Box password for {}@{}: ",
-        or_dash(&config.box_config.user),
-        config.box_config.host
-    ))?;
+    use std::io::IsTerminal;
+    let password = if !std::io::stdin().is_terminal() {
+        match std::env::var("SYMFRITZ_PASSWORD") {
+            Ok(password) if !password.is_empty() => password,
+            _ => prompt_hidden(&format!(
+                "FRITZ!Box password for {}@{}: ",
+                or_dash(&config.box_config.user),
+                config.box_config.host
+            ))?,
+        }
+    } else {
+        prompt_hidden(&format!(
+            "FRITZ!Box password for {}@{}: ",
+            or_dash(&config.box_config.user),
+            config.box_config.host
+        ))?
+    };
     if password.trim().is_empty() {
         return Err(HandlerError::config("empty password"));
     }
@@ -1932,7 +1944,10 @@ fn _model_markers(_: (DslLineStats, LogEvent, Radio, WlanClient)) {}
 
 #[cfg(test)]
 mod tests {
-    use super::{duration_text, format_bit_rate, format_speed, service_by_shortcut, truncate};
+    use super::{
+        ErrorDetails, ErrorOutput, HandlerError, duration_text, format_bit_rate, format_speed,
+        service_by_shortcut, truncate,
+    };
 
     #[test]
     fn formatting_matches_go_boundaries() {
@@ -1964,6 +1979,29 @@ mod tests {
             assert!(service_by_shortcut(&shortcut.to_ascii_uppercase()).is_some());
         }
         assert!(service_by_shortcut("unknown").is_none());
+    }
+
+    #[test]
+    fn structured_errors_are_machine_readable() {
+        let error = HandlerError::auth("invalid credential: credential rejected by box");
+        let value = serde_json::to_value(ErrorOutput {
+            error: ErrorDetails {
+                kind: &error.kind,
+                service: &error.service,
+                action: &error.action,
+                raw: &error.raw,
+                message: &error.message,
+            },
+        })
+        .unwrap();
+        assert_eq!(value["error"]["kind"], "auth");
+        assert_eq!(
+            value["error"]["message"],
+            "invalid credential: credential rejected by box"
+        );
+        assert_eq!(value["error"].get("service"), None);
+        assert_eq!(value["error"].get("action"), None);
+        assert!(serde_json::to_string(&value).unwrap().starts_with('{'));
     }
 }
 

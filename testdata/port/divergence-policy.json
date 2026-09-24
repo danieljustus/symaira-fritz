@@ -122,14 +122,22 @@
         "id": "CAP-CALL-LOG-LOCAL-WALLCLOCK",
         "cases": ["calls", "calls-yaml", "log", "log-yaml"],
         "kind": "remove_one_terminal_z",
-        "keys": ["Date", "Time"],
+        "paths": {
+          "calls": ["$[0].Date"],
+          "calls-yaml": ["$[0].Date"],
+          "log": ["$[0].Time"],
+          "log-yaml": ["$[0].Time"]
+        },
         "test": "symfritz-tr064/tests/remaining_capabilities.rs::box_timestamps_are_not_labelled_utc"
       },
       {
         "id": "CAP-AHA-HOME-LIST-SINGLE-FETCH",
         "cases": ["home-list-aha", "home-list-yaml"],
         "kind": "null_to_empty_array",
-        "keys": ["groups"],
+        "paths": {
+          "home-list-aha": ["$.groups"],
+          "home-list-yaml": ["$.groups"]
+        },
         "test": "scripts/cli-differential.py::run_suite home-list-aha/home-list-yaml"
       }
     ],
@@ -152,68 +160,328 @@
         },
         "test": "scripts/cli-differential.py::run_suite auth-unauthorized"
       }
+    ],
+    "structured_success_cases": [
+      {
+        "id": "CLI-STRUCTURED-MUTATION-OUTPUT",
+        "cases": [
+          "auth-test-http",
+          "auth-trust",
+          "auth-login",
+          "auth-store-symvault",
+          "wol",
+          "dial",
+          "hangup",
+          "guest-on",
+          "guest-off",
+          "guest-on-explicit-index",
+          "home-switch-on",
+          "home-temp",
+          "home-switch-tr064",
+          "reboot-confirmed"
+        ],
+        "schemas": {
+          "auth-test-http": {
+            "required": ["ok", "action", "credential_source", "host", "user", "session_ok", "tr064_ok", "valid"],
+            "properties": {
+              "ok": {"type": "boolean", "const": true},
+              "action": {"type": "string", "const": "auth_test"},
+              "credential_source": {"type": "string", "non_empty": true},
+              "host": {"type": "string", "non_empty": true},
+              "user": {"type": "string", "non_empty": true},
+              "session_ok": {"type": "boolean"},
+              "tr064_ok": {"type": "boolean"},
+              "valid": {"type": "boolean", "const": true}
+            }
+          },
+          "auth-trust": {
+            "required": ["ok", "action", "host", "reset"],
+            "properties": {
+              "ok": {"type": "boolean", "const": true},
+              "action": {"type": "string", "const": "auth_trust"},
+              "host": {"type": "string", "non_empty": true},
+              "reset": {"type": "boolean"}
+            }
+          },
+          "auth-login": {
+            "required": ["ok", "action", "backend", "session_ok", "tr064_ok", "stored"],
+            "properties": {
+              "ok": {"type": "boolean", "const": true},
+              "action": {"type": "string", "const": "auth_login"},
+              "backend": {"type": "string", "non_empty": true},
+              "session_ok": {"type": "boolean"},
+              "tr064_ok": {"type": "boolean"},
+              "stored": {"type": "boolean", "const": true}
+            }
+          },
+          "auth-store-symvault": {
+            "required": ["ok", "action", "backend", "stored"],
+            "properties": {
+              "ok": {"type": "boolean", "const": true},
+              "action": {"type": "string", "const": "auth_store"},
+              "backend": {"type": "string", "non_empty": true},
+              "stored": {"type": "boolean", "const": true}
+            }
+          },
+          "wol": {
+            "required": ["ok", "action", "mac"],
+            "properties": {
+              "ok": {"type": "boolean", "const": true},
+              "action": {"type": "string", "const": "wol"},
+              "mac": {"type": "string", "non_empty": true}
+            }
+          },
+          "dial": {
+            "required": ["ok", "action", "number"],
+            "properties": {
+              "ok": {"type": "boolean", "const": true},
+              "action": {"type": "string", "const": "dial"},
+              "number": {"type": "string", "non_empty": true}
+            }
+          },
+          "hangup": {
+            "required": ["ok", "action"],
+            "properties": {
+              "ok": {"type": "boolean", "const": true},
+              "action": {"type": "string", "const": "hangup"}
+            }
+          },
+          "guest-on": {
+            "required": ["ok", "action", "index", "enabled"],
+            "properties": {
+              "ok": {"type": "boolean", "const": true},
+              "action": {"type": "string", "const": "wlan_guest"},
+              "index": {"type": "integer"},
+              "enabled": {"type": "boolean"}
+            }
+          },
+          "guest-off": {
+            "required": ["ok", "action", "index", "enabled"],
+            "properties": {
+              "ok": {"type": "boolean", "const": true},
+              "action": {"type": "string", "const": "wlan_guest"},
+              "index": {"type": "integer"},
+              "enabled": {"type": "boolean"}
+            }
+          },
+          "guest-on-explicit-index": {
+            "required": ["ok", "action", "index", "enabled"],
+            "properties": {
+              "ok": {"type": "boolean", "const": true},
+              "action": {"type": "string", "const": "wlan_guest"},
+              "index": {"type": "integer"},
+              "enabled": {"type": "boolean"}
+            }
+          },
+          "home-switch-on": {
+            "required": ["ok", "action", "ain", "state"],
+            "properties": {
+              "ok": {"type": "boolean", "const": true},
+              "action": {"type": "string", "const": "home_switch"},
+              "ain": {"type": "string", "non_empty": true},
+              "state": {"type": "string", "const": "on"}
+            }
+          },
+          "home-temp": {
+            "required": ["ok", "action", "ain", "temperature"],
+            "properties": {
+              "ok": {"type": "boolean", "const": true},
+              "action": {"type": "string", "const": "home_temp"},
+              "ain": {"type": "string", "non_empty": true},
+              "temperature": {"type": "string", "non_empty": true}
+            }
+          },
+          "home-switch-tr064": {
+            "required": ["ok", "action", "ain", "state"],
+            "properties": {
+              "ok": {"type": "boolean", "const": true},
+              "action": {"type": "string", "const": "home_switch"},
+              "ain": {"type": "string", "non_empty": true},
+              "state": {"type": "string", "const": "on"}
+            }
+          },
+          "reboot-confirmed": {
+            "required": ["ok", "action", "triggered"],
+            "properties": {
+              "ok": {"type": "boolean", "const": true},
+              "action": {"type": "string", "const": "reboot"},
+              "triggered": {"type": "boolean", "const": true}
+            }
+          }
+        },
+        "test": "crates/symfritz-cli/tests/cli_contract.rs::structured_success_outputs_use_real_cli"
+      }
     ]
   },
   "approved_target_changes": [
     {
       "id": "TLS-HTTP-FALLBACK-OPT-IN",
+      "scope": {
+        "kind": "config-template-and-transport",
+        "cases": ["config-init-fresh", "config-init-existing-force"]
+      },
+      "rationale": "Rust refuses HTTP downgrade unless explicitly configured.",
       "surface": "transport",
       "reason": "Rust refuses HTTP downgrade unless explicitly configured.",
-      "test": "symfritz-tr064/tests/tls_transport.rs"
+      "test": "crates/symfritz-tr064/tests/tls_transport.rs::endpoint_unreachable_requires_explicit_http_fallback_opt_in",
+      "rust_assertion": {
+        "path": "crates/symfritz-tr064/tests/tls_transport.rs",
+        "test": "endpoint_unreachable_requires_explicit_http_fallback_opt_in",
+        "command": ["cargo", "test", "-p", "symfritz-tr064", "--test", "tls_transport", "endpoint_unreachable_requires_explicit_http_fallback_opt_in", "--locked"]
+      }
     },
     {
       "id": "CAP-WLAN-ADVERTISED-INDEX",
+      "scope": {
+        "kind": "help-and-request-trace",
+        "paths": [
+          "symfritz wlan",
+          "symfritz wlan clients",
+          "symfritz wlan guest",
+          "symfritz wlan guest off",
+          "symfritz wlan guest on",
+          "symfritz wlan guest status",
+          "symfritz wlan radios"
+        ],
+        "cases": ["wlan-radios", "wlan-radios-yaml", "wlan-guest-status", "guest-on", "guest-off"]
+      },
+      "rationale": "Rust discovers advertised WLANConfiguration services so tri-band boxes do not target a production radio as guest WLAN.",
       "surface": "CLI and TR-064 requests",
       "reason": "Rust discovers advertised WLANConfiguration services so tri-band boxes do not target a production radio as guest WLAN.",
-      "test": "symfritz-tr064/tests/remaining_capabilities.rs::guest_wlan_index_follows_the_box_instead_of_assuming_three"
+      "test": "crates/symfritz-tr064/tests/remaining_capabilities.rs::guest_wlan_index_follows_the_box_instead_of_assuming_three",
+      "rust_assertion": {
+        "path": "crates/symfritz-tr064/tests/remaining_capabilities.rs",
+        "test": "guest_wlan_index_follows_the_box_instead_of_assuming_three",
+        "command": ["cargo", "test", "-p", "symfritz-tr064", "--test", "remaining_capabilities", "guest_wlan_index_follows_the_box_instead_of_assuming_three", "--locked"]
+      }
     },
     {
       "id": "CAP-AHA-HOME-LIST-SINGLE-FETCH",
+      "scope": {
+        "kind": "AHA home-list request-and-output",
+        "cases": ["home-list-aha", "home-list-yaml"]
+      },
+      "rationale": "The Go command fetched the same combined AHA device/group document twice and rendered an absent group list as null; Rust obtains the document once and renders an absent collection as an empty list.",
       "surface": "AHA home-list request sequence",
       "reason": "The Go command fetched the same combined AHA device/group document twice and rendered an absent group list as null; Rust obtains the document once and renders an absent collection as an empty list.",
-      "test": "scripts/cli-differential.py::run_suite home-list-aha/home-list-yaml"
+      "test": "crates/symfritz-aha/tests/aha.rs::device_list_fetches_one_document_for_devices_and_groups",
+      "rust_assertion": {
+        "path": "crates/symfritz-aha/tests/aha.rs",
+        "test": "device_list_fetches_one_document_for_devices_and_groups",
+        "command": ["cargo", "test", "-p", "symfritz-aha", "--test", "aha", "device_list_fetches_one_document_for_devices_and_groups", "--locked"]
+      }
     },
     {
       "id": "CAP-CALL-LIMIT-AFTER-FILTER",
+      "scope": {
+        "kind": "calls-filter-before-limit",
+        "cases": ["calls-filtered-limit"]
+      },
+      "rationale": "Rust applies the requested limit after type filtering because the router applies max before the filter.",
       "surface": "call list query and result set",
       "reason": "Rust applies the requested limit after type filtering because the router applies max before the filter.",
-      "test": "scripts/cli-differential.py::run_calls_filter_limit_target"
+      "test": "crates/symfritz-tr064/tests/remaining_capabilities.rs::calls_limit_counts_matching_calls_not_router_rows",
+      "rust_assertion": {
+        "path": "crates/symfritz-tr064/tests/remaining_capabilities.rs",
+        "test": "calls_limit_counts_matching_calls_not_router_rows",
+        "command": ["cargo", "test", "-p", "symfritz-tr064", "--test", "remaining_capabilities", "calls_limit_counts_matching_calls_not_router_rows", "--locked"]
+      }
     },
     {
       "id": "CAP-CALL-LOG-LOCAL-WALLCLOCK",
+      "scope": {
+        "kind": "call-and-log-timestamps",
+        "cases": ["calls", "calls-yaml", "log", "log-yaml"]
+      },
+      "rationale": "Rust does not label a device-local wall clock as UTC when FRITZ!OS supplies no timezone metadata.",
       "surface": "call and log timestamps",
       "reason": "Rust does not label a device-local wall clock as UTC when FRITZ!OS supplies no timezone metadata.",
-      "test": "symfritz-tr064/tests/remaining_capabilities.rs::box_timestamps_are_not_labelled_utc"
+      "test": "crates/symfritz-tr064/tests/remaining_capabilities.rs::box_timestamps_are_not_labelled_utc",
+      "rust_assertion": {
+        "path": "crates/symfritz-tr064/tests/remaining_capabilities.rs",
+        "test": "box_timestamps_are_not_labelled_utc",
+        "command": ["cargo", "test", "-p", "symfritz-tr064", "--test", "remaining_capabilities", "box_timestamps_are_not_labelled_utc", "--locked"]
+      }
     },
     {
       "id": "CAP-MESH-UID-ALIASES",
+      "scope": {
+        "kind": "mesh-parser-compatibility",
+        "cases": ["mesh-path-and-sid", "mesh-yaml"]
+      },
+      "rationale": "Rust accepts the node_1_uid and node_2_uid keys emitted by current FRITZ!OS while preserving legacy serialized names.",
       "surface": "mesh parser",
       "reason": "Rust accepts the node_1_uid and node_2_uid keys emitted by current FRITZ!OS while preserving legacy serialized names.",
-      "test": "symfritz-tr064/tests/mesh_optional.rs::mesh_links_resolve_peers_from_the_uid_keys_fritzos_actually_sends"
+      "test": "crates/symfritz-tr064/tests/mesh_optional.rs::mesh_links_resolve_peers_from_the_uid_keys_fritzos_actually_sends",
+      "rust_assertion": {
+        "path": "crates/symfritz-tr064/tests/mesh_optional.rs",
+        "test": "mesh_links_resolve_peers_from_the_uid_keys_fritzos_actually_sends",
+        "command": ["cargo", "test", "-p", "symfritz-tr064", "--test", "mesh_optional", "mesh_links_resolve_peers_from_the_uid_keys_fritzos_actually_sends", "--locked"]
+      }
     },
     {
       "id": "SEC-HOST-SELECTOR-EXACTLY-ONE",
+      "scope": {
+        "kind": "CLI-host-selector-validation",
+        "cases": ["hosts get", "wol"]
+      },
+      "rationale": "Rust rejects zero or conflicting host selectors before router access.",
       "surface": "hosts get and wol argument validation",
       "reason": "Rust rejects zero or conflicting host selectors before router access.",
-      "test": "symfritz-cli/tests/cli_contract.rs::selector_validation_rejects_zero_and_multiple_cli_selectors_before_execution"
+      "test": "crates/symfritz-cli/tests/cli_contract.rs::selector_validation_rejects_zero_and_multiple_cli_selectors_before_execution",
+      "rust_assertion": {
+        "path": "crates/symfritz-cli/tests/cli_contract.rs",
+        "test": "selector_validation_rejects_zero_and_multiple_cli_selectors_before_execution",
+        "command": ["cargo", "test", "-p", "symfritz-cli", "--test", "cli_contract", "selector_validation_rejects_zero_and_multiple_cli_selectors_before_execution", "--locked"]
+      }
     },
     {
       "id": "MCP-HOME-SWITCH-BOOLEAN",
+      "scope": {
+        "kind": "MCP-input-validation",
+        "cases": ["home_switch"]
+      },
+      "rationale": "Rust requires a boolean on field before capability dispatch.",
       "surface": "MCP input validation",
       "reason": "Rust requires a boolean on field before capability dispatch.",
-      "test": "symfritz-mcp/src/lib.rs"
+      "test": "crates/symfritz-mcp/src/lib.rs::home_switch_rejects_invalid_on_without_calling_capability",
+      "rust_assertion": {
+        "path": "crates/symfritz-mcp/src/lib.rs",
+        "test": "home_switch_rejects_invalid_on_without_calling_capability",
+        "command": ["cargo", "test", "-p", "symfritz-mcp", "--lib", "home_switch_rejects_invalid_on_without_calling_capability", "--locked"]
+      }
     },
     {
       "id": "CLI-STRUCTURED-MUTATION-OUTPUT",
+      "scope": {
+        "kind": "structured-success-object",
+        "cases": ["auth-test-http", "auth-trust", "auth-login", "auth-store-symvault", "wol", "dial", "hangup", "guest-on", "guest-off", "guest-on-explicit-index", "home-switch-on", "home-temp", "home-switch-tr064", "reboot-confirmed"]
+      },
+      "rationale": "Rust exposes the project-wide structured success object for mutation and credential commands; it is a target contract extension, not Go-byte parity.",
       "surface": "JSON and YAML mutation responses",
       "reason": "Rust exposes the project-wide structured success object for mutation and credential commands; it is a target contract extension, not Go-byte parity.",
-      "test": "scripts/cli-differential.py::run_structured_matrix"
+      "test": "crates/symfritz-cli/tests/cli_contract.rs::structured_success_outputs_use_real_cli",
+      "rust_assertion": {
+        "path": "crates/symfritz-cli/tests/cli_contract.rs",
+        "test": "structured_success_outputs_use_real_cli",
+        "command": ["cargo", "test", "-p", "symfritz-cli", "--test", "cli_contract", "structured_success_outputs_use_real_cli", "--locked"]
+      }
     },
     {
       "id": "CLI-STRUCTURED-ERROR-CLEAN",
+      "scope": {
+        "kind": "structured-error-stdout",
+        "cases": ["auth-unauthorized"]
+      },
+      "rationale": "Rust emits only the requested structured error document; the Go oracle prepended human diagnostics and thereby broke machine-readable output.",
       "surface": "structured CLI error stdout",
       "reason": "Rust emits only the requested structured error document; the Go oracle prepended human diagnostics and thereby broke machine-readable output.",
-      "test": "scripts/cli-differential.py::run_suite auth-unauthorized"
+      "test": "crates/symfritz-cli/src/main.rs::structured_errors_are_machine_readable",
+      "rust_assertion": {
+        "path": "crates/symfritz-cli/src/main.rs",
+        "test": "structured_errors_are_machine_readable",
+        "command": ["cargo", "test", "-p", "symfritz-cli", "--bin", "symfritz", "structured_errors_are_machine_readable", "--locked"]
+      }
     }
   ]
 }

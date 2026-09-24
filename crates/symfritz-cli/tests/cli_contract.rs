@@ -1,6 +1,6 @@
 #![deny(unsafe_code)]
 
-use std::process::Command as ProcessCommand;
+use std::{fs, process::Command as ProcessCommand};
 
 use clap::Command;
 use serde::Deserialize;
@@ -368,4 +368,40 @@ fn selector_validation_accepts_equals_syntax() {
             "parser rejected valid equals syntax: {args:?}"
         );
     }
+}
+
+#[test]
+fn structured_success_outputs_use_real_cli() {
+    let binary = env!("CARGO_BIN_EXE_symfritz");
+    let home =
+        std::env::temp_dir().join(format!("symfritz-structured-output-{}", std::process::id()));
+    fs::create_dir_all(&home).expect("create isolated HOME");
+
+    let output = ProcessCommand::new(binary)
+        .args(["auth", "trust", "--reset", "no-pin-recorded", "--json"])
+        .env("HOME", &home)
+        .env("USERPROFILE", &home)
+        .env_remove("SYMFRITZ_HOST")
+        .env_remove("SYMFRITZ_BOX_HOST")
+        .output()
+        .expect("run real auth trust handler");
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty());
+
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("real handler emitted JSON");
+    let object = value.as_object().expect("structured success object");
+    assert_eq!(object.len(), 4, "minimal ok-only output must not pass");
+    assert_eq!(object.get("ok"), Some(&serde_json::Value::Bool(true)));
+    assert_eq!(
+        object.get("action").and_then(|value| value.as_str()),
+        Some("auth_trust")
+    );
+    assert_eq!(
+        object.get("host").and_then(|value| value.as_str()),
+        Some("no-pin-recorded")
+    );
+    assert_eq!(object.get("reset"), Some(&serde_json::Value::Bool(false)));
+
+    fs::remove_dir_all(home).expect("remove isolated HOME");
 }

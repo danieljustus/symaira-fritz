@@ -103,8 +103,9 @@ non-MCP CLI harness.
 ## Approved target changes
 
 `testdata/port/divergence-policy.json` is the machine-readable exception
-ledger. It pins the Go oracle, requires one executable Rust test or strict
-harness case per ID, and permits only case-specific differences. The retained
+ledger. It pins the Go oracle and requires every stable ID to declare an exact
+scope, rationale, and executable Rust assertion. Harness rules are additionally
+case-scoped, and only those declared differences are normalized. The retained
 changes are: opt-in HTTP fallback and its config block; advertised guest-WLAN
 discovery; a single combined AHA home-list fetch with an empty absent collection; post-filter call limits;
 device-local call/log clocks; current FRITZ!OS mesh UID aliases; strict host
