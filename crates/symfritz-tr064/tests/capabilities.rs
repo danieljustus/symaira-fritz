@@ -8,8 +8,8 @@ use std::{
 
 use serde::Deserialize;
 use symfritz_tr064::{
-    Client, CnonceSource, DiagnoseOptions, Method, PortProbe, Request, Response, Service,
-    Transport, TransportError, WlanClient,
+    Client, CnonceSource, DiagnoseOptions, MAX_TABLE_ENTRIES, Method, PortProbe, Request, Response,
+    Service, Transport, TransportError, WlanClient,
 };
 
 #[derive(Default)]
@@ -64,6 +64,16 @@ fn unauthorized() -> Response {
     Response {
         status: 500,
         body: b"<s:Fault><detail><UPnPError><errorCode>606</errorCode><errorDescription>unauthorized</errorDescription></UPnPError></detail></s:Fault>".to_vec(),
+        ..Response::default()
+    }
+}
+
+/// A non-200 that fails `bulk_hosts`, so `hosts()` falls back to the indexed
+/// path under test.
+fn bulk_hosts_failure() -> Response {
+    Response {
+        status: 500,
+        body: b"not a SOAP fault".to_vec(),
         ..Response::default()
     }
 }
@@ -461,4 +471,201 @@ fn authenticated_get_status_errors_redact_query_values() {
     let error = client.fetch_mesh_candidate(&url).unwrap_err().to_string();
     assert!(!error.contains("secret-sid"));
     assert!(error.contains("sid=REDACTED"));
+}
+
+#[test]
+fn host_index_count_within_bound_returns_complete_ordered_hosts() {
+    let mut client = make_client([
+        bulk_hosts_failure(),
+        soap("GetHostNumberOfEntries", &[("NewHostNumberOfEntries", "2")]),
+        soap("GetGenericHostEntry", &[("NewHostName", "first")]),
+        soap("GetGenericHostEntry", &[("NewHostName", "second")]),
+    ]);
+    let hosts = client.hosts().unwrap();
+    let names: Vec<_> = hosts.iter().map(|host| host.name.as_str()).collect();
+    assert_eq!(names, ["first", "second"]);
+    assert_eq!(client.into_transport().requests.len(), 4);
+}
+
+#[test]
+fn host_index_count_at_bound_returns_complete_ordered_hosts() {
+    let count = MAX_TABLE_ENTRIES.to_string();
+    let mut responses = vec![
+        bulk_hosts_failure(),
+        soap(
+            "GetHostNumberOfEntries",
+            &[("NewHostNumberOfEntries", &count)],
+        ),
+    ];
+    responses.extend((0..MAX_TABLE_ENTRIES).map(|index| {
+        soap(
+            "GetGenericHostEntry",
+            &[("NewHostName", &format!("host-{index:04}"))],
+        )
+    }));
+    let mut client = make_client(responses);
+    let hosts = client.hosts().unwrap();
+    assert_eq!(hosts.len(), MAX_TABLE_ENTRIES);
+    for (index, host) in hosts.iter().enumerate() {
+        assert_eq!(host.name, format!("host-{index:04}"));
+    }
+    assert_eq!(
+        client.into_transport().requests.len(),
+        2 + MAX_TABLE_ENTRIES
+    );
+}
+
+#[test]
+fn host_index_count_rejections_precede_allocation_and_index_requests() {
+    let limit = MAX_TABLE_ENTRIES.to_string();
+    for value in [usize::MAX.to_string(), (MAX_TABLE_ENTRIES + 1).to_string()] {
+        let mut client = make_client([
+            bulk_hosts_failure(),
+            soap(
+                "GetHostNumberOfEntries",
+                &[("NewHostNumberOfEntries", &value)],
+            ),
+        ]);
+        let error = client.hosts().unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("NewHostNumberOfEntries"), "{message}");
+        assert!(message.contains(&limit), "{message}");
+        assert_eq!(
+            symfritz_tr064::error_kind(&error),
+            symfritz_tr064::ErrorKind::Transport
+        );
+        // Bulk probe plus count query only: no GetGenericHostEntry storm.
+        assert_eq!(client.into_transport().requests.len(), 2);
+    }
+
+    for value in ["not-a-count", "-1"] {
+        let mut client = make_client([
+            bulk_hosts_failure(),
+            soap(
+                "GetHostNumberOfEntries",
+                &[("NewHostNumberOfEntries", value)],
+            ),
+        ]);
+        let error = client.hosts().unwrap_err();
+        assert!(
+            error.to_string().contains("invalid NewHostNumberOfEntries"),
+            "{error}"
+        );
+        assert_eq!(client.into_transport().requests.len(), 2);
+    }
+
+    let mut client = make_client([bulk_hosts_failure(), soap("GetHostNumberOfEntries", &[])]);
+    let error = client.hosts().unwrap_err();
+    assert!(
+        error.to_string().contains("NewHostNumberOfEntries missing"),
+        "{error}"
+    );
+    assert_eq!(client.into_transport().requests.len(), 2);
+}
+
+#[test]
+fn wlan_association_count_at_bound_returns_complete_ordered_clients() {
+    let count = MAX_TABLE_ENTRIES.to_string();
+    let mut responses = vec![soap(
+        "GetTotalAssociations",
+        &[("NewTotalAssociations", &count)],
+    )];
+    responses.extend((0..MAX_TABLE_ENTRIES).map(|index| {
+        soap(
+            "GetGenericAssociatedDeviceInfo",
+            &[
+                (
+                    "NewAssociatedDeviceMACAddress",
+                    &format!("aa:bb:cc:dd:{:02}:{:02}", index >> 8, index & 0xff),
+                ),
+                ("NewX_AVM-DE_SignalStrength", &index.to_string()),
+            ],
+        )
+    }));
+    let mut client = make_client(responses);
+    let clients = client.wlan_clients(1).unwrap();
+    assert_eq!(clients.len(), MAX_TABLE_ENTRIES);
+    for (index, entry) in clients.iter().enumerate() {
+        assert_eq!(entry.radio_index, 1);
+        assert_eq!(entry.signal, index.to_string());
+    }
+    assert_eq!(
+        client.into_transport().requests.len(),
+        1 + MAX_TABLE_ENTRIES
+    );
+}
+
+#[test]
+fn wlan_association_count_rejections_precede_allocation_and_index_requests() {
+    let limit = MAX_TABLE_ENTRIES.to_string();
+    for value in [usize::MAX.to_string(), (MAX_TABLE_ENTRIES + 1).to_string()] {
+        let mut client = make_client([soap(
+            "GetTotalAssociations",
+            &[("NewTotalAssociations", &value)],
+        )]);
+        let error = client.wlan_clients(1).unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("NewTotalAssociations"), "{message}");
+        assert!(message.contains(&limit), "{message}");
+        assert_eq!(
+            symfritz_tr064::error_kind(&error),
+            symfritz_tr064::ErrorKind::Transport
+        );
+        // Count query only: no GetGenericAssociatedDeviceInfo index storm.
+        assert_eq!(client.into_transport().requests.len(), 1);
+    }
+
+    for value in ["not-a-count", "-1"] {
+        let mut client = make_client([soap(
+            "GetTotalAssociations",
+            &[("NewTotalAssociations", value)],
+        )]);
+        let error = client.wlan_clients(1).unwrap_err();
+        assert!(
+            error.to_string().contains("invalid NewTotalAssociations"),
+            "{error}"
+        );
+        assert_eq!(client.into_transport().requests.len(), 1);
+    }
+
+    let mut client = make_client([soap("GetTotalAssociations", &[])]);
+    let error = client.wlan_clients(1).unwrap_err();
+    assert!(
+        error.to_string().contains("NewTotalAssociations missing"),
+        "{error}"
+    );
+    assert_eq!(client.into_transport().requests.len(), 1);
+}
+
+#[test]
+fn wlan_aggregate_controls_a_rejected_radio_count() {
+    let mut client = make_client([
+        soap("GetInfo", &[("NewSSID", "net-2g"), ("NewEnable", "1")]),
+        soap("GetInfo", &[("NewSSID", "net-5g"), ("NewEnable", "1")]),
+        soap("GetTotalAssociations", &[("NewTotalAssociations", "1")]),
+        soap(
+            "GetGenericAssociatedDeviceInfo",
+            &[
+                ("NewAssociatedDeviceMACAddress", "aa:bb:cc:dd:ee:01"),
+                ("NewAssociatedDeviceIPAddress", "192.168.188.10"),
+            ],
+        ),
+        soap(
+            "GetTotalAssociations",
+            &[("NewTotalAssociations", &usize::MAX.to_string())],
+        ),
+    ]);
+    let error = client.all_wlan_clients(2).unwrap_err();
+    assert!(matches!(
+        error,
+        symfritz_tr064::ClientError::TableEnumeration(_)
+    ));
+    assert!(error.to_string().contains("NewTotalAssociations"));
+    assert_eq!(
+        symfritz_tr064::error_kind(&error),
+        symfritz_tr064::ErrorKind::Transport
+    );
+    // The previously collected radio 1 client must not be reported as a
+    // complete successful aggregate after radio 2 rejects its count.
+    assert_eq!(client.into_transport().requests.len(), 5);
 }

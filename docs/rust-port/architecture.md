@@ -43,6 +43,13 @@ binaries as black boxes.
 
 1. FRITZ!OS legacy MD5 uses UTF-16LE and has an official non-ASCII vector.
 2. Modern login uses two PBKDF2-HMAC-SHA256 rounds with hex-decoded salts.
+   Both iteration fields are validated against `MAX_PBKDF2_ITERATIONS`
+   (1,000,000 per field, set from AVM's documented 10000/2000 example, live
+   FRITZ!Box captures up to 60000/6000, and headroom above the 600,000
+   iterations OWASP recommends for PBKDF2-HMAC-SHA256) before either KDF
+   starts. Excessive counts are rejected with
+   `ChallengeError::Pbkdf2IterationCountOutOfBounds`, so a hostile challenge
+   can no longer request up to 2 x u32::MAX iterations.
 3. TR-064 requires HTTP Digest MD5 with qop selection, random cnonce, and an
    incrementing nonce count.
 4. TLS trust is TOFU via persisted SPKI pins; certificate failures must never
