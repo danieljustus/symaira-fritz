@@ -1363,11 +1363,14 @@ fn verify_credential(box_config: &BoxConfig, password: &str) -> (bool, bool) {
 
 fn execute_auth_login(args: AuthStoreArgs, format: OutputFormat) -> Result<(), HandlerError> {
     let config = symfritz_core::config::load_config().map_err(config_error)?;
-    let password = prompt_hidden(&format!(
-        "FRITZ!Box password for {}@{}: ",
-        or_dash(&config.box_config.user),
-        config.box_config.host
-    ))?;
+    let password = match std::env::var("SYMFRITZ_PASSWORD") {
+        Ok(password) if !password.is_empty() => password,
+        _ => prompt_hidden(&format!(
+            "FRITZ!Box password for {}@{}: ",
+            or_dash(&config.box_config.user),
+            config.box_config.host
+        ))?,
+    };
     if password.trim().is_empty() {
         return Err(HandlerError::config("empty password"));
     }

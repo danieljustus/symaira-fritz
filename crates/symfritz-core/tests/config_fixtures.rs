@@ -4,7 +4,6 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
 };
 
 use serde::Deserialize;
@@ -12,8 +11,6 @@ use symfritz_core::config::{
     BoxConfig, Config, DEFAULT_CONFIG_TOML, default_config_path, init_config, load_config_with,
     map_env, project_config_path,
 };
-
-static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Deserialize)]
 struct Fixture {
@@ -108,13 +105,14 @@ struct TestDir(PathBuf);
 
 impl TestDir {
     fn new(name: &str) -> Self {
-        let id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let mut nonce = [0_u8; 16];
+        getrandom::fill(&mut nonce).expect("random test directory nonce");
         let path = std::env::temp_dir().join(format!(
-            "symfritz-config-test-{}-{name}-{id}",
-            std::process::id()
+            "symfritz-config-test-{}-{name}-{}",
+            std::process::id(),
+            hex::encode(nonce)
         ));
-        let _ = fs::remove_dir_all(&path);
-        fs::create_dir_all(&path).unwrap();
+        fs::create_dir(&path).expect("create new test directory without removing foreign files");
         Self(path)
     }
 }

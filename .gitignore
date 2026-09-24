@@ -6,8 +6,8 @@ dist/
 .DS_Store
 **/.DS_Store
 
-# Rust
-/target/
+# Rust (directory or shared-build symlink)
+/target
 
 # Python release tooling
 __pycache__/
