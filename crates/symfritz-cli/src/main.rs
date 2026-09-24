@@ -54,6 +54,8 @@ const VERSION: &str = match option_env!("SYMFRITZ_VERSION") {
 const EXIT_CONFIG: u8 = 9;
 const EXIT_OPERATION: u8 = 1;
 const EXIT_NO_AUTH: u8 = 3;
+/// Documented exit code for a canceled command (CLI-010 / MCP-004).
+const EXIT_CANCEL: u8 = 130;
 static CANCEL_REQUESTED: AtomicBool = AtomicBool::new(false);
 static MCP_CANCELLATION: OnceLock<CancellationToken> = OnceLock::new();
 
@@ -101,6 +103,21 @@ impl HandlerError {
             message: message.into(),
             exit_code: EXIT_CONFIG,
             kind: "validation".to_owned(),
+            hint: None,
+            status: false,
+            service: String::new(),
+            action: String::new(),
+            raw: String::new(),
+        }
+    }
+
+    /// Cancellation was requested at a command boundary; `main` reports the
+    /// documented cancel exit 130 and prints no output for it.
+    fn cancelled() -> Self {
+        Self {
+            message: "operation cancelled".to_owned(),
+            exit_code: EXIT_CANCEL,
+            kind: "cancelled".to_owned(),
             hint: None,
             status: false,
             service: String::new(),
@@ -340,10 +357,16 @@ fn main() -> ExitCode {
     };
 
     match execute(cli, format) {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => {
+            // A command that finished after cancellation still exits 130.
+            if CANCEL_REQUESTED.load(Ordering::SeqCst) {
+                return ExitCode::from(EXIT_CANCEL);
+            }
+            ExitCode::SUCCESS
+        }
         Err(error) => {
             if CANCEL_REQUESTED.load(Ordering::SeqCst) {
-                return ExitCode::from(130);
+                return ExitCode::from(EXIT_CANCEL);
             }
             if format != OutputFormat::Text && error.exit_code != EXIT_CONFIG && !error.status {
                 let payload = ErrorOutput {
@@ -381,6 +404,11 @@ fn install_signal_handler() -> Result<(), HandlerError> {
 }
 
 fn execute(cli: Cli, format: OutputFormat) -> Result<(), HandlerError> {
+    // Boundary check: an ordinary command never starts once cancellation
+    // has been requested.
+    if CANCEL_REQUESTED.load(Ordering::SeqCst) {
+        return Err(HandlerError::cancelled());
+    }
     match cli.command {
         None => {
             let mut command = Cli::command();
@@ -692,8 +720,10 @@ fn execute_wlan(
             Ok(())
         }
         WlanSubcommand::Clients => {
+            // `0` selects advertised-radio discovery: tri-band boxes expose a
+            // fourth WLANConfiguration whose clients a fixed 1..=3 window hid.
             let clients = client
-                .all_wlan_clients(3)
+                .all_wlan_clients(0)
                 .map_err(|error| HandlerError::from_client("wlan clients failed", &error))?;
             if format != OutputFormat::Text {
                 output::write(&mut std::io::stdout(), &clients, format)
@@ -1143,6 +1173,11 @@ fn execute_reboot(args: RebootArgs, format: OutputFormat) -> Result<(), HandlerE
     client
         .reboot()
         .map_err(|error| HandlerError::from_client("reboot failed", &error))?;
+    // Boundary check: cancellation requested while the Reboot exchange was
+    // in flight must not print success output.
+    if CANCEL_REQUESTED.load(Ordering::SeqCst) {
+        return Err(HandlerError::cancelled());
+    }
     if format != OutputFormat::Text {
         let payload = RebootOutput {
             ok: true,
@@ -1408,6 +1443,11 @@ fn store_credential(
     password: &str,
     args: &AuthStoreArgs,
 ) -> Result<(String, String), HandlerError> {
+    // Boundary check: a credential-store operation that was preceded by a
+    // cancellation request must not touch the Keychain or symvault.
+    if CANCEL_REQUESTED.load(Ordering::SeqCst) {
+        return Err(HandlerError::cancelled());
+    }
     if let Some(reference) = args.symvault.as_deref() {
         symfritz_core::secret::symvault_set(reference, password)
             .map_err(|error| HandlerError::operation(format!("store failed: {error}")))?;
@@ -1501,8 +1541,30 @@ fn prompt_hidden(prompt: &str) -> Result<String, HandlerError> {
     #[cfg(unix)]
     {
         let _echo_guard = TerminalEchoGuard::new()?;
-        let mut value = String::new();
-        let read_result = stdin.read_line(&mut value);
+        // Blocking stdin does not wake for the ctrlc handler on every Unix
+        // platform. Keep the echo guard on this thread so cancellation can
+        // restore the terminal before the process exits.
+        // ponytail: the reader thread may remain blocked until process exit;
+        // use pollable terminal input if this CLI ever continues after cancel.
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let mut value = String::new();
+            let read_result = stdin.read_line(&mut value);
+            let _ = sender.send((read_result, value));
+        });
+        let (read_result, value) = loop {
+            if CANCEL_REQUESTED.load(Ordering::SeqCst) {
+                eprintln!();
+                return Err(HandlerError::cancelled());
+            }
+            match receiver.recv_timeout(Duration::from_millis(50)) {
+                Ok(result) => break result,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(HandlerError::operation("password input stopped"));
+                }
+            }
+        };
         eprintln!();
         read_result
             .map_err(|error| HandlerError::operation(format!("reading password: {error}")))?;
@@ -1657,9 +1719,11 @@ impl McpCapabilities for FritzMcpCapabilities {
     }
 
     fn wlan_clients(&mut self) -> Result<serde_json::Value, String> {
+        // Same advertised-radio discovery as `symfritz wlan clients`: no fixed
+        // three-radio cap, so radio 4 on tri-band boxes is included.
         let clients = self
             .tr064
-            .all_wlan_clients(3)
+            .all_wlan_clients(0)
             .map_err(|error| format!("wlan_clients: {error}"))?;
         Ok(mcp_serialized(&clients))
     }
@@ -1741,7 +1805,7 @@ fn make_tr064(
     let origin = origin_url(box_config, true)?;
     let pin_store = PinStore::default_path()
         .ok_or_else(|| HandlerError::config("cannot determine home directory"))?;
-    let transport = BlockingHttpTransport::new(HttpTransportConfig {
+    let mut transport = BlockingHttpTransport::new(HttpTransportConfig {
         origin: origin.clone(),
         pin_store: PinStore::new(pin_store),
         insecure_tls: box_config.insecure_tls,
@@ -1752,6 +1816,12 @@ fn make_tr064(
         })),
     })
     .map_err(|error| HandlerError::from_operation("failed to create TR-064 transport", error))?;
+    // Share the signal handler's flag with every TR-064 dispatch so a
+    // pending Digest challenge can never turn into an authenticated retry
+    // after cancellation.
+    transport.set_cancellation(std::sync::Arc::new(|| {
+        CANCEL_REQUESTED.load(Ordering::SeqCst)
+    }));
     Ok(Tr064Client::new(
         transport,
         RandomCnonce,
@@ -1768,7 +1838,7 @@ fn make_web(
     let origin = origin_url(box_config, false)?;
     let pin_store = PinStore::default_path()
         .ok_or_else(|| HandlerError::config("cannot determine home directory"))?;
-    let transport = BlockingHttpTransport::new(HttpTransportConfig {
+    let mut transport = BlockingHttpTransport::new(HttpTransportConfig {
         origin: origin.clone(),
         pin_store: PinStore::new(pin_store),
         insecure_tls: box_config.insecure_tls,
@@ -1779,6 +1849,11 @@ fn make_web(
         })),
     })
     .map_err(|error| HandlerError::from_operation("failed to create web transport", error))?;
+    // The web client shares the same boundary: its SID login retry is
+    // refused once cancellation has been requested.
+    transport.set_cancellation(std::sync::Arc::new(|| {
+        CANCEL_REQUESTED.load(Ordering::SeqCst)
+    }));
     Ok(AhaClient::new(
         transport,
         SystemClock,
@@ -3247,12 +3322,48 @@ mod mcp_output_tests {
 
 #[cfg(test)]
 mod signal_tests {
-    use super::{CANCEL_REQUESTED, Duration, Ordering, wait_for_interval};
+    use super::{
+        AuthStoreArgs, BoxConfig, CANCEL_REQUESTED, Duration, Ordering, store_credential,
+        wait_for_interval,
+    };
+    use std::sync::Mutex;
+
+    /// These tests share the one process-wide cancellation flag; serialize
+    /// their set/assert/reset windows so they cannot observe each other.
+    static CANCEL_FLAG_LOCK: Mutex<()> = Mutex::new(());
+
+    fn lock_cancellation() -> std::sync::MutexGuard<'static, ()> {
+        CANCEL_FLAG_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+    }
 
     #[test]
     fn cancellation_cooperatively_interrupts_watch_interval() {
+        let _guard = lock_cancellation();
         CANCEL_REQUESTED.store(true, Ordering::SeqCst);
         assert!(wait_for_interval(Duration::from_secs(5)));
         CANCEL_REQUESTED.store(false, Ordering::SeqCst);
+    }
+
+    /// Deterministic proof that a cancellation requested before the store
+    /// refuses the operation at its boundary: the guard error appears before
+    /// any Keychain/symvault backend can run (a backend failure would instead
+    /// surface as `store failed: ...` or an unguarded success).
+    #[test]
+    fn credential_store_is_refused_when_cancellation_preceded_it() {
+        let _guard = lock_cancellation();
+        let args = AuthStoreArgs {
+            keychain: false,
+            symvault: Some("cancelled.probe.entry".to_owned()),
+        };
+        CANCEL_REQUESTED.store(true, Ordering::SeqCst);
+        let result = store_credential(&BoxConfig::default(), "test-password", &args);
+        CANCEL_REQUESTED.store(false, Ordering::SeqCst);
+        let error = result.expect_err(
+            "a cancellation requested before the store must refuse the credential-store operation",
+        );
+        assert_eq!(error.message, "operation cancelled");
+        assert_eq!(error.exit_code, 130);
     }
 }

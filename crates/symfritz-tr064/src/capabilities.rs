@@ -13,6 +13,26 @@ use serde::{Deserialize, Serialize};
 const MAX_DIAGNOSIS_WORKERS: usize = 8;
 pub const MESH_RESPONSE_LIMIT: usize = 8 << 20;
 
+/// Upper bound accepted for router-supplied table counts.
+///
+/// `GetHostNumberOfEntries` (`NewHostNumberOfEntries`) and
+/// `GetTotalAssociations` (`NewTotalAssociations`) are parsed straight from
+/// the box's SOAP response, and the value drives both a vector reservation
+/// and a loop that issues one indexed request per entry. Without a bound, a
+/// box — or an on-path attacker on the LAN — answering `usize::MAX` aborts
+/// the process inside `Vec::with_capacity`, while a large allocatable value
+/// turns the index loop into an unbounded request storm.
+///
+/// The bound is validated before any allocation or indexed request. It is
+/// deliberately generous: real FRITZ!Box host tables and per-radio WLAN
+/// association lists stay in the low hundreds even on busy networks, so
+/// 4096 rejects every implausible count while keeping the worst-case
+/// reservation under a mebibyte and the worst-case index loop at 4096
+/// sequential, individually bounded SOAP calls. Missing counts, non-numeric
+/// counts, and counts above the bound are rejected with a controlled
+/// [`ClientError::TableEnumeration`], classified as a transport error.
+pub const MAX_TABLE_ENTRIES: usize = 4096;
+
 /// Error categories shared by typed capability reports.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -59,6 +79,7 @@ pub fn error_kind(error: &ClientError) -> ErrorKind {
                 ErrorKind::Transport
             }
         }
+        ClientError::TableEnumeration(_) => ErrorKind::Transport,
         ClientError::Cnonce(_) => ErrorKind::Internal,
         ClientError::DiscoveryHttpStatus(_) | ClientError::Discovery(_) => {
             ErrorKind::ServiceUnavailable
@@ -249,6 +270,11 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
     }
 
     /// Return the full host table, using the bulk endpoint before indexed SOAP.
+    ///
+    /// When the bulk endpoint fails, the indexed fallback validates the
+    /// router-supplied count against [`MAX_TABLE_ENTRIES`]; a rejected count
+    /// propagates here as a controlled error instead of an allocation or an
+    /// unbounded index loop.
     pub fn hosts(&mut self) -> Result<Vec<Host>, ClientError> {
         match self.bulk_hosts() {
             Ok(hosts) => Ok(hosts),
@@ -281,11 +307,16 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
             "GetHostNumberOfEntries",
             &BTreeMap::new(),
         )?;
-        let count = count
-            .get("NewHostNumberOfEntries")
-            .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(0);
-        let mut hosts = Vec::with_capacity(count);
+        let count = checked_table_count(
+            count.get("NewHostNumberOfEntries"),
+            "NewHostNumberOfEntries",
+        )?;
+        let mut hosts = Vec::new();
+        hosts.try_reserve(count).map_err(|error| {
+            ClientError::TableEnumeration(format!(
+                "tr064: reserving {count} host entries failed: {error}"
+            ))
+        })?;
         for index in 0..count {
             let args = BTreeMap::from([(String::from("NewIndex"), index.to_string())]);
             if let Ok(entry) = self.call(&Service::hosts(), "GetGenericHostEntry", &args) {
@@ -396,14 +427,19 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
     }
 
     /// Return associated clients for one radio, preserving association index order.
+    ///
+    /// The router-supplied association count is validated against
+    /// [`MAX_TABLE_ENTRIES`] before any allocation or indexed request.
     pub fn wlan_clients(&mut self, index: usize) -> Result<Vec<WlanClient>, ClientError> {
         let service = wlan_service(index);
         let total = self.call(&service, "GetTotalAssociations", &BTreeMap::new())?;
-        let total = total
-            .get("NewTotalAssociations")
-            .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(0);
-        let mut clients = Vec::with_capacity(total);
+        let total = checked_table_count(total.get("NewTotalAssociations"), "NewTotalAssociations")?;
+        let mut clients = Vec::new();
+        clients.try_reserve(total).map_err(|error| {
+            ClientError::TableEnumeration(format!(
+                "tr064: reserving {total} WLAN clients failed: {error}"
+            ))
+        })?;
         for associated_index in 0..total {
             let args = BTreeMap::from([(
                 String::from("NewAssociatedDeviceIndex"),
@@ -434,13 +470,16 @@ impl<T: Transport, C: CnonceSource> Client<T, C> {
         Ok(clients)
     }
 
-    /// Aggregate clients in radio order. Individual radio failures are skipped.
+    /// Aggregate clients in radio order. Ordinary radio failures are skipped,
+    /// but unsafe or unenumerable tables fail rather than appear complete.
     pub fn all_wlan_clients(&mut self, max_n: usize) -> Result<Vec<WlanClient>, ClientError> {
         let radios = self.radios(max_n)?;
         let mut clients = Vec::new();
         for radio in radios {
-            if let Ok(mut radio_clients) = self.wlan_clients(radio.index) {
-                clients.append(&mut radio_clients);
+            match self.wlan_clients(radio.index) {
+                Ok(mut radio_clients) => clients.append(&mut radio_clients),
+                Err(error @ ClientError::TableEnumeration(_)) => return Err(error),
+                Err(_) => {}
             }
         }
         Ok(clients)
@@ -1033,6 +1072,24 @@ fn valid_calendar(day: u32, month: u32, year: u32) -> bool {
         _ => 31,
     };
     day <= days
+}
+
+/// Validate a router-supplied table count before it drives a reservation or a
+/// loop of indexed requests. See [`MAX_TABLE_ENTRIES`] for the bound and its
+/// justification.
+fn checked_table_count(value: Option<&String>, field: &str) -> Result<usize, ClientError> {
+    let raw = value.ok_or_else(|| {
+        ClientError::TableEnumeration(format!("tr064: {field} missing from the response"))
+    })?;
+    let count = raw.parse::<usize>().map_err(|_| {
+        ClientError::TableEnumeration(format!("tr064: invalid {field} value {raw:?}"))
+    })?;
+    if count > MAX_TABLE_ENTRIES {
+        return Err(ClientError::TableEnumeration(format!(
+            "tr064: {field} count {count} exceeds the accepted limit of {MAX_TABLE_ENTRIES} entries"
+        )));
+    }
+    Ok(count)
 }
 
 fn is_transport(error: &ClientError) -> bool {
