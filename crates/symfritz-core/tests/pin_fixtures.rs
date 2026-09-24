@@ -4,14 +4,11 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::Deserialize;
 use symfritz_core::pins::{PinStore, calculate_spki_pin};
-
-static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Deserialize)]
 struct Fixture {
@@ -44,11 +41,14 @@ struct TestDir(PathBuf);
 
 impl TestDir {
     fn new() -> Self {
-        let id = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path =
-            std::env::temp_dir().join(format!("symfritz-pin-fixture-{}-{id}", std::process::id()));
-        let _ = fs::remove_dir_all(&path);
-        fs::create_dir_all(&path).unwrap();
+        let mut nonce = [0_u8; 16];
+        getrandom::fill(&mut nonce).expect("random test directory nonce");
+        let path = std::env::temp_dir().join(format!(
+            "symfritz-pin-fixture-{}-{}",
+            std::process::id(),
+            hex::encode(nonce)
+        ));
+        fs::create_dir(&path).expect("create new test directory without removing foreign files");
         Self(path)
     }
 }
