@@ -26,8 +26,9 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: OS version, Go version, symfritz version.
+      description: OS version, output of `symfritz --version`, and whether you built from source. If so, include `rustc --version`.
       placeholder: |
         OS: macOS 15.0
-        Go: 1.26.4
-        symfritz: v0.1.2
+        symfritz --version: symfritz version 0.9.0
+        Built from source: no
+        rustc --version (if source build): n/a
