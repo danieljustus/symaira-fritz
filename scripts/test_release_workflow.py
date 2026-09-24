@@ -149,6 +149,28 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
         self.assertIn("if: runner.os != 'Windows'", ci_text)
         self.assertNotIn("make cli-contract", ci_text)
 
+    def test_cli_contracts_export_explicit_trusted_oracle_tools(self) -> None:
+        ci_text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        runner_text = (ROOT / "scripts" / "run-cli-differential.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(ci_text.count("Export trusted oracle tool paths (Unix)"), 2)
+        self.assertEqual(ci_text.count("Export trusted oracle tool paths (Windows)"), 2)
+        self.assertEqual(ci_text.count("SYMAIRA_TRUSTED_GIT="), 4)
+        self.assertEqual(ci_text.count("SYMAIRA_TRUSTED_GO="), 4)
+        self.assertEqual(ci_text.count("command -v git"), 2)
+        self.assertEqual(ci_text.count("command -v go"), 2)
+        self.assertEqual(
+            ci_text.count("Get-Command git -CommandType Application"), 2
+        )
+        self.assertEqual(ci_text.count("Get-Command go -CommandType Application"), 2)
+        self.assertIn(">> \"$GITHUB_ENV\"", ci_text)
+        self.assertIn("Out-File -FilePath $env:GITHUB_ENV", ci_text)
+        self.assertIn("TRUSTED_GIT_ENV", runner_text)
+        self.assertIn("TRUSTED_GO_ENV", runner_text)
+        self.assertNotIn('shutil.which("git")', runner_text)
+        self.assertNotIn('shutil.which("go")', runner_text)
+
 
 if __name__ == "__main__":
     sys.path.insert(0, str(ROOT / "scripts"))

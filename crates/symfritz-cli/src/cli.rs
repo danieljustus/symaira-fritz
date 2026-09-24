@@ -545,77 +545,63 @@ pub fn parse_args(args: &[String]) -> Result<Cli, ParseError> {
     if !asks_for_help && let Some(message) = go_validation_error(args) {
         return Err(ParseError::Invalid(message.to_owned()));
     }
-    Cli::try_parse_from(args).map_err(|error| match error.kind() {
+    let cli = Cli::try_parse_from(args).map_err(|error| match error.kind() {
         ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => {
             ParseError::Help(error.render().to_string())
         }
         _ => ParseError::Invalid(error.to_string()),
-    })
+    })?;
+    // Selector groups are validated on the parsed values so the invariant
+    // holds wherever the global output flags (`--json`, `--output json`,
+    // `--output=json`) sit relative to the command, and both zero and
+    // multiple selectors are rejected before credentials or the router are
+    // touched. The version flag keeps its short-circuit ahead of command
+    // validation, matching `symfritz -v <command>` behavior.
+    if !cli.show_version
+        && let Some(message) = selector_validation_error(&cli)
+    {
+        return Err(ParseError::Invalid(message.to_owned()));
+    }
+    Ok(cli)
 }
 
-fn selector_validation_error(args: &[String]) -> Option<&'static str> {
-    let args = args.get(1..)?;
-    let (kind, start) = if args.len() >= 2 && args[0] == "hosts" && args[1] == "get" {
-        ("hosts", 2)
-    } else if args.first().is_some_and(|command| command == "wol") {
-        ("wol", 1)
-    } else {
-        return None;
-    };
-
-    let mut positionals = 0;
-    let mut option_selectors = 0;
-    let mut skip_next = false;
-    let mut positional_only = false;
-    for argument in args[start..].iter() {
-        if skip_next {
-            skip_next = false;
-            continue;
+/// Validate the exactly-one-selector invariant for `hosts get` and `wol`
+/// against the parsed clap arguments.
+///
+/// Counting the parsed selector groups keeps the rule independent of where
+/// the global output flags (`--json`, `--output json`, `--output=json`) sit
+/// relative to the command and of `--flag=value` spelling, which a
+/// raw-position scan of the argument list cannot guarantee. Validation runs
+/// inside `parse_args`, so zero and multiple selectors are rejected before
+/// credentials or the router are touched. Excess positionals keep their
+/// Go-compatible message in `go_validation_error`, which runs before clap
+/// consumes the value slots.
+fn selector_validation_error(cli: &Cli) -> Option<&'static str> {
+    match &cli.command {
+        Some(Command::Hosts(HostsCommand::Get(args))) => {
+            let selectors = usize::from(args.name.is_some())
+                + usize::from(args.mac.is_some())
+                + usize::from(args.ip.is_some());
+            if selectors == 0 {
+                Some("exactly one of name, --mac, or --ip is required")
+            } else if selectors > 1 {
+                Some("only one of name, --mac, or --ip may be specified")
+            } else {
+                None
+            }
         }
-        if positional_only {
-            positionals += 1;
-            continue;
+        Some(Command::Wol(args)) => {
+            let selectors = usize::from(args.host.is_some()) + usize::from(args.mac.is_some());
+            if selectors == 0 {
+                Some("exactly one of host or --mac is required")
+            } else if selectors > 1 {
+                Some("only one of host or --mac may be specified")
+            } else {
+                None
+            }
         }
-        if argument == "--" {
-            positional_only = true;
-        } else if matches!(argument.as_str(), "--json" | "--help" | "-h")
-            || argument.starts_with("--output=")
-        {
-            continue;
-        } else if argument == "--output" {
-            skip_next = true;
-        } else if (kind == "hosts"
-            && (matches!(argument.as_str(), "--mac" | "--ip")
-                || argument.starts_with("--mac=")
-                || argument.starts_with("--ip=")))
-            || (kind == "wol" && (argument == "--mac" || argument.starts_with("--mac=")))
-        {
-            option_selectors += 1;
-            skip_next = !argument.contains('=');
-        } else if !argument.starts_with('-') {
-            positionals += 1;
-        }
+        _ => None,
     }
-
-    if positionals > 1 {
-        return Some("accepts at most 1 arg(s), received 2");
-    }
-    let selectors = positionals + option_selectors;
-    if selectors == 0 {
-        return Some(if kind == "hosts" {
-            "exactly one of name, --mac, or --ip is required"
-        } else {
-            "exactly one of host or --mac is required"
-        });
-    }
-    if selectors > 1 {
-        return Some(if kind == "hosts" {
-            "only one of name, --mac, or --ip may be specified"
-        } else {
-            "only one of host or --mac may be specified"
-        });
-    }
-    None
 }
 
 fn diagnose_positionals(args: &[String]) -> Vec<&str> {
@@ -667,9 +653,6 @@ fn without_output_flags(args: &[String]) -> Vec<String> {
 fn go_validation_error(args: &[String]) -> Option<&'static str> {
     let all_args = args;
     let args = args.get(1..)?;
-    if let Some(message) = selector_validation_error(all_args) {
-        return Some(message);
-    }
     if args.first().is_some_and(|command| command == "diagnose") {
         let positionals = diagnose_positionals(args);
         if positionals.len() == 2 && positionals[0] != "router" {

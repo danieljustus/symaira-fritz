@@ -319,38 +319,140 @@ fn diagnose_parser_preserves_extra_positional_error() {
 #[test]
 fn selector_validation_rejects_zero_and_multiple_cli_selectors_before_execution() {
     let binary = env!("CARGO_BIN_EXE_symfritz");
-    let cases = [
-        vec!["hosts", "get"],
-        vec!["hosts", "get", "name", "--mac", "AA:BB:CC:DD:EE:FF"],
-        vec!["hosts", "get", "name", "--ip", "192.0.2.1"],
-        vec![
-            "hosts",
-            "get",
-            "--mac",
-            "AA:BB:CC:DD:EE:FF",
-            "--ip",
-            "192.0.2.1",
-        ],
-        vec!["wol"],
-        vec!["wol", "host", "--mac", "AA:BB:CC:DD:EE:FF"],
+    let hosts_zero = "Error: exactly one of name, --mac, or --ip is required\n";
+    let hosts_many = "Error: only one of name, --mac, or --ip may be specified\n";
+    let wol_zero = "Error: exactly one of host or --mac is required\n";
+    let wol_many = "Error: only one of host or --mac may be specified\n";
+    let two_positional = "Error: accepts at most 1 arg(s), received 2\n";
+    // The invariant must hold wherever the global output flags sit relative
+    // to the command, for both `--flag value` and `--flag=value` selectors.
+    let cases: &[(&[&str], &str)] = &[
+        // Zero selectors.
+        (&["hosts", "get"], hosts_zero),
+        (&["--json", "hosts", "get"], hosts_zero),
+        (&["hosts", "get", "--json"], hosts_zero),
+        (&["--output", "json", "hosts", "get"], hosts_zero),
+        (&["hosts", "get", "--output", "json"], hosts_zero),
+        (&["--output=json", "hosts", "get"], hosts_zero),
+        (&["hosts", "get", "--output=json"], hosts_zero),
+        (&["hosts", "--json", "get"], hosts_zero),
+        (&["wol"], wol_zero),
+        (&["--json", "wol"], wol_zero),
+        (&["wol", "--json"], wol_zero),
+        (&["--output", "json", "wol"], wol_zero),
+        (&["wol", "--output", "json"], wol_zero),
+        (&["--output=json", "wol"], wol_zero),
+        (&["wol", "--output=json"], wol_zero),
+        // Multiple selectors.
+        (
+            &["hosts", "get", "name", "--mac", "AA:BB:CC:DD:EE:FF"],
+            hosts_many,
+        ),
+        (
+            &[
+                "--json",
+                "hosts",
+                "get",
+                "name",
+                "--mac",
+                "AA:BB:CC:DD:EE:FF",
+            ],
+            hosts_many,
+        ),
+        (
+            &[
+                "hosts",
+                "get",
+                "name",
+                "--mac",
+                "AA:BB:CC:DD:EE:FF",
+                "--json",
+            ],
+            hosts_many,
+        ),
+        (
+            &[
+                "--output",
+                "json",
+                "hosts",
+                "get",
+                "name",
+                "--ip",
+                "192.0.2.1",
+            ],
+            hosts_many,
+        ),
+        (&["hosts", "get", "--mac=X", "--ip=192.0.2.1"], hosts_many),
+        (
+            &["--output=json", "hosts", "get", "--mac=X", "--ip=192.0.2.1"],
+            hosts_many,
+        ),
+        (
+            &[
+                "hosts",
+                "get",
+                "--output",
+                "json",
+                "--mac=X",
+                "--ip=192.0.2.1",
+            ],
+            hosts_many,
+        ),
+        (
+            &["--json", "hosts", "get", "--mac=X", "--ip=192.0.2.1"],
+            hosts_many,
+        ),
+        (&["wol", "host", "--mac", "AA:BB:CC:DD:EE:FF"], wol_many),
+        (
+            &["--json", "wol", "host", "--mac", "AA:BB:CC:DD:EE:FF"],
+            wol_many,
+        ),
+        (
+            &["wol", "host", "--mac=AA:BB:CC:DD:EE:FF", "--output", "json"],
+            wol_many,
+        ),
+        (
+            &["--output", "json", "wol", "--mac=AA:BB:CC:DD:EE:FF", "host"],
+            wol_many,
+        ),
+        // Excess positionals keep the Go-compatible message at any position.
+        (&["hosts", "get", "one", "two"], two_positional),
+        (&["--json", "hosts", "get", "one", "two"], two_positional),
+        (&["hosts", "--json", "get", "one", "two"], two_positional),
+        (&["--output", "json", "wol", "one", "two"], two_positional),
+        (&["wol", "one", "two", "--json"], two_positional),
     ];
-    for args in cases {
+    // Isolate HOME so a validation regression cannot resolve credentials or
+    // reach a router: the only passing outcome is the parse-stage rejection,
+    // and no request can be issued without credentials.
+    let home = std::env::temp_dir().join("symfritz-selector-224-home");
+    std::fs::create_dir_all(home.join(".config")).expect("isolated test HOME");
+    for &(args, expected) in cases {
         let output = ProcessCommand::new(binary)
-            .args(&args)
+            .args(args)
             .env_remove("SYMFRITZ_BOX_HOST")
             .env_remove("SYMFRITZ_HOST")
             .env_remove("SYMFRITZ_PASSWORD")
+            .env("HOME", &home)
+            .env("USERPROFILE", &home)
+            .env("APPDATA", home.join(".config"))
+            .env("XDG_CONFIG_HOME", home.join(".config"))
             .output()
-            .unwrap_or_else(|error| panic!("run invalid selector {:?}: {error}", args));
-        assert_ne!(
+            .unwrap_or_else(|error| panic!("run invalid selector {args:?}: {error}"));
+        assert_eq!(
             output.status.code(),
-            Some(0),
-            "selector unexpectedly accepted: {args:?}"
+            Some(1),
+            "selector must fail during argument parsing: {args:?}"
         );
-        let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
-            !stderr.contains("configuration file"),
-            "router access happened: {args:?}: {stderr}"
+            output.stdout.is_empty(),
+            "selector validation wrote output before execution: {args:?}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr),
+            expected,
+            "selector stderr mismatch: {args:?}"
         );
     }
 }
@@ -361,6 +463,35 @@ fn selector_validation_accepts_equals_syntax() {
         ["symfritz", "hosts", "get", "--mac=AA:BB:CC:DD:EE:FF"].as_slice(),
         ["symfritz", "hosts", "get", "--ip=192.0.2.1"].as_slice(),
         ["symfritz", "wol", "--mac=AA:BB:CC:DD:EE:FF"].as_slice(),
+        // Valid single selectors parse whatever the global output-flag position.
+        [
+            "symfritz",
+            "--json",
+            "hosts",
+            "get",
+            "--mac=AA:BB:CC:DD:EE:FF",
+        ]
+        .as_slice(),
+        [
+            "symfritz",
+            "hosts",
+            "get",
+            "--mac=AA:BB:CC:DD:EE:FF",
+            "--output",
+            "json",
+        ]
+        .as_slice(),
+        ["symfritz", "--output=json", "hosts", "get", "laptop"].as_slice(),
+        ["symfritz", "hosts", "--json", "get", "laptop"].as_slice(),
+        [
+            "symfritz",
+            "--output",
+            "json",
+            "wol",
+            "--mac=AA:BB:CC:DD:EE:FF",
+        ]
+        .as_slice(),
+        ["symfritz", "wol", "laptop", "--json"].as_slice(),
     ] {
         let args = args.iter().map(ToString::to_string).collect::<Vec<_>>();
         assert!(
@@ -404,4 +535,28 @@ fn structured_success_outputs_use_real_cli() {
     assert_eq!(object.get("reset"), Some(&serde_json::Value::Bool(false)));
 
     fs::remove_dir_all(home).expect("remove isolated HOME");
+}
+
+#[test]
+fn selector_validation_counts_parsed_groups_not_flag_positions() {
+    let args = [
+        "symfritz",
+        "--json",
+        "hosts",
+        "get",
+        "--mac=AA:BB:CC:DD:EE:FF",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect::<Vec<_>>();
+    let cli = symfritz_cli::cli::parse_args(&args).expect("single selector must parse");
+    assert!(cli.json);
+    match cli.command {
+        Some(symfritz_cli::cli::Command::Hosts(symfritz_cli::cli::HostsCommand::Get(get))) => {
+            assert_eq!(get.mac.as_deref(), Some("AA:BB:CC:DD:EE:FF"));
+            assert!(get.name.is_none());
+            assert!(get.ip.is_none());
+        }
+        other => panic!("expected parsed 'hosts get', got {other:?}"),
+    }
 }
