@@ -978,9 +978,21 @@ def accepted_actions(server: StrictFakeBox) -> list[tuple[str, str, str]]:
     return [(method, path, action) for method, path, action, _body in accepted_requests(server)]
 
 
-def assert_server(server: StrictFakeBox, label: str, expected: list[tuple[str, str, str]] | None = None) -> None:
+def assert_server(
+    server: StrictFakeBox,
+    label: str,
+    expected: list[tuple[str, str, str]] | None = None,
+    *,
+    unordered: bool = False,
+) -> None:
     if server.failures: raise AssertionError(f"{label}: fake-box failures: {'; '.join(server.failures)}")
-    if expected is not None and accepted_actions(server) != expected: raise AssertionError(f"{label}: request sequence mismatch got={accepted_actions(server)!r} want={expected!r}")
+    if expected is None: return
+    actual = accepted_actions(server)
+    if unordered:
+        # The Go oracle fans radio probes out concurrently, so only the request
+        # multiset is contractual for cases declared unordered.
+        if sorted(actual) != sorted(expected): raise AssertionError(f"{label}: request multiset mismatch got={actual!r} want={expected!r}")
+    elif actual != expected: raise AssertionError(f"{label}: request sequence mismatch got={actual!r} want={expected!r}")
 
 
 def _trace_override(policy: dict[str, Any] | None, label: str) -> tuple[list[tuple[str, str, str]], list[tuple[str, str, str]]] | None:
@@ -1037,8 +1049,11 @@ def run_pair(
     else:
         expected_go = expected
         expected_rust = expected
-    server.reset(); left = run(go, args, fake=True, extra=extra); assert_server(server, label + " Go", expected_go); go_requests = accepted_requests(server)
-    server.reset(); right = run(rust, args, fake=True, extra=extra); assert_server(server, label + " Rust", expected_rust); rust_requests = accepted_requests(server)
+    # A divergence-policy case may still be declared unordered: the oracle's
+    # per-radio fan-out has no contractual completion order.
+    unordered_trace = override is not None and unordered_requests
+    server.reset(); left = run(go, args, fake=True, extra=extra); assert_server(server, label + " Go", expected_go, unordered=unordered_trace); go_requests = accepted_requests(server)
+    server.reset(); right = run(rust, args, fake=True, extra=extra); assert_server(server, label + " Rust", expected_rust, unordered=unordered_trace); rust_requests = accepted_requests(server)
     if override is None:
         requests_match = (
             sorted(go_requests) == sorted(rust_requests)
@@ -1368,8 +1383,10 @@ def run_suite(go: str, rust: str, root: Path) -> None:
         run_pair(server, "wlan-radios", go, rust, ["wlan", "radios", "--json"], kind="json", policy=policy)
         # The Go oracle probes per-radio association lists concurrently. Request
         # completion order is intentionally nondeterministic; the exact request
-        # multiset and rendered client order remain contractual.
-        run_pair(server, "wlan-clients", go, rust, ["wlan", "clients", "--json"], kind="json", unordered_requests=True)
+        # multiset and rendered client order remain contractual. The divergence
+        # policy pins both multisets and records that Rust adds the advertised-
+        # radio discovery request the fixed three-radio oracle never sends.
+        run_pair(server, "wlan-clients", go, rust, ["wlan", "clients", "--json"], kind="json", unordered_requests=True, policy=policy)
         run_pair(server, "wlan-guest-status", go, rust, ["wlan", "guest", "status", "--json"], kind="json", policy=policy)
         run_pair(server, "dsl", go, rust, ["dsl", "--output", "json"], kind="json")
         run_pair(server, "calls", go, rust, ["calls", "--json"], kind="json", policy=policy)
