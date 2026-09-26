@@ -263,6 +263,7 @@ fn help_flags_precede_positional_validation_and_exit_successfully() {
         vec!["call", "--help"],
         vec!["call", "-h"],
         vec!["hosts", "get", "--help"],
+        vec!["wlan"],
         vec!["wlan", "guest", "status", "--help"],
         vec!["--help"],
         vec!["-h"],
