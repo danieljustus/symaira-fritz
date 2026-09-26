@@ -2146,6 +2146,11 @@ def run_suite(go: str, rust: str, root: Path) -> None:
                 rust_contracts,
                 policy,
             )
+        for binary, expected in ((go, go_contracts), (rust, rust_contracts)):
+            bare_wlan = run(binary, ["wlan"])
+            if bare_wlan.code != 0 or bare_wlan.stderr or parse_help("symfritz wlan", bare_wlan.stdout) != expected["symfritz wlan"]:
+                raise AssertionError(f"bare-wlan-parent: unexpected help or exit from {binary}")
+        print("PASS bare-wlan-parent")
         # The immutable fixture bytes are Unix-frozen. Both executable help trees
         # remain structurally compared on every native platform, including Windows.
         print("PASS help-contracts-49")
