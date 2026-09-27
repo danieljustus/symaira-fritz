@@ -687,9 +687,7 @@ fn execute_wlan(
     format: OutputFormat,
 ) -> Result<(), HandlerError> {
     let Some(subcommand) = command.command else {
-        return Err(HandlerError::operation(
-            "internal handler for 'wlan' is not implemented",
-        ));
+        return print_help(&[String::from("wlan")]);
     };
     let (config, password) = load_connection()?;
     let mut client = make_tr064(&config.box_config, &password)?;
