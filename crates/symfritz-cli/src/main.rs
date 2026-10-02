@@ -1968,7 +1968,7 @@ fn call_type_text(value: i32) -> &'static str {
 }
 fn log_time_text(value: &str) -> String {
     let parts: Vec<_> = value.split(['T', '-', ':', 'Z']).collect();
-    if parts.len() >= 7 {
+    if parts.len() >= 6 {
         format!(
             "{}.{}.{} {}:{}:{}",
             parts[2],

@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "source": "Synthetic FRITZ!OS event-log XML and expected local wall-clock output",
+  "xml": "<root><Event><id>42</id><group>WLAN</group><date>01.02.24</date><time>03:04:05</time><msg>Client connected</msg></Event><Event><id>43</id><group>SYS</group><date>29.02.24</date><time>23:59:59</time><msg>Leap day</msg></Event><Event><id>44</id><group>SYS</group><date>invalid</date><time></time><msg>No timestamp</msg></Event></root>",
+  "text": "01.02.24 03:04:05 [WLAN] Client connected\n29.02.24 23:59:59 [SYS] Leap day\n— [SYS] No timestamp\n",
+  "times": ["2024-02-01T03:04:05", "2024-02-29T23:59:59", ""]
+}
