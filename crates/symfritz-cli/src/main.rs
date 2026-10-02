@@ -1869,7 +1869,10 @@ fn origin_url(box_config: &BoxConfig, tr064: bool) -> Result<Url, HandlerError> 
         .unwrap_or(&host)
         .to_owned();
     let (host, explicit_port) = match host.rsplit_once(':') {
-        Some((host, port)) if !host.contains(':') && port.parse::<u16>().is_ok() => {
+        Some((host, port))
+            if (!host.contains(':') || (host.starts_with('[') && host.ends_with(']')))
+                && port.parse::<u16>().is_ok() =>
+        {
             (host.to_owned(), port.parse::<u16>().ok())
         }
         _ => (host, None),

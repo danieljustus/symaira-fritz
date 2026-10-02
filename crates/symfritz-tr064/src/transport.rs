@@ -4,7 +4,7 @@ use std::{
     collections::BTreeMap,
     fmt,
     io::{self, Read, Write},
-    net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs},
+    net::{IpAddr, SocketAddr, TcpStream},
     sync::{
         Arc, Once,
         atomic::{AtomicBool, Ordering},
@@ -420,7 +420,8 @@ fn remaining(deadline: Instant) -> Duration {
 fn server_name(url: &Url) -> Result<ServerName<'static>, String> {
     let host = url
         .host_str()
-        .ok_or_else(|| "request URL has no host".to_owned())?;
+        .ok_or_else(|| "request URL has no host".to_owned())?
+        .trim_matches(['[', ']']);
     if let Ok(address) = host.parse::<std::net::IpAddr>() {
         Ok(ServerName::IpAddress(address.into()))
     } else {
@@ -911,14 +912,11 @@ fn resolve_local_origin(origin: &Url) -> Result<(String, Vec<SocketAddr>), HttpT
     let port = origin.port_or_known_default().ok_or_else(|| {
         HttpTransportError::InvalidOrigin(SafeUrlError::Invalid("origin has no port".to_owned()))
     })?;
-    let addresses: Vec<_> = (host, port)
-        .to_socket_addrs()
-        .map_err(|error| {
-            HttpTransportError::InvalidOrigin(SafeUrlError::Invalid(format!(
-                "could not resolve configured origin: {error}"
-            )))
-        })?
-        .collect();
+    let addresses = origin.socket_addrs(|| Some(port)).map_err(|error| {
+        HttpTransportError::InvalidOrigin(SafeUrlError::Invalid(format!(
+            "could not resolve configured origin: {error}"
+        )))
+    })?;
     if addresses.is_empty() {
         return Err(HttpTransportError::InvalidOrigin(SafeUrlError::Invalid(
             "configured origin resolved to no addresses".to_owned(),
@@ -1316,6 +1314,26 @@ mod tests {
             pin_key(&Url::parse("https://fritz.box:49443").unwrap()),
             "fritz.box"
         );
+    }
+
+    #[test]
+    fn ipv6_origins_resolve_and_use_ip_tls_names_without_weakening_guards() {
+        let origin = Url::parse("https://[::1]:49443").unwrap();
+        let (_, addresses) = resolve_local_origin(&origin).unwrap();
+        assert_eq!(
+            addresses,
+            vec!["[::1]:49443".parse::<SocketAddr>().unwrap()]
+        );
+        assert_eq!(
+            server_name(&origin).unwrap(),
+            ServerName::IpAddress("::1".parse::<IpAddr>().unwrap().into())
+        );
+        assert!(
+            resolve_local_origin(&Url::parse("https://[2001:4860:4860::8888]").unwrap()).is_err()
+        );
+        let other = Url::parse("https://[::2]:49443").unwrap();
+        assert!(validate_request_url(&origin, &other).is_err());
+        assert_eq!(pin_key(&origin), "[::1]");
     }
 
     #[test]

@@ -43,6 +43,10 @@ impl Drop for TestDir {
 }
 
 fn spawn_tls_server(respond: bool) -> (Url, thread::JoinHandle<()>) {
+    spawn_tls_server_on(respond, "127.0.0.1:0")
+}
+
+fn spawn_tls_server_on(respond: bool, bind: &str) -> (Url, thread::JoinHandle<()>) {
     let CertifiedKey { cert, signing_key } =
         generate_simple_self_signed(vec!["localhost".to_owned()]).unwrap();
     let certificate = CertificateDer::from(cert.der().to_vec());
@@ -54,7 +58,7 @@ fn spawn_tls_server(respond: bool) -> (Url, thread::JoinHandle<()>) {
         .with_no_client_auth()
         .with_single_cert(vec![certificate], private_key)
         .unwrap();
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let listener = TcpListener::bind(bind).unwrap();
     let address = listener.local_addr().unwrap();
     let handle = thread::spawn(move || {
         let Ok((stream, _)) = listener.accept() else {
@@ -213,6 +217,24 @@ fn unclean_tls_close_delimited_body_is_accepted() {
     server.join().unwrap();
     assert_eq!(response.status, 200);
     assert_eq!(response.body, b"OK");
+}
+
+#[test]
+fn ipv6_tls_succeeds_with_tofu_and_persists_the_host_pin() {
+    let root = TestDir::new();
+    let path = root.0.join("pins.json");
+    let (origin, server) = spawn_tls_server_on(true, "[::1]:0");
+    let mut transport = BlockingHttpTransport::new(HttpTransportConfig::new(
+        origin.clone(),
+        PinStore::new(&path),
+    ))
+    .unwrap();
+    let response = transport.send(request(&origin)).unwrap();
+    server.join().unwrap();
+    assert_eq!(response.status, 200);
+    assert_eq!(response.body, b"OK");
+    assert!(transport.tls_enabled());
+    assert!(PinStore::new(path).get("[::1]").is_some());
 }
 
 #[test]
