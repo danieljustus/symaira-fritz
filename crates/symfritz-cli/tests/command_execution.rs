@@ -514,9 +514,10 @@ fn call_list() -> String {
 }
 
 fn event_log() -> String {
-    String::from(
-        "<root><Event><id>42</id><group>WLAN</group><date>01.02.24</date><time>03:04:05</time><msg>Client connected</msg></Event></root>",
-    )
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../testdata/port/cli/log-output.json"))
+            .expect("log output fixture");
+    fixture["xml"].as_str().unwrap().to_owned()
 }
 
 fn aha_device_list() -> String {
@@ -1010,6 +1011,27 @@ fn diagnose_uses_local_probe_and_reports_host_and_port_results() {
         lookup
             .body
             .contains("<NewIPAddress>127.0.0.1</NewIPAddress>")
+    );
+}
+
+#[test]
+fn log_text_preserves_local_wallclock_and_invalid_placeholder() {
+    let mock = MockBox::start();
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../testdata/port/cli/log-output.json"))
+            .expect("log output fixture");
+    assert_eq!(fixture["schema_version"], 1);
+    let structured = json(&mock.run(&["log", "--json"]), "log --json");
+    let times: Vec<_> = structured
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|event| event["Time"].clone())
+        .collect();
+    assert_eq!(serde_json::json!(times), fixture["times"]);
+    assert_eq!(
+        text(&mock.run(&["log"]), "log"),
+        fixture["text"].as_str().unwrap()
     );
 }
 
