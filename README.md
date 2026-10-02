@@ -279,7 +279,8 @@ Build:
 make build           # → ./symfritz
 ```
 
-Test:
+Test (complete the [trusted oracle setup](CONTRIBUTING.md#trusted-oracle-setup)
+before running the CLI contract suite; its Go 1.26.6 dependency is verification-only):
 
 ```bash
 make test            # complete Rust workspace

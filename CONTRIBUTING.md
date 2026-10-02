@@ -8,6 +8,40 @@ Thank you for your interest in contributing to Symaira Fritz! This document prov
 
 - Rust 1.98.0 via rustup (production implementation)
 - Git
+- Python 3 and Make for the verification scripts
+- Go 1.26.6 for the historical CLI differential only; building and running the
+  production Rust binary does not require Go
+
+### Trusted oracle setup
+
+Before running `make cli-contract`, export absolute paths to trusted Git and
+the pinned Go executable. With an installed Go launcher that supports toolchain
+selection, run from the repository root on macOS/Linux:
+
+```bash
+export SYMAIRA_TRUSTED_GIT="$(command -v git)"
+export SYMAIRA_TRUSTED_GO="$(GOTOOLCHAIN=go1.26.6 go env GOROOT)/bin/go"
+"$SYMAIRA_TRUSTED_GO" version  # must report go1.26.6
+```
+
+The Go command downloads Go 1.26.6 if necessary. Select the direct `GOROOT/bin/go`
+binary, not a newer Go launcher: the differential runner intentionally ignores
+caller `GO*` overrides and forces `GOTOOLCHAIN=local`. Exporting `GOTOOLCHAIN`
+alone therefore does not select the oracle toolchain.
+
+On Windows (PowerShell):
+
+```powershell
+$env:SYMAIRA_TRUSTED_GIT = (Get-Command git -CommandType Application).Source
+$env:GOTOOLCHAIN = 'go1.26.6'
+$env:SYMAIRA_TRUSTED_GO = Join-Path (go env GOROOT) 'bin/go.exe'
+& $env:SYMAIRA_TRUSTED_GO version  # must report go1.26.6
+```
+
+Use these variables in the same shell as the checks below. A shallow clone may
+also need `git fetch --unshallow origin` to include the immutable historical
+oracle commit. Verification rebuilds that oracle in isolated temporary storage;
+it never uses a prebuilt replacement or connects to a physical router.
 
 ### Getting Started
 
@@ -21,7 +55,8 @@ Thank you for your interest in contributing to Symaira Fritz! This document prov
    ```bash
    git checkout -b my-feature
    ```
-4. Make your changes and ensure they pass all checks:
+4. Complete the [trusted oracle setup](#trusted-oracle-setup), then make your
+   changes and ensure they pass all checks:
    ```bash
    make build
    make lint
