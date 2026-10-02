@@ -65,6 +65,30 @@ it never uses a prebuilt replacement or connects to a physical router.
    make release-manifest-test
    ```
 
+## Coverage
+
+The workspace coverage check includes the Rust CLI subprocess tests and fails
+below 80% line coverage. It does not exclude any production crate or require
+the historical Go differential suite to reach the threshold.
+
+Install the optional coverage tools once, then run from the repository root:
+
+```bash
+rustup component add llvm-tools-preview
+cargo install cargo-llvm-cov --version 0.9.0 --locked
+make coverage
+```
+
+For machine-readable evidence, use the same scope:
+
+```bash
+cargo llvm-cov --workspace --all-features --locked --fail-under-lines 80 --json --output-path target/coverage.json
+```
+
+The percentage describes instrumented lines, not branch coverage or a guarantee
+about physical-router compatibility. New tests use isolated configuration,
+temporary files and loopback servers, not a real router or credential store.
+
 ## Code Style
 
 - Follow Rust conventions (`rustfmt`, Clippy with warnings denied)

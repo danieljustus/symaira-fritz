@@ -18,6 +18,10 @@ build-version:
 .PHONY: test
 test: rust-test
 
+.PHONY: coverage
+coverage:
+	$(CARGO) llvm-cov --workspace --all-features --locked --fail-under-lines 80
+
 .PHONY: test-verbose
 test-verbose:
 	$(CARGO) test --workspace --all-features --locked -- --nocapture
