@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "source": "Synthetic regression vectors for the existing box-host syntax; ports are supplied by an IPv6 loopback listener",
+  "hosts": ["[::1]:{port}", "http://[::1]:{port}", "https://[::1]:{port}"]
+}

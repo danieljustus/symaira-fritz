@@ -36,7 +36,11 @@ struct MockBox {
 
 impl MockBox {
     fn start() -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback fixture");
+        Self::start_on("127.0.0.1:0")
+    }
+
+    fn start_on(address: &str) -> Self {
+        let listener = TcpListener::bind(address).expect("bind loopback fixture");
         let address = listener.local_addr().expect("fixture address");
         let port = address.port();
         let address = address.to_string();
@@ -1028,6 +1032,55 @@ fn log_text_preserves_local_wallclock_and_invalid_placeholder() {
     assert_eq!(
         text(&mock.run(&["log"]), "log"),
         fixture["text"].as_str().unwrap()
+    );
+}
+
+#[test]
+fn configured_ipv6_port_is_used_by_tr064_and_web() {
+    let mock = MockBox::start_on("[::1]:0");
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../../testdata/port/cli/ipv6-origins.json"))
+            .expect("IPv6 origin fixture");
+    assert_eq!(fixture["schema_version"], 1);
+    for template in fixture["hosts"].as_array().expect("host templates") {
+        let host = template
+            .as_str()
+            .unwrap()
+            .replace("{port}", &mock.port.to_string());
+        let services = json(
+            &mock.output(
+                mock.command()
+                    .args(["services", "--json"])
+                    .env("SYMFRITZ_BOX_HOST", &host),
+            ),
+            "IPv6 services",
+        );
+        assert!(
+            services
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|service| service["Type"] == "urn:dslforum-org:service:DeviceInfo:1")
+        );
+        let home = json(
+            &mock.output(
+                mock.command()
+                    .args(["home", "list", "--json"])
+                    .env("SYMFRITZ_BOX_HOST", &host),
+            ),
+            "IPv6 home list",
+        );
+        assert_eq!(home["devices"][0]["Name"], "Kitchen Plug");
+    }
+    assert!(
+        mock.requests()
+            .iter()
+            .any(|request| request.path == "/tr64desc.xml")
+    );
+    assert!(
+        mock.requests()
+            .iter()
+            .any(|request| request.path.starts_with("/webservices/homeautoswitch.lua?"))
     );
 }
 

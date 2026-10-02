@@ -1,6 +1,17 @@
 {
   "schema_version": 1,
   "oracle": "Go internal/fritz AHA Home and Homeauto contracts",
+  "response_source": "Synthetic target-contract vectors: AVM AHA HTTP interface section 4 documents HTTP 200 with inval when no value can be determined",
+  "home_responses": [
+    {"switchcmd": "setswitchon", "body": "inval\n", "error": "aha: setswitchon returned inval (no valid value)"},
+    {"switchcmd": "setswitchoff", "body": " \r\ninval\t ", "error": "aha: setswitchoff returned inval (no valid value)"},
+    {"switchcmd": "sethkrtsoll", "body": "inval", "error": "aha: sethkrtsoll returned inval (no valid value)"},
+    {"switchcmd": "getswitchstate", "body": "inval", "error": "aha: getswitchstate returned inval (no valid value)"},
+    {"switchcmd": "setswitchon", "body": "1\n", "error": null},
+    {"switchcmd": "setswitchoff", "body": "0\n", "error": null},
+    {"switchcmd": "sethkrtsoll", "body": "41\n", "error": null},
+    {"switchcmd": "getswitchstate", "body": "0\n", "error": null}
+  ],
   "hkr_error_descriptions": {
     "0": "no error",
     "1": "no connection to actuator",
