@@ -18,6 +18,14 @@ struct Fixture {
     device_xml: Vec<DeviceVector>,
     home_queries: Vec<QueryVector>,
     hkr_params: Vec<HkrVector>,
+    home_responses: Vec<HomeResponseVector>,
+}
+
+#[derive(Debug, Deserialize)]
+struct HomeResponseVector {
+    switchcmd: String,
+    body: String,
+    error: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -202,6 +210,48 @@ fn home_queries_match_go_url_values_byte_for_byte() {
         let mut client = Client::new(transport, FixedClock, "http://fritz.box", "admin", "secret");
         client.home(&vector.switchcmd, &vector.params).unwrap();
         assert_eq!(client.transport_mut().requests[1].url, vector.url);
+    }
+}
+
+#[test]
+fn aha_inval_is_unavailable_without_retrying_the_command() {
+    for vector in fixture().home_responses {
+        let transport = FixtureTransport {
+            responses: VecDeque::from([Response {
+                status: 200,
+                body: vector.body.into_bytes(),
+                ..Response::default()
+            }]),
+            requests: Vec::new(),
+        };
+        let mut client = Client::new(
+            transport,
+            FixedClock,
+            "http://fritz.box",
+            "admin",
+            "fixture",
+        );
+        client.set_cached_sid("0123456789abcdef");
+        let result = match vector.switchcmd.as_str() {
+            "setswitchon" => client.switch_on("fixture-ain"),
+            "setswitchoff" => client.switch_off("fixture-ain"),
+            "sethkrtsoll" => client.set_hkr_temp("fixture-ain", 20.5),
+            command => client.home(command, &BTreeMap::new()).map(|_| ()),
+        };
+        assert_eq!(
+            result.map_err(|error| error.to_string()),
+            vector.error.map_or(Ok(()), Err)
+        );
+        assert_eq!(
+            client.transport_mut().requests.len(),
+            1,
+            "must not retry an unavailable value"
+        );
+        assert!(
+            client.transport_mut().requests[0]
+                .url
+                .contains(&format!("switchcmd={}", vector.switchcmd))
+        );
     }
 }
 
