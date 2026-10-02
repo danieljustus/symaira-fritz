@@ -602,6 +602,8 @@ impl<T: Transport, C: Clock> Client<T, C> {
     }
 
     /// Perform one AHA-HTTP `switchcmd`, retrying exactly once after HTTP 403.
+    /// A successful HTTP response containing `inval` has no valid value and is
+    /// returned as an unavailable response, without retrying the command.
     pub fn home(
         &mut self,
         switchcmd: &str,
@@ -714,7 +716,13 @@ impl<T: Transport, C: Clock> Client<T, C> {
         let text = String::from_utf8(response.body).map_err(|error| {
             ClientError::Transport(format!("aha: invalid response body: {error}"))
         })?;
-        Ok(text.trim().to_owned())
+        let text = text.trim();
+        if text == "inval" {
+            return Err(ClientError::Transport(format!(
+                "aha: {switchcmd} returned inval (no valid value)"
+            )));
+        }
+        Ok(text.to_owned())
     }
 }
 
