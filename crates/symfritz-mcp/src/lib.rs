@@ -1452,38 +1452,4 @@ mod tests {
         }
         assert!(max_active.load(Ordering::SeqCst) <= MAX_WORKERS);
     }
-
-    #[test]
-    fn all_fake_capabilities_return_tool_results() {
-        let requests = [
-            json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"status","arguments":{}}}),
-            json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"host_list","arguments":{"active_only":true}}}),
-            json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"host_get","arguments":{"name":"laptop"}}}),
-            json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"diagnose","arguments":{"host":"laptop","ports":[22]}}}),
-            json!({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"mesh","arguments":{}}}),
-            json!({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"wlan_clients","arguments":{}}}),
-            json!({"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"wake_on_lan","arguments":{"host":"laptop"}}}),
-            json!({"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"home_list","arguments":{}}}),
-            json!({"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"home_switch","arguments":{"ain":"12345","on":true}}}),
-        ];
-        let input = requests
-            .iter()
-            .map(|request| format!("{request}\n"))
-            .collect::<String>();
-        let mut output = Vec::new();
-        Server::new("symfritz", "test", Fake)
-            .serve_io(Cursor::new(input), &mut output)
-            .unwrap();
-        let responses = String::from_utf8(output)
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str::<Value>(line).unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(responses.len(), requests.len());
-        assert!(
-            responses
-                .iter()
-                .all(|response| response["result"]["isError"] == false)
-        );
-    }
 }

@@ -19,16 +19,23 @@ use symfritz_core::pins::PinStore;
 use symfritz_tr064::{BlockingHttpTransport, HttpTransportConfig, Method, Request, Transport};
 use url::Url;
 
+#[path = "support/accept.rs"]
+mod test_accept;
+
 struct TestDir(PathBuf);
 
 impl TestDir {
     fn new() -> Self {
         let path = std::env::temp_dir().join(format!(
-            "symfritz-tls-integrity-fallback-{}",
-            std::process::id()
+            "symfritz-tls-integrity-fallback-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
-        let _ = std::fs::remove_dir_all(&path);
-        std::fs::create_dir_all(&path).unwrap();
+        std::fs::create_dir_all(std::env::temp_dir()).unwrap();
+        std::fs::create_dir(&path).unwrap();
         Self(path)
     }
 }
@@ -54,7 +61,7 @@ fn tls_server() -> (Url, thread::JoinHandle<bool>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let handle = thread::spawn(move || {
-        let (stream, _) = listener.accept().unwrap();
+        let stream = test_accept::accept(&listener).unwrap();
         let mut tls = StreamOwned::new(ServerConnection::new(Arc::new(config)).unwrap(), stream);
         let mut request = [0_u8; 2048];
         if tls.read(&mut request).is_err() {

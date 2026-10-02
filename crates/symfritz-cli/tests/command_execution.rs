@@ -6,9 +6,13 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
     path::PathBuf,
-    process::{Command, Output},
-    sync::{Arc, Mutex},
+    process::{Command, Output, Stdio},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     thread::{self, JoinHandle},
+    time::{Duration, Instant},
 };
 
 use serde_json::Value;
@@ -26,6 +30,7 @@ struct MockBox {
     port: u16,
     home: PathBuf,
     requests: Arc<Mutex<Vec<Request>>>,
+    stop: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
 }
 
@@ -37,19 +42,34 @@ impl MockBox {
         let address = address.to_string();
         let requests = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&requests);
+        let stop = Arc::new(AtomicBool::new(false));
+        let stopped = Arc::clone(&stop);
+        listener
+            .set_nonblocking(true)
+            .expect("nonblocking fixture listener");
         let worker = thread::spawn(move || {
-            while let Ok((stream, _)) = listener.accept() {
-                if let Ok(true) = serve(stream, &sink) {
-                    break;
+            while !stopped.load(Ordering::SeqCst) {
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        if let Ok(true) = serve(stream, &sink) {
+                            break;
+                        }
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("fixture accept: {error}"),
                 }
             }
         });
 
+        let mut nonce = [0_u8; 16];
+        getrandom::fill(&mut nonce).expect("test directory nonce");
         let home = std::env::temp_dir().join(format!(
-            "symfritz-cli-command-execution-{}-{port}",
-            std::process::id()
+            "symfritz-cli-command-execution-{}",
+            hex::encode(nonce)
         ));
-        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir(&home).expect("new isolated home");
         std::fs::create_dir_all(home.join("tmp")).expect("create isolated home");
         std::fs::create_dir_all(home.join(".config")).expect("create isolated config directory");
         Self {
@@ -57,6 +77,7 @@ impl MockBox {
             port,
             home,
             requests,
+            stop,
             worker: Some(worker),
         }
     }
@@ -87,10 +108,37 @@ impl MockBox {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        self.command()
-            .args(args)
-            .output()
-            .unwrap_or_else(|error| panic!("run symfritz {args:?}: {error}"))
+        self.output(self.command().args(args))
+    }
+
+    fn output(&self, command: &mut Command) -> Output {
+        let mut nonce = [0_u8; 16];
+        getrandom::fill(&mut nonce).unwrap();
+        let stdout = self.home.join(format!("stdout-{}", hex::encode(nonce)));
+        let stderr = self.home.join(format!("stderr-{}", hex::encode(nonce)));
+        let mut child = command
+            .stdin(Stdio::null())
+            .stdout(std::fs::File::create(&stdout).unwrap())
+            .stderr(std::fs::File::create(&stderr).unwrap())
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            if started.elapsed() >= Duration::from_secs(30) {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("CLI exceeded its 30-second deadline: {command:?}");
+            }
+            thread::sleep(Duration::from_millis(10));
+        };
+        Output {
+            status,
+            stdout: std::fs::read(stdout).unwrap(),
+            stderr: std::fs::read(stderr).unwrap(),
+        }
     }
 
     fn requests(&self) -> Vec<Request> {
@@ -113,11 +161,7 @@ impl MockBox {
 
 impl Drop for MockBox {
     fn drop(&mut self) {
-        if let Ok(mut stream) = TcpStream::connect(&self.address) {
-            let _ = stream.write_all(
-                b"GET /__symfritz_shutdown HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-            );
-        }
+        self.stop.store(true, Ordering::SeqCst);
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
@@ -126,6 +170,9 @@ impl Drop for MockBox {
 }
 
 fn serve(mut stream: TcpStream, requests: &Mutex<Vec<Request>>) -> std::io::Result<bool> {
+    stream.set_nonblocking(false)?;
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut request_line = String::new();
     if reader.read_line(&mut request_line)? == 0 {
@@ -990,12 +1037,11 @@ fn local_config_auth_and_doctor_paths_never_contact_the_fixture_router() {
     assert_eq!(trust["host"], "router.invalid");
     assert_eq!(trust["reset"], false);
 
-    let auth_test = mock
-        .command()
-        .args(["auth", "test", "--json"])
-        .env_remove("SYMFRITZ_PASSWORD")
-        .output()
-        .expect("run auth test without a credential");
+    let auth_test = mock.output(
+        mock.command()
+            .args(["auth", "test", "--json"])
+            .env_remove("SYMFRITZ_PASSWORD"),
+    );
     assert_eq!(auth_test.status.code(), Some(3));
     assert!(auth_test.stderr.is_empty());
     let error: Value = serde_json::from_slice(&auth_test.stdout).expect("structured auth error");
@@ -1005,12 +1051,11 @@ fn local_config_auth_and_doctor_paths_never_contact_the_fixture_router() {
         "no credential: no password configured (run 'symfritz auth login')"
     );
 
-    let doctor = mock
-        .command()
-        .args(["doctor", "--json"])
-        .env_remove("SYMFRITZ_PASSWORD")
-        .output()
-        .expect("run doctor without credentials");
+    let doctor = mock.output(
+        mock.command()
+            .args(["doctor", "--json"])
+            .env_remove("SYMFRITZ_PASSWORD"),
+    );
     assert_eq!(doctor.status.code(), Some(1));
     let report: Value = serde_json::from_slice(&doctor.stdout).expect("doctor JSON report");
     assert_eq!(report["healthy"], false);
@@ -1046,12 +1091,11 @@ fn local_config_auth_and_doctor_paths_never_contact_the_fixture_router() {
         );
     }
     std::fs::write(&config_path, "[box\nhost = \"broken\"\n").expect("write invalid config");
-    let malformed_config = mock
-        .command()
-        .args(["doctor", "--json"])
-        .env_remove("SYMFRITZ_PASSWORD")
-        .output()
-        .expect("doctor with malformed local config");
+    let malformed_config = mock.output(
+        mock.command()
+            .args(["doctor", "--json"])
+            .env_remove("SYMFRITZ_PASSWORD"),
+    );
     assert_eq!(malformed_config.status.code(), Some(1));
     let malformed_report: Value =
         serde_json::from_slice(&malformed_config.stdout).expect("malformed-config doctor JSON");

@@ -9,6 +9,9 @@ use symfritz_tr064::{
     parse_windows_default_gateway, probe_tr064,
 };
 
+#[path = "support/accept.rs"]
+mod test_accept;
+
 #[derive(Default)]
 struct FakeTransport {
     responses: VecDeque<Response>,
@@ -250,11 +253,11 @@ fn name_lookup_rejects_no_match_and_ambiguous_rows() {
 fn diagnosis_reports_local_tcp_open_and_valid_ssh_banner() {
     let tcp_listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let tcp_port = tcp_listener.local_addr().unwrap().port();
-    let tcp_server = thread::spawn(move || tcp_listener.accept().unwrap());
+    let tcp_server = thread::spawn(move || test_accept::accept(&tcp_listener).unwrap());
     let ssh_listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let ssh_port = ssh_listener.local_addr().unwrap().port();
     let ssh_server = thread::spawn(move || {
-        let (mut stream, _) = ssh_listener.accept().unwrap();
+        let mut stream = test_accept::accept(&ssh_listener).unwrap();
         stream.write_all(b"SSH-2.0-test\r\n").unwrap();
     });
     let mut client = client([soap(
