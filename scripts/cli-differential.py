@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """Strict executable contract coverage for the Rust CLI.
 
-The fake box binds to every interface on a fixed high port.  The subprocesses
+The fake box binds to every interface on an OS-assigned port. The subprocesses
 connect through this machine's private RFC1918 address, which exercises the
 same explicit host:port origins used by a real local box. Every route,
 SOAP action, argument, SID, digest challenge, and mutation sequence is
 allow-listed; an unexpected request is a failure, never a generic 200.
+Discovery and TLS fallback retain their contractual ports in a separately
+locked phase shared by worktrees of the same repository.
 """
 from __future__ import annotations
 
 import argparse
 import copy
+import errno
 import hashlib
 import http.server
 import ipaddress
@@ -30,9 +33,10 @@ try:
     import pty
 except ImportError:  # Windows has no PTY module.
     pty = None
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path, PureWindowsPath
-from typing import Any, Callable, Mapping, cast
+from typing import Any, Callable, Iterator, Mapping, cast
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 PORT = 0
@@ -2097,6 +2101,42 @@ def cli_inventory(binary: str, families: list[str]) -> tuple[frozenset[str], fro
     return commands, frozenset(flags)
 
 
+@contextmanager
+def fixed_protocol_ports(root: Path) -> Iterator[None]:
+    """Serialize immutable protocol-port checks across linked worktrees."""
+    git = Path(os.environ.get("SYMAIRA_TRUSTED_GIT", ""))
+    if not git.is_absolute():
+        raise AssertionError("protocol-port isolation requires absolute SYMAIRA_TRUSTED_GIT")
+    common = subprocess.check_output(
+        [str(git), "-C", str(root), "rev-parse", "--git-common-dir"],
+        text=True, timeout=5,
+    ).strip()
+    # ponytail: shared-repository scope; use a host-wide lock for unrelated clones.
+    lock_path = (root / common).resolve() / "symfritz-protocol-ports.lock"
+    with lock_path.open("a+b") as lock:
+        if lock.tell() == 0:
+            lock.write(b"\0")
+            lock.flush()
+        lock.seek(0)
+        deadline = time.monotonic() + 300
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as exc:
+                if exc.errno not in (errno.EACCES, errno.EAGAIN):
+                    raise
+                if time.monotonic() >= deadline:
+                    raise AssertionError("protocol-port lock exceeded 300s") from exc
+                time.sleep(0.05)
+        yield
+
+
 def run_suite(go: str, rust: str, root: Path) -> None:
     global PRIVATE_IP, PORT
     go, rust = resolve_distinct_binaries(go, rust)
@@ -2104,12 +2144,25 @@ def run_suite(go: str, rust: str, root: Path) -> None:
     coverage = PolicyCaseCoverage(policy)
     global _ACTIVE_POLICY_COVERAGE
     _ACTIVE_POLICY_COVERAGE = coverage
+    PRIVATE_IP = private_address()
     try:
-        run_rust_assertions(root, policy)
+        with fixed_protocol_ports(root):
+            run_rust_assertions(root, policy)
+            # The immutable oracle discovers only the standard TR-064 ports.
+            with StrictFakeBox((PRIVATE_IP, 49000), PRIVATE_IP) as discovery:
+                discovery_thread = threading.Thread(target=discovery.serve_forever, daemon=True)
+                discovery_thread.start()
+                try:
+                    run_pair(discovery, "detect-success", go, rust, ["detect", "--json"], kind="json", extra={"SYMFRITZ_HOST": PRIVATE_IP})
+                    run_pair(discovery, "config-detect-success", go, rust, ["config", "detect", "--json"], kind="json", extra={"SYMFRITZ_HOST": PRIVATE_IP})
+                    run_pair(discovery, "diagnose-router-json", go, rust, ["diagnose", "router", "--json"], kind="json", extra={"SYMFRITZ_HOST": PRIVATE_IP})
+                    run_pair(discovery, "diagnose-router-output-json", go, rust, ["diagnose", "router", "--output", "json"], kind="json", extra={"SYMFRITZ_HOST": PRIVATE_IP})
+                finally:
+                    discovery.shutdown()
+                    discovery_thread.join(timeout=2)
     except BaseException:
         _ACTIVE_POLICY_COVERAGE = None
         raise
-    PRIVATE_IP = private_address()
     server = StrictFakeBox(("0.0.0.0", 0), PRIVATE_IP)
     PORT = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
@@ -2164,11 +2217,7 @@ def run_suite(go: str, rust: str, root: Path) -> None:
         for label, args in [("version-text", ["version"]), ("version-json", ["version", "--output", "json"]), ("version-yaml", ["version", "--output", "yaml"]), ("invalid-output-9", ["version", "--output", "invalid"]), ("reboot-without-confirmation-9", ["reboot"])]:
             assert_bytes(label, run(go, args), run(rust, args)); print(f"PASS {label}")
         run_pair(server, "services-discovery", go, rust, ["services", "--json"], kind="json", expected=[("GET", "/tr64desc.xml", "")])
-        run_pair(server, "detect-success", go, rust, ["detect", "--json"], kind="json", extra={"SYMFRITZ_HOST": PRIVATE_IP})
-        run_pair(server, "config-detect-success", go, rust, ["config", "detect", "--json"], kind="json", extra={"SYMFRITZ_HOST": PRIVATE_IP})
         run_pair(server, "diagnose-private-port", go, rust, ["diagnose", PRIVATE_IP, "--port", str(PORT), "--json"], kind="json", expected=[("POST", "/upnp/control/hosts", "X_AVM-DE_GetSpecificHostEntryByIP")])
-        run_pair(server, "diagnose-router-json", go, rust, ["diagnose", "router", "--json"], kind="json", extra={"SYMFRITZ_HOST": PRIVATE_IP})
-        run_pair(server, "diagnose-router-output-json", go, rust, ["diagnose", "router", "--output", "json"], kind="json", extra={"SYMFRITZ_HOST": PRIVATE_IP})
         run_pair(server, "diagnose-output-after-target", go, rust, ["diagnose", PRIVATE_IP, "--port", str(PORT), "--output", "json"], kind="json", expected=[("POST", "/upnp/control/hosts", "X_AVM-DE_GetSpecificHostEntryByIP")])
         run_pair(server, "status-json", go, rust, ["status", "--output", "json"], kind="json")
         run_pair(server, "hosts-list", go, rust, ["hosts", "list", "--json"], kind="json")
