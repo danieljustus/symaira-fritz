@@ -491,7 +491,8 @@ fn validate_evidence(options: &DnsDiagnosticOptions) -> Result<(), String> {
     Ok(())
 }
 
-fn dns_name(input: &str) -> Result<String, String> {
+/// Validate one selected ASCII hostname before credentials or network access.
+pub fn dns_name(input: &str) -> Result<String, String> {
     let name = input.strip_suffix('.').unwrap_or(input);
     if name.is_empty()
         || name.len() > 253

@@ -160,6 +160,35 @@ symfritz reboot --yes                       # reboot the FRITZ!Box
 symfritz mcp                                # start MCP stdio server for AI agents
 ```
 
+### Read-only DNS-path diagnosis
+
+```bash
+symfritz dns homeassistant.fritz.box --expected-ip 192.168.188.20 --json
+# If the configured router is a hostname, supply its independently known DNS IP:
+symfritz dns fritz.box --router-dns-ip 192.168.188.1 --json
+```
+
+The addresses above are examples, not discovered device addresses. The command
+checks only the selected absolute name (A and AAAA), never the full host inventory
+or guessed suffixes. `--expected-ip` compares answer identity and requests one
+typed host-table entry; a private answer or active table flag does not prove IP
+connectivity. `.local` is reported as mDNS/unsupported without unicast queries.
+
+The report separates router DHCP DNS configuration, TR-064 `NewDomainName`,
+unobserved DHCP option 15, and client resolver/search evidence. macOS captures
+`scutil --dns` within two seconds and 64 KiB; Linux reads a bounded
+`/etc/resolv.conf` snapshot. Other platforms, scoped IPv6 resolvers, OS/NSS and
+VPN split-resolver selection stay unknown rather than being guessed. Direct UDP
+queries are capped at 500 ms each and five seconds total, separately from bounded
+TR-064 requests (at most two seconds per request). Ctrl-C stops between calls.
+Text mode prints the same explicit JSON fields; YAML remains available.
+
+An external resolver such as AdGuard may need conditional forwarding of the
+verified local zone to router-local DNS. Optional DHCP suffix restoration affects
+bare-name search separately. This command changes neither setting, does not enable
+FRITZ!OS DNS filtering, and does not claim FRITZ!OS 8.50 compatibility or a new
+firmware regression. DNS-filter state is explicitly unknown.
+
 ### Typical Mac Mini check
 
 ```bash

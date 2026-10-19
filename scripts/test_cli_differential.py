@@ -79,6 +79,18 @@ class CliDifferentialTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, r"invalid byte stream"):
             MODULE.validate_policy(ROOT, mutated)
 
+    def test_dns_help_extension_rejects_missing_changed_and_extra_commands(self) -> None:
+        base = MODULE.HelpContract("description", (), {}, (), {}, {})
+        actual = MODULE.HelpContract("description", (), {"dns": ("Compare router, DHCP and client DNS paths for one selected name", ())}, (), {}, {})
+        def compare(candidate):
+            MODULE.compare_help_contract("dns", base, candidate, base, candidate, "symfritz", (), (), {"symfritz": base}, {"symfritz": candidate}, self.policy)
+        compare(actual)
+        for commands in [{}, {"dns": ("wrong", ())}, {"dns": (actual.subcommands["dns"][0], ("alias",))}]:
+            with self.assertRaisesRegex(AssertionError, "unexpected DNS"):
+                compare(MODULE.HelpContract("description", (), commands, (), {}, {}))
+        with self.assertRaisesRegex(AssertionError, "subcommands mismatch"):
+            compare(MODULE.HelpContract("description", (), {**actual.subcommands, "rogue": ("extra", ())}, (), {}, {}))
+
     def test_uncovered_difference_fails_without_a_policy_transform(self) -> None:
         left = MODULE.Result(0, b'{"unexpected":null}\n', b"")
         right = MODULE.Result(0, b'{"unexpected":[]}\n', b"")
