@@ -479,8 +479,27 @@ jobs:
           git -C "$tap" config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git -C "$tap" add Formula/symfritz.rb
           if ! git -C "$tap" diff --cached --quiet; then
+            # The tap's main branch is protected; publish through a pull request
+            # and let its required validation check gate the auto-merge.
+            branch="symfritz-$VERSION"
+            git -C "$tap" switch --quiet -c "$branch"
             git -C "$tap" commit -m "symfritz $VERSION"
-            git -C "$tap" push origin HEAD:main
+            git -C "$tap" push --quiet origin "HEAD:refs/heads/$branch"
+            pr_url="$(gh pr list --repo danieljustus/homebrew-tap --head "$branch" --state open --json url --jq '.[0].url // empty')"
+            if [ -z "$pr_url" ]; then
+              pr_url="$(gh pr create --repo danieljustus/homebrew-tap --base main --head "$branch" \
+                --title "symfritz $VERSION" \
+                --body "Updates the symfritz formula to the published $TAG release, rendered and verified against its checksums.")"
+            fi
+            gh pr merge "$pr_url" --repo danieljustus/homebrew-tap --squash --auto
+            deadline=$((SECONDS + 1800))
+            until [ "$(gh pr view "$pr_url" --repo danieljustus/homebrew-tap --json state --jq .state)" = MERGED ]; do
+              if [ "$SECONDS" -ge "$deadline" ]; then
+                printf 'Homebrew tap pull request did not merge in time: %s\n' "$pr_url" >&2
+                exit 1
+              fi
+              sleep 20
+            done
           fi
           git -C "$tap" fetch --quiet origin main
           remote_formula="$RUNNER_TEMP/remote-symfritz.rb"
