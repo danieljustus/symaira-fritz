@@ -6,6 +6,7 @@ import copy
 import importlib.util
 import os
 import shutil
+import socket
 import stat
 import sys
 import tempfile
@@ -81,7 +82,7 @@ class CliDifferentialTests(unittest.TestCase):
 
     def test_firmware_help_extension_is_explicit_and_rejects_extra_commands(self) -> None:
         base = MODULE.HelpContract("description", (), {}, (), {}, {})
-        actual = MODULE.HelpContract("description", (), {"firmware": ("Check and install box-selected official firmware", ())}, (), {}, {})
+        actual = MODULE.HelpContract("description", (), {"firmware": ("Check and install box-selected official firmware", ()), "dns": ("Compare router, DHCP and client DNS paths for one selected name", ())}, (), {}, {})
         def compare(candidate):
             MODULE.compare_help_contract("firmware", base, candidate, base, candidate, "symfritz", (), (), {"symfritz": base}, {"symfritz": candidate}, self.policy)
         compare(actual)
@@ -89,6 +90,17 @@ class CliDifferentialTests(unittest.TestCase):
             compare(MODULE.HelpContract("description", (), {}, (), {}, {}))
         with self.assertRaisesRegex(AssertionError, "unexpected firmware"):
             compare(MODULE.HelpContract("description", (), {"firmware": ("wrong", ())}, (), {}, {}))
+
+    def test_dns_help_extension_rejects_missing_changed_and_extra_commands(self) -> None:
+        base = MODULE.HelpContract("description", (), {}, (), {}, {})
+        actual = MODULE.HelpContract("description", (), {"firmware": ("Check and install box-selected official firmware", ()), "dns": ("Compare router, DHCP and client DNS paths for one selected name", ())}, (), {}, {})
+        def compare(candidate):
+            MODULE.compare_help_contract("dns", base, candidate, base, candidate, "symfritz", (), (), {"symfritz": base}, {"symfritz": candidate}, self.policy)
+        compare(actual)
+        firmware = {"firmware": actual.subcommands["firmware"]}
+        for commands in [firmware, {**firmware, "dns": ("wrong", ())}, {**firmware, "dns": (actual.subcommands["dns"][0], ("alias",))}]:
+            with self.assertRaisesRegex(AssertionError, "unexpected DNS"):
+                compare(MODULE.HelpContract("description", (), commands, (), {}, {}))
         with self.assertRaisesRegex(AssertionError, "subcommands mismatch"):
             compare(MODULE.HelpContract("description", (), {**actual.subcommands, "rogue": ("extra", ())}, (), {}, {}))
 
@@ -196,7 +208,7 @@ class CliDifferentialTests(unittest.TestCase):
     def test_structured_error_policy_strips_only_declared_go_preamble(self) -> None:
         prefix = self.policy["harness"]["byte_stream_overrides"][0]["cases"]["auth-unauthorized"][
             "oracle_stdout_prefix"
-        ].format(private_ip="192.168.1.20", port=49000).encode()
+        ].format(private_ip="192.168.1.20", port=MODULE.PORT).encode()
         payload = b'{"error":{"kind":"auth"}}\n'
         MODULE.assert_bytes(
             "auth-unauthorized",
@@ -263,6 +275,25 @@ class CliDifferentialTests(unittest.TestCase):
                 ),
                 str(home / "empty-path"),
             )
+
+    def test_fake_boxes_coexist_without_taking_an_occupied_port(self) -> None:
+        with socket.socket() as occupied:
+            occupied.bind(("127.0.0.1", 0))
+            occupied.listen(1)
+            occupied_port = occupied.getsockname()[1]
+            with (
+                MODULE.StrictFakeBox(("127.0.0.1", MODULE.PORT), "192.168.1.20") as first,
+                MODULE.StrictFakeBox(("127.0.0.1", MODULE.PORT), "192.168.1.20") as second,
+            ):
+                first_port = first.server_address[1]
+                second_port = second.server_address[1]
+                self.assertGreater(first_port, 0)
+                self.assertGreater(second_port, 0)
+                self.assertNotEqual(first_port, second_port)
+                self.assertNotIn(occupied_port, (first_port, second_port))
+                with socket.create_connection(occupied.getsockname(), timeout=2):
+                    connection, _ = occupied.accept()
+                    connection.close()
 
     def test_strict_fake_box_rejects_extra_aha_and_soap_parameters(self) -> None:
         server = MODULE.StrictFakeBox(("127.0.0.1", 0), "192.168.1.20")

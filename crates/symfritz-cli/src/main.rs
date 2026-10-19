@@ -47,6 +47,8 @@ use symfritz_tr064::{
 };
 use url::Url;
 
+mod dns_cli;
+mod dns_evidence;
 mod firmware_cli;
 
 const VERSION: &str = match option_env!("SYMFRITZ_VERSION") {
@@ -439,6 +441,7 @@ fn execute(cli: Cli, format: OutputFormat) -> Result<(), HandlerError> {
         Some(Command::Config(ConfigCommand::Detect(_))) => execute_detect(format),
         Some(Command::Config(ConfigCommand::Init(args))) => execute_config_init(args),
         Some(Command::Diagnose(args)) => execute_diagnose(args, format),
+        Some(Command::Dns(args)) => dns_cli::execute(args, format),
         Some(Command::Doctor) => execute_doctor(format),
         Some(Command::Mcp) => execute_mcp(),
         Some(Command::Mesh(_)) => execute_mesh(format),

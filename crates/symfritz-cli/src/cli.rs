@@ -74,6 +74,8 @@ pub enum Command {
         override_usage = "symfritz diagnose <host> [flags]\n  symfritz diagnose [command]"
     )]
     Diagnose(DiagnoseArgs),
+    #[command(about = "Compare router, DHCP and client DNS paths for one selected name")]
+    Dns(DnsArgs),
     #[command(about = "Instruct the FRITZ!Box to dial a phone number")]
     Dial(OneArg),
     #[command(
@@ -316,6 +318,22 @@ pub struct RouterDiagnoseArgs {
         help = "TCP port to probe (repeatable; replaces router defaults 49000, 49443, 80, 443)"
     )]
     pub ports: Vec<u16>,
+}
+
+#[derive(Debug, Args)]
+pub struct DnsArgs {
+    #[arg(value_name = "hostname", value_parser = symfritz_tr064::dns::dns_name)]
+    pub hostname: String,
+    #[arg(
+        long,
+        help = "Expected host IP; performs one host-table lookup, not an inventory scan"
+    )]
+    pub expected_ip: Option<std::net::IpAddr>,
+    #[arg(
+        long,
+        help = "Router DNS IP when the configured router is a hostname; never guessed via public DNS"
+    )]
+    pub router_dns_ip: Option<std::net::IpAddr>,
 }
 
 #[derive(Debug, Args)]

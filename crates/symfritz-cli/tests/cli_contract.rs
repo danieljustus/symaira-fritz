@@ -94,6 +94,15 @@ fn generated_fixture_covers_every_documented_command() {
             .iter()
             .map(|p| p.as_str().unwrap().to_owned()),
     );
+    let dns: serde_json::Value =
+        serde_json::from_str(include_str!("../../../tests/fixtures/dns/contracts.json")).unwrap();
+    expected.extend(
+        dns["cli_paths"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|path| path.as_str().unwrap().to_owned()),
+    );
     actual.sort();
     expected.sort();
     assert_eq!(

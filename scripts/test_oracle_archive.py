@@ -317,6 +317,30 @@ else:
             self.assertTrue(env["GOCACHE"].startswith(str(oracle_root)))
             verify.assert_called_once()
 
+    def test_explicit_trusted_git_is_forwarded_to_the_harness(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            rust = root / "symfritz"
+            rust.write_bytes(b"test candidate")
+            git = root / "trusted-git"
+            with (
+                patch.dict(os.environ),
+                patch.object(sys, "argv", ["run-cli-differential.py", "--root", str(ROOT), "--rust", str(rust), "--git", str(git)]),
+                patch.object(runner, "_trusted_executable", return_value=git),
+                patch.object(runner, "require_go_toolchain", return_value=root / "trusted-go"),
+                patch.object(runner, "resolve_oracle_commit", return_value=runner.ORACLE_COMMIT),
+                patch.object(runner, "extract_oracle", return_value=runner.ORACLE_ARCHIVE_SHA256),
+                patch.object(runner, "build_oracle") as build,
+                patch.object(runner, "run") as execute,
+                patch("builtins.print"),
+            ):
+                os.environ.pop(runner.TRUSTED_GIT_ENV, None)
+                build.return_value.source_commit = runner.ORACLE_COMMIT
+                self.assertEqual(runner.main(), 0)
+                self.assertEqual(
+                    execute.call_args.kwargs["env"][runner.TRUSTED_GIT_ENV], str(git)
+                )
+
     def test_runner_rejects_an_arbitrary_caller_go_binary(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             fake_go = Path(raw) / "fake-go"

@@ -364,6 +364,7 @@ def main() -> int:
                     str(root),
                 ],
                 cwd=root,
+                env={**os.environ, TRUSTED_GIT_ENV: str(git)},
             )
     except (OSError, RuntimeError, subprocess.CalledProcessError, tarfile.TarError) as exc:
         print(f"FAIL historical Go oracle differential: {exc}", file=sys.stderr)
