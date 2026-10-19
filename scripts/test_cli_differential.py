@@ -6,6 +6,7 @@ import copy
 import importlib.util
 import os
 import shutil
+import socket
 import stat
 import sys
 import tempfile
@@ -195,7 +196,7 @@ class CliDifferentialTests(unittest.TestCase):
     def test_structured_error_policy_strips_only_declared_go_preamble(self) -> None:
         prefix = self.policy["harness"]["byte_stream_overrides"][0]["cases"]["auth-unauthorized"][
             "oracle_stdout_prefix"
-        ].format(private_ip="192.168.1.20", port=49000).encode()
+        ].format(private_ip="192.168.1.20", port=MODULE.PORT).encode()
         payload = b'{"error":{"kind":"auth"}}\n'
         MODULE.assert_bytes(
             "auth-unauthorized",
@@ -262,6 +263,25 @@ class CliDifferentialTests(unittest.TestCase):
                 ),
                 str(home / "empty-path"),
             )
+
+    def test_fake_boxes_coexist_without_taking_an_occupied_port(self) -> None:
+        with socket.socket() as occupied:
+            occupied.bind(("127.0.0.1", 0))
+            occupied.listen(1)
+            occupied_port = occupied.getsockname()[1]
+            with (
+                MODULE.StrictFakeBox(("127.0.0.1", MODULE.PORT), "192.168.1.20") as first,
+                MODULE.StrictFakeBox(("127.0.0.1", MODULE.PORT), "192.168.1.20") as second,
+            ):
+                first_port = first.server_address[1]
+                second_port = second.server_address[1]
+                self.assertGreater(first_port, 0)
+                self.assertGreater(second_port, 0)
+                self.assertNotEqual(first_port, second_port)
+                self.assertNotIn(occupied_port, (first_port, second_port))
+                with socket.create_connection(occupied.getsockname(), timeout=2):
+                    connection, _ = occupied.accept()
+                    connection.close()
 
     def test_strict_fake_box_rejects_extra_aha_and_soap_parameters(self) -> None:
         server = MODULE.StrictFakeBox(("127.0.0.1", 0), "192.168.1.20")
