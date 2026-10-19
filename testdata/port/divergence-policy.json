@@ -554,6 +554,24 @@
         "test": "structured_errors_are_machine_readable",
         "command": ["cargo", "test", "-p", "symfritz-cli", "--bin", "symfritz", "structured_errors_are_machine_readable", "--locked"]
       }
+    },
+    {
+      "id": "CLI-DNS-EXTENSION",
+      "scope": {
+        "kind": "dns-additive-surface",
+        "cases": ["dns-help-extension"],
+        "paths": ["symfritz", "symfritz dns"]
+      },
+      "surface": "CLI root help adds only the opt-in DNS diagnostic",
+      "reason": "Issue #287 adds a read-only single-name DNS-path diagnostic without changing any frozen command.",
+      "rationale": "Issue #287 adds a read-only single-name DNS-path diagnostic without changing any frozen command.",
+      "test": "crates/symfritz-cli/tests/dns.rs::dns_surface_and_validation_preserve_read_only_scope",
+      "rust_assertion": {
+        "path": "crates/symfritz-cli/tests/dns.rs",
+        "test": "dns_surface_and_validation_preserve_read_only_scope",
+        "command": ["cargo", "test", "-p", "symfritz-cli", "--test", "dns", "dns_surface_and_validation_preserve_read_only_scope", "--locked"]
+      },
+      "root_help_additions": {"dns": "Compare router, DHCP and client DNS paths for one selected name"}
     }
   ]
 }

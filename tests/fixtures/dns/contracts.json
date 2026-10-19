@@ -1,0 +1,8 @@
+{
+  "issue": 287,
+  "cli_paths": ["symfritz dns"],
+  "root_help_additions": {"dns": "Compare router, DHCP and client DNS paths for one selected name"},
+  "read_only": true,
+  "unobserved_fields": ["dhcp.option15", "dns_filter_enabled", "system_name_resolution", "selected_host.ip_connectivity"],
+  "scope": "One user-selected absolute A/AAAA name only; no inventory enumeration, suffix expansion, mDNS unicast, public fallback or configuration mutation."
+}
