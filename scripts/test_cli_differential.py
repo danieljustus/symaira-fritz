@@ -79,6 +79,19 @@ class CliDifferentialTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, r"invalid byte stream"):
             MODULE.validate_policy(ROOT, mutated)
 
+    def test_firmware_help_extension_is_explicit_and_rejects_extra_commands(self) -> None:
+        base = MODULE.HelpContract("description", (), {}, (), {}, {})
+        actual = MODULE.HelpContract("description", (), {"firmware": ("Check and install box-selected official firmware", ())}, (), {}, {})
+        def compare(candidate):
+            MODULE.compare_help_contract("firmware", base, candidate, base, candidate, "symfritz", (), (), {"symfritz": base}, {"symfritz": candidate}, self.policy)
+        compare(actual)
+        with self.assertRaisesRegex(AssertionError, "unexpected firmware"):
+            compare(MODULE.HelpContract("description", (), {}, (), {}, {}))
+        with self.assertRaisesRegex(AssertionError, "unexpected firmware"):
+            compare(MODULE.HelpContract("description", (), {"firmware": ("wrong", ())}, (), {}, {}))
+        with self.assertRaisesRegex(AssertionError, "subcommands mismatch"):
+            compare(MODULE.HelpContract("description", (), {**actual.subcommands, "rogue": ("extra", ())}, (), {}, {}))
+
     def test_uncovered_difference_fails_without_a_policy_transform(self) -> None:
         left = MODULE.Result(0, b'{"unexpected":null}\n', b"")
         right = MODULE.Result(0, b'{"unexpected":[]}\n', b"")

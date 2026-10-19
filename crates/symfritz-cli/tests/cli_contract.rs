@@ -83,6 +83,17 @@ fn generated_fixture_covers_every_documented_command() {
         .iter()
         .map(|case| case.path.clone())
         .collect();
+    let firmware: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/firmware/contracts.json"
+    ))
+    .unwrap();
+    expected.extend(
+        firmware["cli_paths"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p.as_str().unwrap().to_owned()),
+    );
     actual.sort();
     expected.sort();
     assert_eq!(

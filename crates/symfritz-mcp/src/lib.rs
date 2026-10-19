@@ -57,6 +57,16 @@ pub trait Capabilities: Send {
     fn wake_on_lan(&mut self, host: Option<&str>, mac: Option<&str>) -> Result<Value, String>;
     fn home_list(&mut self) -> Result<Value, String>;
     fn home_switch(&mut self, ain: &str, on: bool) -> Result<Value, String>;
+    fn firmware_status(&mut self) -> Result<Value, String> {
+        Err("firmware status unavailable".into())
+    }
+    fn firmware_check(&mut self) -> Result<Value, String> {
+        Err("firmware check unavailable".into())
+    }
+    /// Called only after the protocol boundary validates explicit confirmation.
+    fn firmware_install(&mut self, _verify: bool) -> Result<Value, String> {
+        Err("firmware install unavailable".into())
+    }
 }
 
 /// A tool definition as exposed by `tools/list`.
@@ -83,6 +93,9 @@ pub struct ToolAnnotations {
     pub open_world_hint: bool,
     #[serde(rename = "destructiveHint", skip_serializing_if = "is_false")]
     pub destructive_hint: bool,
+    /// Explicit false hints for appended tools; legacy nine retain their wire bytes.
+    #[serde(flatten)]
+    pub explicit_false: Map<String, Value>,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -157,7 +170,7 @@ fn selector_schema(properties: Value, selectors: &[&str]) -> Value {
     Value::Object(object)
 }
 
-/// The frozen nine-tool surface, in registration order.
+/// The frozen nine tools followed by explicitly registered firmware extensions.
 pub fn tool_definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition {
@@ -224,6 +237,24 @@ pub fn tool_definitions() -> Vec<ToolDefinition> {
                 destructive_hint: true,
                 ..Default::default()
             },
+        },
+        ToolDefinition {
+            name: "firmware_status".into(),
+            description: "Read firmware availability, identity, channel, auto-update mode and last result without triggering a check.".into(),
+            input_schema: json!({"type":"object","properties":{},"additionalProperties":false}),
+            annotations: ToolAnnotations { read_only_hint: true, idempotent_hint: true, explicit_false: Map::from_iter([("openWorldHint".into(), json!(false)), ("destructiveHint".into(), json!(false))]), ..Default::default() },
+        },
+        ToolDefinition {
+            name: "firmware_check".into(),
+            description: "Trigger firmware availability refresh (a mutation), then bounded cancellable polling. Does not install firmware.".into(),
+            input_schema: json!({"type":"object","properties":{},"additionalProperties":false}),
+            annotations: ToolAnnotations { open_world_hint: true, explicit_false: Map::from_iter([("readOnlyHint".into(), json!(false)), ("idempotentHint".into(), json!(false)), ("destructiveHint".into(), json!(false))]), ..Default::default() },
+        },
+        ToolDefinition {
+            name: "firmware_install".into(),
+            description: "Disruptive installation of the box-selected newer official Release firmware. First obtain explicit user consent, create and verify a configuration backup, ensure wired local access and stable power; internet, WLAN and telephony may disconnect. confirm=true attests this preflight. Never automatically retry. Accepted is not installed; verify optionally polls original identity and offered version.".into(),
+            input_schema: json!({"type":"object","properties":{"confirm":{"type":"boolean","const":true},"verify":{"type":"boolean","default":false}},"required":["confirm"],"additionalProperties":false}),
+            annotations: ToolAnnotations { open_world_hint: true, destructive_hint: true, explicit_false: Map::from_iter([("readOnlyHint".into(), json!(false)), ("idempotentHint".into(), json!(false))]), ..Default::default() },
         },
     ]
 }
@@ -870,6 +901,34 @@ fn dispatch_tool<C: Capabilities + 'static>(
         .lock()
         .map_err(|_| "internal error: capability lock poisoned".to_owned())?;
     match name {
+        "firmware_status" | "firmware_check" | "firmware_install" => {
+            let args = if arguments.is_null() && name != "firmware_install" {
+                Map::new()
+            } else {
+                parse_object(&arguments)?.clone()
+            };
+            if args
+                .keys()
+                .any(|k| name != "firmware_install" || (k != "confirm" && k != "verify"))
+            {
+                return Err("unexpected firmware argument".into());
+            }
+            match name {
+                "firmware_status" => capabilities.firmware_status(),
+                "firmware_check" => capabilities.firmware_check(),
+                _ => {
+                    if args.get("confirm") != Some(&Value::Bool(true)) {
+                        return Err("explicit user consent and backup/connectivity preflight required: confirm must be true".into());
+                    }
+                    let verify = match args.get("verify") {
+                        None => false,
+                        Some(Value::Bool(v)) => *v,
+                        _ => return Err("verify must be a boolean".into()),
+                    };
+                    capabilities.firmware_install(verify)
+                }
+            }
+        }
         "status" => capabilities.status(),
         "host_list" => {
             // Go deliberately ignores the unmarshal error for host_list.
@@ -1129,9 +1188,12 @@ mod tests {
     #[test]
     fn tool_surface_is_frozen() {
         let tools = tool_definitions();
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 12);
         assert_eq!(
-            tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
+            tools[..9]
+                .iter()
+                .map(|t| t.name.as_str())
+                .collect::<Vec<_>>(),
             [
                 "status",
                 "host_list",
@@ -1451,5 +1513,75 @@ mod tests {
             assert!(output.contains(&format!("\"id\":{id}")));
         }
         assert!(max_active.load(Ordering::SeqCst) <= MAX_WORKERS);
+    }
+}
+
+#[cfg(test)]
+mod firmware_tests {
+    use super::*;
+    #[test]
+    fn firmware_tools_append_with_truthful_annotations() {
+        let fixture: Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/firmware/contracts.json"
+        ))
+        .unwrap();
+        let tools = tool_definitions();
+        assert_eq!(
+            serde_json::to_value(tools[9..].iter().map(|t| &t.name).collect::<Vec<_>>()).unwrap(),
+            fixture["mcp_appended_tools"]
+        );
+        let status = serde_json::to_value(&tools[9]).unwrap();
+        let check = serde_json::to_value(&tools[10]).unwrap();
+        let install = serde_json::to_value(&tools[11]).unwrap();
+        assert_eq!(status["annotations"]["readOnlyHint"], true);
+        assert_eq!(check["annotations"]["readOnlyHint"], false);
+        assert_eq!(check["annotations"]["destructiveHint"], false);
+        assert_eq!(install["annotations"]["readOnlyHint"], false);
+        assert_eq!(install["annotations"]["idempotentHint"], false);
+        assert_eq!(install["annotations"]["destructiveHint"], true);
+        assert_eq!(install["annotations"]["openWorldHint"], true);
+        assert_eq!(install["inputSchema"]["additionalProperties"], false);
+        assert_eq!(
+            install["inputSchema"]["properties"]["confirm"]["const"],
+            true
+        );
+    }
+    #[test]
+    fn firmware_confirmation_validation_precedes_capability_dispatch() {
+        let c = Arc::new(Mutex::new(UnsupportedCapabilities));
+        for args in [
+            json!({}),
+            json!({"confirm":false}),
+            json!({"confirm":"true"}),
+            json!({"confirm":true,"verify":"yes"}),
+            json!({"confirm":true,"url":"https://example.invalid/image"}),
+            json!({"confirm":true,"channel":"Lab"}),
+        ] {
+            let err = dispatch_tool(&c, "firmware_install", args).unwrap_err();
+            assert!(!err.contains("unavailable"));
+        }
+        // A valid boundary reaches the backend; no result is fabricated.
+        assert_eq!(
+            dispatch_tool(
+                &c,
+                "firmware_install",
+                json!({"confirm":true,"verify":true})
+            )
+            .unwrap_err(),
+            "firmware install unavailable"
+        );
+        assert_eq!(
+            dispatch_tool(&c, "firmware_status", json!({})).unwrap_err(),
+            "firmware status unavailable"
+        );
+        assert_eq!(
+            dispatch_tool(&c, "firmware_check", json!({})).unwrap_err(),
+            "firmware check unavailable"
+        );
+        assert!(
+            dispatch_tool(&c, "firmware_check", json!({"url":"x"}))
+                .unwrap_err()
+                .contains("unexpected")
+        );
     }
 }

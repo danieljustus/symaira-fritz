@@ -5,6 +5,7 @@
 mod capabilities;
 mod client;
 mod discovery;
+pub mod firmware;
 mod homeauto;
 mod safeurl;
 mod soap;
