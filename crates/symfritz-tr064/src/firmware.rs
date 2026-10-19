@@ -532,7 +532,18 @@ impl<T: Transport, C: CnonceSource> Client<FirmwareTransport<T>, C> {
                         .as_deref()
                         .zip(report.original.identity.current_version.as_deref())
                         .and_then(|(r, o)| comparable(r, o))
-                        .is_some();
+                        .is_some()
+                        && report
+                            .original
+                            .reported_current_version
+                            .as_deref()
+                            .is_none_or(|v| {
+                                readback
+                                    .current_version
+                                    .as_deref()
+                                    .and_then(|r| comparable(r, v))
+                                    .is_some()
+                            });
                     let installed = same
                         && same_version_family
                         && readback
@@ -612,6 +623,7 @@ fn safe_offer(s: &FirmwareStatus) -> Result<(), FirmwareError> {
         current
             .and_then(|c| comparable(c, v))
             .is_some_and(|(c, v)| c == v)
+            && offered.and_then(|o| comparable(v, o)).is_some()
     });
     if s.availability != FirmwareAvailability::Available
         || s.build_type.as_deref() != Some("Release")

@@ -14,5 +14,10 @@
     {"state": "NoUpdate", "flag": "1", "expected": "unknown"},
     {"state": "", "flag": "", "expected": "unknown"}
   ],
+  "model_prefix_cases": [
+    {"current": "08.25", "reported": "261.08.25", "offered": "999.08.26", "readback": null, "expected": "unsafe"},
+    {"current": "08.25", "reported": "261.08.25", "offered": "08.26", "readback": "999.08.26", "expected": "timeout"},
+    {"current": "08.25", "reported": "261.08.25", "offered": "08.26", "readback": "261.08.26", "expected": "verified_installed"}
+  ],
   "manual_acceptance": "UNPERFORMED: no real router access or firmware installation authorized for automated implementation. Requires explicit human consent, backup and connectivity preflight, model-specific action discovery, and original serial/model plus offered version readback. No FRITZ!OS 8.50 compatibility claim."
 }

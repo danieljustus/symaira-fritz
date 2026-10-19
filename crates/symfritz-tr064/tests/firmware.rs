@@ -463,6 +463,49 @@ fn install_accepted_is_never_installed_without_readback() {
     assert!(c.into_transport().into_inner().steps.is_empty());
 }
 #[test]
+fn firmware_model_prefixes_are_consistent_across_all_metadata() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/firmware/contracts.json"
+    ))
+    .unwrap();
+    for case in fixture["model_prefix_cases"].as_array().unwrap() {
+        let mut steps = standard();
+        steps.extend([
+            device("original", case["current"].as_str().unwrap()),
+            info(
+                "UpdateAvailable",
+                "1",
+                case["offered"].as_str().unwrap(),
+                "Release",
+            ),
+            (
+                "X_AVM-DE_GetInfo",
+                soap(
+                    "X_AVM-DE_GetInfo",
+                    &[(
+                        "NewX_AVM-DE_CurrentFwVersion",
+                        case["reported"].as_str().unwrap(),
+                    )],
+                ),
+            ),
+        ]);
+        if let Some(readback) = case["readback"].as_str() {
+            steps.extend([accepted(), device("original", readback)]);
+        }
+        let mut c = client(steps);
+        let result = c.firmware_install(install(true, 1), || false);
+        if case["expected"] == "unsafe" {
+            assert!(matches!(result, Err(FirmwareError::Unsafe(_))));
+        } else {
+            assert_eq!(
+                serde_json::to_value(result.unwrap().outcome).unwrap(),
+                case["expected"]
+            );
+        }
+        assert!(c.into_transport().into_inner().steps.is_empty());
+    }
+}
+#[test]
 fn install_rejection_and_unknown_disconnect_never_retry() {
     for result in [fault(500, 501), fault(500, 606)] {
         let mut s = available();
