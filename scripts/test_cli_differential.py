@@ -80,13 +80,25 @@ class CliDifferentialTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, r"invalid byte stream"):
             MODULE.validate_policy(ROOT, mutated)
 
+    def test_firmware_help_extension_is_explicit_and_rejects_extra_commands(self) -> None:
+        base = MODULE.HelpContract("description", (), {}, (), {}, {})
+        actual = MODULE.HelpContract("description", (), {"firmware": ("Check and install box-selected official firmware", ()), "dns": ("Compare router, DHCP and client DNS paths for one selected name", ())}, (), {}, {})
+        def compare(candidate):
+            MODULE.compare_help_contract("firmware", base, candidate, base, candidate, "symfritz", (), (), {"symfritz": base}, {"symfritz": candidate}, self.policy)
+        compare(actual)
+        with self.assertRaisesRegex(AssertionError, "unexpected firmware"):
+            compare(MODULE.HelpContract("description", (), {}, (), {}, {}))
+        with self.assertRaisesRegex(AssertionError, "unexpected firmware"):
+            compare(MODULE.HelpContract("description", (), {"firmware": ("wrong", ())}, (), {}, {}))
+
     def test_dns_help_extension_rejects_missing_changed_and_extra_commands(self) -> None:
         base = MODULE.HelpContract("description", (), {}, (), {}, {})
-        actual = MODULE.HelpContract("description", (), {"dns": ("Compare router, DHCP and client DNS paths for one selected name", ())}, (), {}, {})
+        actual = MODULE.HelpContract("description", (), {"firmware": ("Check and install box-selected official firmware", ()), "dns": ("Compare router, DHCP and client DNS paths for one selected name", ())}, (), {}, {})
         def compare(candidate):
             MODULE.compare_help_contract("dns", base, candidate, base, candidate, "symfritz", (), (), {"symfritz": base}, {"symfritz": candidate}, self.policy)
         compare(actual)
-        for commands in [{}, {"dns": ("wrong", ())}, {"dns": (actual.subcommands["dns"][0], ("alias",))}]:
+        firmware = {"firmware": actual.subcommands["firmware"]}
+        for commands in [firmware, {**firmware, "dns": ("wrong", ())}, {**firmware, "dns": (actual.subcommands["dns"][0], ("alias",))}]:
             with self.assertRaisesRegex(AssertionError, "unexpected DNS"):
                 compare(MODULE.HelpContract("description", (), commands, (), {}, {}))
         with self.assertRaisesRegex(AssertionError, "subcommands mismatch"):

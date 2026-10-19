@@ -49,6 +49,7 @@ use url::Url;
 
 mod dns_cli;
 mod dns_evidence;
+mod firmware_cli;
 
 const VERSION: &str = match option_env!("SYMFRITZ_VERSION") {
     Some(version) => version,
@@ -371,6 +372,10 @@ fn main() -> ExitCode {
             if CANCEL_REQUESTED.load(Ordering::SeqCst) {
                 return ExitCode::from(EXIT_CANCEL);
             }
+            if error.kind == "firmware_incomplete" {
+                eprintln!("Error: {}", error.message);
+                return ExitCode::from(error.exit_code);
+            }
             if format != OutputFormat::Text && error.exit_code != EXIT_CONFIG && !error.status {
                 let payload = ErrorOutput {
                     error: ErrorDetails {
@@ -444,6 +449,7 @@ fn execute(cli: Cli, format: OutputFormat) -> Result<(), HandlerError> {
         Some(Command::Dial(args)) => execute_dial(args, format),
         Some(Command::Hangup) => execute_hangup(format),
         Some(Command::Reboot(args)) => execute_reboot(args, format),
+        Some(Command::Firmware(command)) => firmware_cli::execute(command, format),
         Some(Command::Wol(args)) => execute_wol(args, format),
         Some(Command::Auth(command)) => execute_auth(command, format),
         Some(Command::Scrape(args)) => execute_scrape(args),
@@ -1587,6 +1593,7 @@ fn bool_glyph(value: bool) -> &'static str {
 }
 
 struct FritzMcpCapabilities {
+    firmware: firmware_cli::FirmwareClient,
     tr064: Tr064Client<BlockingHttpTransport, RandomCnonce>,
     web: AhaClient<BlockingHttpTransport, SystemClock>,
 }
@@ -1652,6 +1659,19 @@ fn mcp_status_value(status: &Status) -> serde_json::Value {
 }
 
 impl McpCapabilities for FritzMcpCapabilities {
+    fn firmware_status(&mut self) -> Result<serde_json::Value, String> {
+        self.firmware
+            .firmware_status(firmware_cli::cancelled)
+            .map(|s| mcp_serialized(&s))
+            .map_err(|e| e.to_string())
+    }
+    fn firmware_check(&mut self) -> Result<serde_json::Value, String> {
+        firmware_cli::mcp_check(&mut self.firmware)
+    }
+    fn firmware_install(&mut self, verify: bool) -> Result<serde_json::Value, String> {
+        firmware_cli::mcp_install(&mut self.firmware, verify)
+    }
+
     fn status(&mut self) -> Result<serde_json::Value, String> {
         let status = self
             .tr064
@@ -1779,9 +1799,17 @@ fn execute_mcp() -> Result<(), HandlerError> {
     let tr064 = make_tr064(&config.box_config, &password)?;
     let web = make_web(&config.box_config, &password)?;
     let cancellation = MCP_CANCELLATION.get_or_init(CancellationToken::new).clone();
-    McpServer::new(TOOL, VERSION, FritzMcpCapabilities { tr064, web })
-        .serve_stdio_with_context(&cancellation)
-        .map_err(|error| HandlerError::from_operation("mcp server failed", error))
+    McpServer::new(
+        TOOL,
+        VERSION,
+        FritzMcpCapabilities {
+            firmware: firmware_cli::client(&config.box_config, &password)?,
+            tr064,
+            web,
+        },
+    )
+    .serve_stdio_with_context(&cancellation)
+    .map_err(|error| HandlerError::from_operation("mcp server failed", error))
 }
 
 fn load_connection() -> Result<(Config, String), HandlerError> {

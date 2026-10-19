@@ -730,6 +730,8 @@ _DIRECT_CASE_BINDINGS: dict[str, frozenset[str]] = {
     "CAP-MESH-UID-ALIASES": frozenset({"mesh-path-and-sid", "mesh-yaml"}),
     "SEC-HOST-SELECTOR-EXACTLY-ONE": frozenset({"hosts get", "wol"}),
     "MCP-HOME-SWITCH-BOOLEAN": frozenset({"home_switch"}),
+    "CLI-FIRMWARE-EXTENSION": frozenset({"firmware-help-extension"}),
+    "MCP-FIRMWARE-EXTENSION": frozenset({"firmware-tools-extension"}),
     "CLI-DNS-EXTENSION": frozenset({"dns-help-extension"}),
 }
 
@@ -1190,7 +1192,7 @@ def run_rust_assertions(root: Path, policy: dict[str, Any]) -> None:
                 f"{label}: Rust assertion failed with exit code {completed.returncode}"
             )
         _assertion_ran_one_test(completed.stdout + completed.stderr, assertion["test"], label)
-        if target["id"] in {"MCP-HOME-SWITCH-BOOLEAN", "CLI-DNS-EXTENSION"}:
+        if target["id"] in {"MCP-HOME-SWITCH-BOOLEAN", "CLI-FIRMWARE-EXTENSION", "MCP-FIRMWARE-EXTENSION", "CLI-DNS-EXTENSION"}:
             for case in _DIRECT_CASE_BINDINGS[target["id"]]:
                 _mark_policy_case(policy, target["id"], case, label)
 
@@ -1226,6 +1228,14 @@ def compare_help_contract(label: str, expected: HelpContract, actual: HelpContra
     expected_commands = {name: description for name, (description, _aliases) in expected.subcommands.items()}
     actual_commands = {name: description for name, (description, _aliases) in actual.subcommands.items()}
     if path == "symfritz":
+        extension = _policy_target(policy, "CLI-FIRMWARE-EXTENSION", label)
+        additions = extension.get("root_help_additions")
+        if additions != {"firmware": "Check and install box-selected official firmware"}:
+            raise AssertionError(f"{label}: invalid firmware help extension registration")
+        for name, description in additions.items():
+            if name in expected_commands or actual_commands.get(name) != description or actual.subcommands[name][1]:
+                raise AssertionError(f"{label}: unexpected firmware help extension")
+            actual_commands.pop(name)
         extension = _policy_target(policy, "CLI-DNS-EXTENSION", label)
         additions = extension.get("root_help_additions")
         if not isinstance(additions, dict) or additions != {"dns": "Compare router, DHCP and client DNS paths for one selected name"}:

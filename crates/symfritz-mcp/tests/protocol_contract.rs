@@ -553,8 +553,13 @@ fn initialize_and_tool_list_expose_frozen_protocol_metadata_and_annotations() {
         .iter()
         .map(|tool| tool["name"].as_str().unwrap())
         .collect();
+    let firmware: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/firmware/contracts.json"
+    ))
+    .unwrap();
+    assert_eq!(json!(names[9..]), firmware["mcp_appended_tools"]);
     assert_eq!(
-        names,
+        names[..9].to_vec(),
         [
             "status",
             "host_list",

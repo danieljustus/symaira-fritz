@@ -334,3 +334,65 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full contribution guide.
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+### Firmware status, refresh and installation
+
+```sh
+symfritz firmware status --json
+symfritz firmware check --json
+# After creating/verifying a configuration backup, with stable power and local wired access:
+symfritz firmware install --yes --verify --json
+```
+
+`status` reads the box's cached availability; `check` explicitly invokes
+`X_AVM-DE_CheckUpdate`. These commands expose separate available, unavailable,
+unknown, checking, failed and unsupported states, plus model/serial, current and
+offered versions, build type, auto-update mode and last result where supported.
+The existing `symfritz status` and `update_available()` contracts are unchanged.
+Actions and endpoints come from the router's TR-064 description and SCPD.
+Field semantics follow the [FRITZ! UserInterface specification](https://fritz.support/resources/TR-064_User_Interface.pdf).
+
+Installation requires `--yes` before configuration, credentials or network access.
+Back up and verify the configuration first. Expect internet, WLAN and telephony
+loss; keep wired local access and stable power, and never unplug during an update.
+Only the box-selected, unambiguously newer Release offer is accepted. Missing
+identity/version/channel, conflicting metadata, unknown/no-update states,
+unrecognised versions, model-prefix changes and downgrades fail closed. There
+are no image URL, manual-image, Lab or downgrade options. No image is downloaded
+or selected by symfritz.
+
+A successful install response reports **accepted**, never installed. `--verify`
+performs bounded TR-064 DeviceInfo readback, requiring the original model and
+serial and the offered version. Reports distinguish `accepted`, `rebooting`
+(in observation history, meaning unreachable after acceptance),
+`verified_installed`, `timeout`, `unknown` and `rejected`. A disconnect or invalid
+response during dispatch means **unknown**, and installation is never retried
+automatically. Verification cannot establish what happened after cancellation or
+its deadline; reconnect and inspect the original device before further action.
+CLI incomplete/rejected outcomes retain their single result document and exit
+nonzero. MCP returns the same explicit outcome data.
+
+The default polling budget is 30 observations, two seconds apart, with a
+120-second deadline for starting calls. Public options cap polling at 60 and
+elapsed time at 600 seconds. An in-flight synchronous SOAP call can outlive that
+deadline by its bounded transport timeout (including at most one Digest
+challenge exchange). Firmware CLI/MCP transports cap each HTTP request at 15
+seconds and disable HTTP fallback; cooperative cancellation is checked before
+each dispatch and between polls. Library users construct
+`Client<FirmwareTransport<T>, C>` using the same cancellation source for the
+adapter and workflow, a bounded inner transport, and no automatic fallback.
+The adapter only forwards requests, checks cancellation and validates SOAP
+responses; authentication and HTTP remain with the existing client/transport.
+
+MCP appends `firmware_status`, `firmware_check` and `firmware_install` after the
+original nine tools. Refresh is annotated as a mutation. Installation is
+annotated destructive, non-idempotent and open-world; it requires explicit user
+consent after the backup/connectivity preflight and `{"confirm":true}` (optionally
+`"verify":true`). Tool annotations do not grant consent.
+
+**Manual acceptance gate — unperformed:** automated tests use mock responses;
+no real router installation was performed for this feature. A human must
+explicitly authorize a model-specific installation, verify the backup and
+connectivity plan, then check the original device's identity/version and local
+reachability after reboot. The earlier FRITZ!Box 4060 / 261.08.25 check is not
+installation evidence or proof of FRITZ!OS 8.50 compatibility.

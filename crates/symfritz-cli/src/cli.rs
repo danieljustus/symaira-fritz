@@ -87,6 +87,9 @@ pub enum Command {
     Dsl(FormatArgs),
     #[command(about = "Hang up any active call initiated by dial")]
     Hangup,
+    #[command(about = "Check and install box-selected official firmware")]
+    #[command(subcommand)]
+    Firmware(FirmwareCommand),
     #[command(
         about = "Help about any command",
         long_about = "Help provides help for any command in the application.\nSimply type symfritz help [path to command] for full details.",
@@ -742,4 +745,27 @@ fn go_validation_error(args: &[String]) -> Option<&'static str> {
 /// Command tree constructor used by the binary and contract tests.
 pub fn command() -> clap::Command {
     Cli::command()
+}
+
+#[derive(Debug, Subcommand)]
+pub enum FirmwareCommand {
+    #[command(about = "Read firmware status without refreshing availability")]
+    Status,
+    #[command(about = "Refresh firmware availability with bounded cancellable polling")]
+    Check,
+    #[command(
+        about = "Install the box-selected Release update; back up first and expect connectivity loss"
+    )]
+    Install {
+        #[arg(
+            long,
+            help = "Confirm installation after backup and connectivity-loss preflight"
+        )]
+        yes: bool,
+        #[arg(
+            long,
+            help = "Poll original model/serial and offered version after acceptance"
+        )]
+        verify: bool,
+    },
 }

@@ -556,6 +556,69 @@
       }
     },
     {
+      "id": "CLI-FIRMWARE-EXTENSION",
+      "scope": {
+        "kind": "firmware-additive-surface",
+        "cases": [
+          "firmware-help-extension"
+        ],
+        "paths": [
+          "symfritz",
+          "symfritz firmware",
+          "symfritz firmware status",
+          "symfritz firmware check",
+          "symfritz firmware install"
+        ]
+      },
+      "surface": "CLI help and MCP appended tools",
+      "reason": "Issue #286 adds a separate typed firmware workflow; the frozen existing CLI commands and nine MCP tool definitions remain unchanged, with explicitly tested additive surfaces.",
+      "rationale": "Issue #286 adds a separate typed firmware workflow; the frozen existing CLI commands and nine MCP tool definitions remain unchanged, with explicitly tested additive surfaces.",
+      "test": "crates/symfritz-cli/tests/firmware.rs::firmware_surface_is_registered",
+      "rust_assertion": {
+        "path": "crates/symfritz-cli/tests/firmware.rs",
+        "test": "firmware_surface_is_registered",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "symfritz-cli",
+          "--test",
+          "firmware",
+          "firmware_surface_is_registered",
+          "--locked"
+        ]
+      },
+      "root_help_additions": {
+        "firmware": "Check and install box-selected official firmware"
+      }
+    },
+    {
+      "id": "MCP-FIRMWARE-EXTENSION",
+      "scope": {
+        "kind": "firmware-additive-surface",
+        "cases": [
+          "firmware-tools-extension"
+        ]
+      },
+      "surface": "CLI help and MCP appended tools",
+      "reason": "Issue #286 adds a separate typed firmware workflow; the frozen existing CLI commands and nine MCP tool definitions remain unchanged, with explicitly tested additive surfaces.",
+      "rationale": "Issue #286 adds a separate typed firmware workflow; the frozen existing CLI commands and nine MCP tool definitions remain unchanged, with explicitly tested additive surfaces.",
+      "test": "crates/symfritz-mcp/src/lib.rs::firmware_tools_append_with_truthful_annotations",
+      "rust_assertion": {
+        "path": "crates/symfritz-mcp/src/lib.rs",
+        "test": "firmware_tools_append_with_truthful_annotations",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "symfritz-mcp",
+          "--lib",
+          "firmware_tools_append_with_truthful_annotations",
+          "--locked"
+        ]
+      }
+    },
+    {
       "id": "CLI-DNS-EXTENSION",
       "scope": {
         "kind": "dns-additive-surface",
