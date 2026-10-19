@@ -35,7 +35,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any, Callable, Mapping, cast
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
-PORT = 49000
+PORT = 0
 RFC1918 = tuple(ipaddress.ip_network(network) for network in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 USER = "admin"
 PASSWORD = "test-password"
@@ -469,7 +469,7 @@ class StrictHandler(http.server.BaseHTTPRequestHandler):
         elif action == "X_AVM-DE_GetHostListPath": values = {"NewX_AVM-DE_HostListPath": "/hosts.xml"}
         elif action == "X_AVM-DE_GetMeshListPath": values = {"NewX_AVM-DE_MeshListPath": "/mesh.json"}
         elif action == "X_AVM-DE_GetDeviceLogPath": values = {"NewDeviceLogPath": "/devicelog.lua"}
-        elif action in {"GetCallList", "X_AVM-DE_GetCallList"}: values = {"NewCallListURL": f"http://{self.server.private_ip}:{PORT}/calls.xml"}
+        elif action in {"GetCallList", "X_AVM-DE_GetCallList"}: values = {"NewCallListURL": f"http://{self.server.private_ip}:{self.server.server_address[1]}/calls.xml"}
         elif action == "GetHostNumberOfEntries": values = {"NewHostNumberOfEntries": "1"}
         elif action in {"GetGenericHostEntry", "GetSpecificHostEntry", "X_AVM-DE_GetSpecificHostEntryByIP"}: values = {"NewHostName": "laptop", "NewIPAddress": IP, "NewMACAddress": MAC, "NewActive": "1", "NewInterfaceType": "Ethernet", "NewAddressSource": "DHCP", "NewLeaseTimeRemaining": "3600"}
         elif action == "GetTotalAssociations": values = {"NewTotalAssociations": "1"}
@@ -2098,7 +2098,7 @@ def cli_inventory(binary: str, families: list[str]) -> tuple[frozenset[str], fro
 
 
 def run_suite(go: str, rust: str, root: Path) -> None:
-    global PRIVATE_IP
+    global PRIVATE_IP, PORT
     go, rust = resolve_distinct_binaries(go, rust)
     policy = load_policy(root)
     coverage = PolicyCaseCoverage(policy)
@@ -2110,7 +2110,9 @@ def run_suite(go: str, rust: str, root: Path) -> None:
         _ACTIVE_POLICY_COVERAGE = None
         raise
     PRIVATE_IP = private_address()
-    server = StrictFakeBox(("0.0.0.0", PORT), PRIVATE_IP); thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+    server = StrictFakeBox(("0.0.0.0", 0), PRIVATE_IP)
+    PORT = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
     try:
         fixture_data = json.loads((root / "testdata/port/cli/command-contracts.json").read_text(encoding="utf-8"))
         command_cases = {case["path"]: case for case in fixture_data["commands"]}
