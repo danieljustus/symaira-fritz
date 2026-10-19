@@ -513,7 +513,8 @@ def main() -> int:
 
     harness = load_harness(root)
     harness.PRIVATE_IP = harness.private_address()
-    server = harness.StrictFakeBox(("0.0.0.0", harness.PORT), harness.PRIVATE_IP)
+    server = harness.StrictFakeBox(("0.0.0.0", 0), harness.PRIVATE_IP)
+    harness.PORT = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
         with tempfile.TemporaryDirectory(prefix="symfritz-value-oracle-") as raw:
