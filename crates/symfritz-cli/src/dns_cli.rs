@@ -12,6 +12,14 @@ pub(super) fn execute(args: DnsArgs, format: OutputFormat) -> Result<(), Handler
     options.expected_host_ip = args.expected_ip;
     options.router_dns_ip = args.router_dns_ip;
     let (mut config, password) = load_connection()?;
+    if !matches!(
+        origin_url(&config.box_config, true)?.host(),
+        Some(url::Host::Ipv4(_) | url::Host::Ipv6(_))
+    ) {
+        return Err(HandlerError::config(
+            "dns requires a literal router connection IP; set SYMFRITZ_HOST to its independently verified local IP (--router-dns-ip only selects the DNS comparison endpoint)",
+        ));
+    }
     // Local copy only: never persist configuration or retry via another origin.
     config.box_config.timeout_seconds = config.box_config.timeout_seconds.clamp(1, 2);
     config.box_config.allow_http_fallback = false;

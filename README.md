@@ -163,12 +163,17 @@ symfritz mcp                                # start MCP stdio server for AI agen
 ### Read-only DNS-path diagnosis
 
 ```bash
-symfritz dns homeassistant.fritz.box --expected-ip 192.168.188.20 --json
-# If the configured router is a hostname, supply its independently known DNS IP:
-symfritz dns fritz.box --router-dns-ip 192.168.188.1 --json
+SYMFRITZ_HOST=192.168.188.1 symfritz dns homeassistant.fritz.box --expected-ip 192.168.188.20 --json
+# Compare with a separately known router DNS endpoint when necessary:
+SYMFRITZ_HOST=192.168.188.1 symfritz dns fritz.box --router-dns-ip 192.168.188.1 --json
 ```
 
 The addresses above are examples, not discovered device addresses. The command
+requires a literal local IPv4 or IPv6 router connection address in the config or
+`SYMFRITZ_HOST`, so broken OS DNS cannot block transport initialization.
+`--router-dns-ip` selects a DNS comparison endpoint, not the TR-064 connection
+address; configured router hostnames are rejected before transport creation.
+The command
 checks only the selected absolute name (A and AAAA), never the full host inventory
 or guessed suffixes. `--expected-ip` compares answer identity and requests one
 typed host-table entry; a private answer or active table flag does not prove IP

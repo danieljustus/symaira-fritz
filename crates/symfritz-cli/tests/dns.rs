@@ -63,3 +63,39 @@ fn dns_surface_and_validation_preserve_read_only_scope() {
         assert!(!output.stderr.is_empty());
     }
 }
+
+#[test]
+fn dns_rejects_router_hostname_before_transport_resolution() {
+    let mut nonce = [0_u8; 16];
+    getrandom::fill(&mut nonce).unwrap();
+    let home = std::env::temp_dir().join(format!("symfritz-dns-origin-{}", hex::encode(nonce)));
+    std::fs::create_dir(&home).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_symfritz"))
+        .env_clear()
+        .current_dir(&home)
+        .env("HOME", &home)
+        .env("USERPROFILE", &home)
+        .env("APPDATA", home.join(".config"))
+        .env("XDG_CONFIG_HOME", home.join(".config"))
+        .env("SYMFRITZ_HOST", "unresolvable.invalid:49000")
+        .env("SYMFRITZ_PASSWORD", "fixture-password")
+        .env("SYMFRITZ_BOX_USE_TLS", "false")
+        .args([
+            "dns",
+            "homeassistant.fritz.box",
+            "--router-dns-ip",
+            "192.168.188.1",
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&home).unwrap();
+    assert_eq!(output.status.code(), Some(9));
+    assert!(output.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("dns requires a literal router connection IP"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
