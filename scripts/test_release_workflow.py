@@ -116,7 +116,7 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
         self.assertNotIn("x-access-" + "token:", WORKFLOW_TEXT)
         self.assertIn('symfritz version', WORKFLOW_TEXT)
         self.assertNotIn('symfritz-go', WORKFLOW_TEXT)
-        self.assertIn('version "{version}"', renderer)
+        self.assertNotIn('version "{version}"', renderer)
         self.assertIn("# typed: strict", renderer)
         self.assertNotIn("# typed: false", renderer)
 
