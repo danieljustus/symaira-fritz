@@ -42,7 +42,6 @@ def formula(version: str, release_url: str, digest: dict[str, str]) -> str:
 class Symfritz < Formula
   desc "CLI to administer, analyse, and control an AVM FRITZ!Box"
   homepage "https://github.com/danieljustus/symaira-fritz"
-  version "{version}"
   license "Apache-2.0"
 
 {block("darwin", "")}

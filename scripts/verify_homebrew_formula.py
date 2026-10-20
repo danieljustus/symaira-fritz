@@ -22,8 +22,10 @@ def validate(formula_path: Path, version: str, release_url: str, checksum_path: 
     digest = checksums(checksum_path)
     release_url = release_url.rstrip("/")
 
-    if f'version "{version}"' not in text:
-        raise ValueError("formula is missing the exact version stanza")
+    # Homebrew derives the version from the archive URLs; an explicit stanza
+    # is rejected by the tap's strict audit as redundant.
+    if re.search(r'^\s*version\s+"', text, re.MULTILINE):
+        raise ValueError("formula must not declare a redundant version stanza")
     if 'system "#{bin}/symfritz", "version"' not in text:
         raise ValueError("formula does not test symfritz")
     if "symfritz-go" in text:
