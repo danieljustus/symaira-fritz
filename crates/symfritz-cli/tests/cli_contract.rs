@@ -324,6 +324,44 @@ fn diagnose_parser_accepts_router_and_trailing_output_flags() {
 }
 
 #[test]
+fn key_value_commands_accept_trailing_global_flags() {
+    for args in [
+        vec!["symfritz", "scrape", "netDev", "xhrId=all", "--json"],
+        vec![
+            "symfritz",
+            "scrape",
+            "netDev",
+            "--output",
+            "json",
+            "xhrId=all",
+        ],
+        vec![
+            "symfritz",
+            "call",
+            "hosts",
+            "GetGenericHostEntry",
+            "NewIndex=0",
+            "--json",
+        ],
+    ] {
+        let parsed = symfritz_cli::cli::parse_args(
+            &args.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        )
+        .unwrap_or_else(|error| panic!("parser rejected {args:?}: {error:?}"));
+        assert!(parsed.json || parsed.output == "json", "{args:?}");
+        let arguments = match parsed.command {
+            Some(symfritz_cli::cli::Command::Scrape(scrape)) => scrape.arguments,
+            Some(symfritz_cli::cli::Command::Call(call)) => call.arguments,
+            other => panic!("unexpected command {other:?}"),
+        };
+        assert!(
+            arguments.iter().all(|argument| argument.contains('=')),
+            "global flag leaked into Key=Value list: {arguments:?}"
+        );
+    }
+}
+
+#[test]
 fn diagnose_parser_preserves_extra_positional_error() {
     let args = ["symfritz", "diagnose", "host", "extra"]
         .into_iter()
