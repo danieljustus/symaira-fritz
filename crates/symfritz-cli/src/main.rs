@@ -613,14 +613,19 @@ fn execute_hosts(
             render_hosts(&hosts, format)
         }
         symfritz_cli::cli::HostsCommand::Get(args) => execute_host_get(&mut client, args, format),
+        symfritz_cli::cli::HostsCommand::Pin(args) => {
+            execute_host_pin(&mut client, &config, &password, args, true, format)
+        }
+        symfritz_cli::cli::HostsCommand::Unpin(args) => {
+            execute_host_pin(&mut client, &config, &password, args, false, format)
+        }
     }
 }
 
-fn execute_host_get(
+fn lookup_host(
     client: &mut Tr064Client<BlockingHttpTransport, RandomCnonce>,
-    args: HostGetArgs,
-    format: OutputFormat,
-) -> Result<(), HandlerError> {
+    args: &HostGetArgs,
+) -> Result<Host, HandlerError> {
     let result = if let Some(mac) = args.mac.as_deref() {
         client.host_by_mac(mac)
     } else if let Some(ip) = args.ip.as_deref() {
@@ -632,7 +637,15 @@ fn execute_host_get(
             "provide a name argument or --mac/--ip",
         ));
     };
-    let host = result.map_err(|error| HandlerError::from_client("host lookup failed", &error))?;
+    result.map_err(|error| HandlerError::from_client("host lookup failed", &error))
+}
+
+fn execute_host_get(
+    client: &mut Tr064Client<BlockingHttpTransport, RandomCnonce>,
+    args: HostGetArgs,
+    format: OutputFormat,
+) -> Result<(), HandlerError> {
+    let host = lookup_host(client, &args)?;
     if format != OutputFormat::Text {
         output::write(&mut std::io::stdout(), &host, format)
             .map_err(|error| HandlerError::operation(error.to_string()))?;
@@ -646,6 +659,180 @@ fn execute_host_get(
         println!("Lease:   {}s", host.lease_time_remaining);
     }
     Ok(())
+}
+
+#[derive(Serialize)]
+struct HostPinOutput {
+    name: String,
+    mac: String,
+    ip: String,
+    uid: String,
+    pinned: bool,
+    changed: bool,
+}
+
+/// Fields of `data.lua?page=edit_device` that `hosts pin` reads and compares.
+struct EditDeviceState {
+    name: String,
+    ip: String,
+    always_same_ip: bool,
+    guarded: serde_json::Value,
+}
+
+// ponytail: data.lua is version-fragile (verified on FRITZ!Box 4060, FRITZ!OS
+// 8.25). Every write is read back; switch to TR-064 if AVM ever exposes it.
+fn execute_host_pin(
+    client: &mut Tr064Client<BlockingHttpTransport, RandomCnonce>,
+    config: &Config,
+    password: &str,
+    args: HostGetArgs,
+    pin: bool,
+    format: OutputFormat,
+) -> Result<(), HandlerError> {
+    let host = lookup_host(client, &args)?;
+    if host.mac.trim().is_empty() {
+        return Err(HandlerError::operation(format!(
+            "host {:?} has no MAC address in the host table",
+            host.name
+        )));
+    }
+    eprintln!(
+        "warning: this command uses the version-fragile data.lua web interface (best-effort)"
+    );
+    let mut web = make_web(&config.box_config, password)?;
+    let uid = landevice_uid(&mut web, &host.mac)?;
+    let before = read_edit_device(&mut web, &uid)?;
+    let changed = before.always_same_ip != pin;
+    if changed {
+        let mut params = data_params(&[
+            ("dev", uid.as_str()),
+            ("dev_name", before.name.as_str()),
+            ("dev_ip", before.ip.as_str()),
+            ("apply", ""),
+        ]);
+        if pin {
+            params.insert("static_dhcp".to_owned(), vec!["on".to_owned()]);
+        }
+        let raw = web
+            .data_lua("edit_device", &params)
+            .map_err(|error| HandlerError::operation(format!("data.lua apply failed: {error}")))?;
+        let apply = serde_json::from_str::<serde_json::Value>(&raw)
+            .ok()
+            .and_then(|value| value["data"]["apply"].as_str().map(str::to_owned));
+        if apply.as_deref() != Some("ok") {
+            return Err(HandlerError::operation(format!(
+                "data.lua apply was not confirmed (data.apply = {apply:?})"
+            )));
+        }
+        let after = read_edit_device(&mut web, &uid)?;
+        if after.always_same_ip != pin {
+            return Err(HandlerError::operation(format!(
+                "read-back failed: alwaysSameIp is still {} for {uid}",
+                after.always_same_ip
+            )));
+        }
+        if after.guarded != before.guarded {
+            eprintln!(
+                "warning: other device settings changed during apply; check the device in the FRITZ!Box UI"
+            );
+        }
+    }
+    let result = HostPinOutput {
+        name: before.name,
+        mac: host.mac,
+        ip: before.ip,
+        uid,
+        pinned: pin,
+        changed,
+    };
+    if format != OutputFormat::Text {
+        output::write(&mut std::io::stdout(), &result, format)
+            .map_err(|error| HandlerError::operation(error.to_string()))?;
+    } else {
+        let state = if pin { "pinned" } else { "unpinned" };
+        let suffix = if changed { "" } else { " (unchanged)" };
+        println!(
+            "OK: {} ({}) {state} to {}{suffix}",
+            result.name, result.mac, result.ip
+        );
+    }
+    Ok(())
+}
+
+fn data_params(pairs: &[(&str, &str)]) -> BTreeMap<String, Vec<String>> {
+    pairs
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), vec![(*value).to_owned()]))
+        .collect()
+}
+
+fn data_lua_json(
+    web: &mut AhaClient<BlockingHttpTransport, SystemClock>,
+    page: &str,
+    params: &BTreeMap<String, Vec<String>>,
+) -> Result<serde_json::Value, HandlerError> {
+    let raw = web
+        .data_lua(page, params)
+        .map_err(|error| HandlerError::operation(format!("data.lua {page} failed: {error}")))?;
+    serde_json::from_str(&raw)
+        .map_err(|error| HandlerError::operation(format!("data.lua {page}: invalid JSON: {error}")))
+}
+
+fn landevice_uid(
+    web: &mut AhaClient<BlockingHttpTransport, SystemClock>,
+    mac: &str,
+) -> Result<String, HandlerError> {
+    let devices = data_lua_json(web, "netDev", &data_params(&[("xhrId", "all")]))?;
+    ["active", "passive"]
+        .iter()
+        .filter_map(|list| devices["data"][list].as_array())
+        .flatten()
+        .find(|device| {
+            device["mac"]
+                .as_str()
+                .is_some_and(|candidate| candidate.eq_ignore_ascii_case(mac))
+        })
+        .and_then(|device| device["UID"].as_str().map(str::to_owned))
+        .ok_or_else(|| {
+            HandlerError::operation(format!("no data.lua network device found for MAC {mac}"))
+        })
+}
+
+fn read_edit_device(
+    web: &mut AhaClient<BlockingHttpTransport, SystemClock>,
+    uid: &str,
+) -> Result<EditDeviceState, HandlerError> {
+    let page = data_lua_json(
+        web,
+        "edit_device",
+        &data_params(&[("dev", uid), ("xhrId", "all")]),
+    )?;
+    let dev = &page["data"]["vars"]["dev"];
+    let field = |value: &serde_json::Value, what: &str| {
+        value.as_str().map(str::to_owned).ok_or_else(|| {
+            HandlerError::operation(format!("data.lua edit_device: missing {what} for {uid}"))
+        })
+    };
+    let always_same_ip = dev["ipv4"]["dhcp"]["alwaysSameIp"]
+        .as_bool()
+        .ok_or_else(|| {
+            HandlerError::operation(format!(
+                "data.lua edit_device: missing ipv4.dhcp.alwaysSameIp for {uid}"
+            ))
+        })?;
+    Ok(EditDeviceState {
+        name: field(&dev["name"]["displayName"], "name.displayName")?,
+        ip: field(&dev["ipv4"]["current"]["ip"], "ipv4.current.ip")?,
+        always_same_ip,
+        // Stable settings an incomplete form POST could reset; online-time
+        // counters are excluded because they change on their own.
+        guarded: serde_json::json!({
+            "profile": dev["netAccess"]["kisi"]["profiles"]["selected"],
+            "blocked": dev["netAccess"]["kisi"]["isDeviceBlocked"],
+            "portRules": dev["netAccess"]["portRules"],
+            "portForwarding": dev["ipv4"]["portForwarding"],
+        }),
+    })
 }
 
 fn render_hosts(hosts: &[Host], format: OutputFormat) -> Result<(), HandlerError> {

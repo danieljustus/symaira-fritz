@@ -390,6 +390,16 @@ pub enum HostsCommand {
     Get(HostGetArgs),
     #[command(about = "List all known hosts")]
     List,
+    #[command(
+        about = "Always assign the same IPv4 address to a host (best-effort, fragile)",
+        long_about = "Enable 'Always assign this network device the same IPv4 address' for one host.\n\nTR-064 has no action for this setting, so symfritz uses the web UI's\ndata.lua endpoint. WARNING: This is a best-effort, version-fragile API that\nAVM may change with any FRITZ!OS update. The setting is read back after the\nchange and the command fails if the box did not apply it."
+    )]
+    Pin(HostGetArgs),
+    #[command(
+        about = "Stop always assigning the same IPv4 address to a host (best-effort, fragile)",
+        long_about = "Disable 'Always assign this network device the same IPv4 address' for one host.\n\nUses the version-fragile data.lua endpoint like 'hosts pin' and verifies the\nresult by reading the setting back."
+    )]
+    Unpin(HostGetArgs),
 }
 
 #[derive(Debug, Args)]
@@ -599,7 +609,9 @@ pub fn parse_args(args: &[String]) -> Result<Cli, ParseError> {
 /// consumes the value slots.
 fn selector_validation_error(cli: &Cli) -> Option<&'static str> {
     match &cli.command {
-        Some(Command::Hosts(HostsCommand::Get(args))) => {
+        Some(Command::Hosts(
+            HostsCommand::Get(args) | HostsCommand::Pin(args) | HostsCommand::Unpin(args),
+        )) => {
             let selectors = usize::from(args.name.is_some())
                 + usize::from(args.mac.is_some())
                 + usize::from(args.ip.is_some());

@@ -148,6 +148,7 @@ symfritz diagnose macmini                   # end-to-end host reachability check
 symfritz diagnose router                    # detect and diagnose local router
 symfritz doctor                             # verify the local setup and box access
 symfritz hosts list                         # all known network devices
+symfritz hosts pin macmini                   # always assign the same IPv4 (data.lua, best-effort)
 symfritz wlan radios                        # WLAN SSIDs, channels, state
 symfritz traffic                            # current WAN traffic rates
 symfritz traffic --watch --interval 5s       # live WAN traffic monitoring
