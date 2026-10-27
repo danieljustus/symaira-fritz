@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the vendored approved A3 brand package without building the CLI."""
+"""Verify the vendored approved K1v2 brand package without building the CLI."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def main() -> None:
     manifest = json.loads((BRAND / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["schema_version"] == 1
     assert manifest["product"] == "symaira-fritz"
-    assert manifest["design"] == "A3 (Verzahnt)"
+    assert manifest["design"] == "K1v2"
     assert manifest["role"] == "brand-only"
     assert manifest["native_app_bundle"] is False
     assert manifest["existing_wordmark_preserved"] is True
@@ -47,9 +47,10 @@ def main() -> None:
         assert sha256(path) == expected_hash, f"hash mismatch: {relative}"
 
     icon = json.loads((BRAND / "AppIcon.icon" / "icon.json").read_text(encoding="utf-8"))
-    assert {"refractivity", "specular-location"} <= set(icon["features"])
+    # K1v2 stays Xcode 26 compatible: no Icon Composer 2-only features.
+    assert "features" not in icon
     assert icon["supported-platforms"]["squares"] == "shared"
-    assert len(icon["groups"]) == 2
+    assert len(icon["groups"]) == 3  # glyph, contour lines, S (actool allows at most four)
     assert icon["groups"][0]["name"] == manifest["product_signet_group"]
     image_names = {
         layer["image-name"]
@@ -57,10 +58,10 @@ def main() -> None:
         for layer in group["layers"]
         if "image-name" in layer
     }
-    assert image_names == {"S.png", "signet.png"}
+    assert image_names == {"signet.png", "top.png", "bot.png", "lines.png", "index.png"}
     assert all((BRAND / "AppIcon.icon" / "Assets" / name).is_file() for name in image_names)
 
-    for name in ("S.png", "signet.png"):
+    for name in sorted(image_names):
         assert png_info(BRAND / "AppIcon.icon" / "Assets" / name) == ((1024, 1024), "RGBA")
 
     svg = (BRAND / "source" / "signet.svg").read_text(encoding="utf-8")
@@ -122,7 +123,7 @@ def main() -> None:
             ), relative
     assert "Synthetic illustration" in (PUBLIC_KIT / "readme/terminal-demo.svg").read_text()
 
-    print(f"verified approved A3 brand assets for {manifest['product']}")
+    print(f"verified approved K1v2 brand assets for {manifest['product']}")
     print(f"verified {len(expected_files)} public SVG/PNG assets for {public['product']}")
 
 

@@ -19,8 +19,8 @@
 ![symfritz terminal demo](docs/assets/symfritz-demo.svg)
 
 Editable router/radio mark and ready-to-publish social, release, and README
-graphics: [public asset kit](assets/branding/public-kit/README.md). The approved
-A3 signet and existing CLI/repository identifiers remain unchanged.
+graphics: [public asset kit](assets/branding/public-kit/README.md). The router
+signet and existing CLI/repository identifiers remain unchanged.
 
 ## Why symfritz
 
