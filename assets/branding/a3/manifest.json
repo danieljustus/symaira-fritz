@@ -1,18 +1,21 @@
 {
   "schema_version": 1,
   "product": "symaira-fritz",
-  "design": "A3 (Verzahnt)",
+  "design": "K1v2",
   "role": "brand-only",
   "native_app_bundle": false,
-  "source_handoff": "symaira-icons-release/symaira-fritz",
+  "source_handoff": "icon-k1v2-20261023 (approved Icon Composer master)",
   "product_signet_group": "Symaira Fritz — Router",
   "existing_wordmark_preserved": true,
   "files": {
-    "AppIcon.icon/icon.json": "43e34f7e71720c598de2abfa98842c06cbfcdd310c8ac496713f9aee253320b3",
-    "AppIcon.icon/Assets/S.png": "76dbfd933a4a5af3084e8a36f70c9fef7a1d7cc605d2e2d78fa0dc4c4f4b9110",
-    "AppIcon.icon/Assets/signet.png": "5610a249b66e264a7af7e92801a8541ec9128be07b6e1fb3a5561f573a3d74d9",
+    "AppIcon.icon/Assets/bot.png": "6656243331f20bcd852a4454f8d75098afcdc1e254f9ecca0ada2d8ce0a54e7d",
+    "AppIcon.icon/Assets/index.png": "ae6c8b0207ca92ed21dd56d2a68ec0f6aaf48a4339dae02ca817f323d0e2d00f",
+    "AppIcon.icon/Assets/lines.png": "ec9318f11043df2a4489984c8686971efafe7313e6a9976c6c84b48ceb063a28",
+    "AppIcon.icon/Assets/signet.png": "4e17fc084340087c5b56765bb5a5eb20be98d2d381e4a946e837702f776f7892",
+    "AppIcon.icon/Assets/top.png": "31acbee4bc3a714885bc0fc0394349f519c6326dad98e65fa7ade28bcd21d279",
+    "AppIcon.icon/icon.json": "7f538673a010b358d038ae3507862a64021ea8d140499725c08ef43daead3bc2",
     "source/signet.svg": "8ebaf7d13cae258e8002e7820fdfc6ea4779a8f6f00815e27aa55fd430b044d4",
-    "symaira-fritz-a3.png": "92c945e37c7203a540b10ff4c02345801a6ae3615028a42aeca03895c47ac5f5"
+    "symaira-fritz-a3.png": "ba148057962478610b2cb6295690a304c7951ba4e7d2c81c48184e5befbac640"
   },
   "png_contract": {
     "symaira-fritz-a3.png": {
@@ -22,5 +25,13 @@
       ],
       "color_mode": "RGB"
     }
+  },
+  "k1v2": {
+    "name": "K1v2",
+    "description": "K1v2 (R1 relief S + champagne glass glyph)",
+    "approved": "2026-10-23",
+    "design_system": "Liquid Topography",
+    "source_design_sha256": "03f5e47f3903e5311c9f4a7f4287f619a0472d589af0f13bf492a73606730f26",
+    "clear_system_appearance": "rendered, not device-verified"
   }
 }

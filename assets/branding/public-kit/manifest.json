@@ -12,112 +12,112 @@
       ]
     },
     "social/github-social-en.svg": {
-      "sha256": "10e592b9ae1e86a60121e6a11785b69ceb51a79f3ef556f845ca434e4141eb2a",
+      "sha256": "118bfebc51fb206fed0f15ba7ccf1ed42a9a94d8000717a0592255f367e3cdff",
       "dimensions": [
         1280,
         640
       ]
     },
     "social/github-social-en.png": {
-      "sha256": "2018f2271d180df6c366f209a8a62eef2af113779e73f28debcc57512066dc79",
+      "sha256": "e069cf82a5a1c66cb455242a349a3a6427c3646ebdcc6ded2ffdbe1a7f198086",
       "dimensions": [
         1280,
         640
       ]
     },
     "social/open-graph-de.svg": {
-      "sha256": "16f9209a4f09564d6c941febd4d9ddd002ef663977d3eb640dd351c3459da952",
+      "sha256": "88b5c3ba5e1c9aa00cce3fd59a2a0a0b807a38a5788741d12040fbe34f5b4891",
       "dimensions": [
         1200,
         630
       ]
     },
     "social/open-graph-de.png": {
-      "sha256": "91b267de5712e63717aa41ce703bdfecb592eb8ed46321c14f0db036427a28ec",
+      "sha256": "2f1e53616e420145b0547289c2efe860451d97cd9a0013bc5ec103693c9f4339",
       "dimensions": [
         1200,
         630
       ]
     },
     "social/square-de.svg": {
-      "sha256": "88f08eca7e9d0ad39007e02f1d8f89f19c2c65416fade2df85f87465401d9aa4",
+      "sha256": "dbb6370f611fcf8694a2b634452e293f5da46c4d40eb76bf89bcecc2681a1f63",
       "dimensions": [
         1080,
         1080
       ]
     },
     "social/square-de.png": {
-      "sha256": "72f9fc030e78484ba67ff751a8102c231a8c85cc07351ec4ed70805aae2aafac",
+      "sha256": "ad95a8c227e7f054d22cf7d40c2882bb48fc980fa7bbb25153c89f7178885b2e",
       "dimensions": [
         1080,
         1080
       ]
     },
     "social/portrait-de.svg": {
-      "sha256": "5f62306c72aed70b85f5e675f6c9d2af337577dd79a10dd0806400084c8b4350",
+      "sha256": "be2a3a1c128e9335b3b2ba27627ff79561eaa5d372277820841d56b46e887b9f",
       "dimensions": [
         1080,
         1350
       ]
     },
     "social/portrait-de.png": {
-      "sha256": "9c3ea9de19366acb3dac0d0bfd37006d08767c0c5802676603fb2af6858c87a1",
+      "sha256": "65fbae0e80b827eec2aba8266986f6e5b9ae4f6395f3b2f545d34ad6b2aa8fda",
       "dimensions": [
         1080,
         1350
       ]
     },
     "social/story-de.svg": {
-      "sha256": "447b70247877478ad36bd2f1b56a5c2006bc9c8ccf41a232e53945df72a9599e",
+      "sha256": "8572ad6d89203997c0ee9ba04263e6da5dc1c4903d1dc439d0a1768d6d74f3a3",
       "dimensions": [
         1080,
         1920
       ]
     },
     "social/story-de.png": {
-      "sha256": "d98315c4b98842e4b4e7dbb2fcbd8b5dc4d67d1874e86523cd5feb4d050bcfff",
+      "sha256": "23788654f5da273a00253e25b6eba8befcadba98a642eb9bc5ae1f872dbcda79",
       "dimensions": [
         1080,
         1920
       ]
     },
     "release/release-card-en.svg": {
-      "sha256": "2e92f16e78091b663fb84ee00150445ab13f0c4fe6b88e123aa9cb9fb096361f",
+      "sha256": "6c550a4df4aa3b7539c8e85c37bcb36b9f6d11cc11bb56ac3436cbd7f2e91c7d",
       "dimensions": [
         1600,
         900
       ]
     },
     "release/release-card-en.png": {
-      "sha256": "e1e32cceae550c7cc728228b8f158a4d9b818d042932e4ca532fab9b6bd33a59",
+      "sha256": "57daf7774841adc28fa8c2b75ac86a09c97a45db86b98ca2f1c147f7dca7fdf9",
       "dimensions": [
         1600,
         900
       ]
     },
     "readme/readme-hero-de.svg": {
-      "sha256": "d3ff43095c81fc0d1dba9d7a7e6bb787506334e8bc6e9d334df925245c01a4ea",
+      "sha256": "6f350cc189bef62b041f9a2b98ad899a384d5a97eda767e05f6154eaf10e3f91",
       "dimensions": [
         1600,
         900
       ]
     },
     "readme/readme-hero-de.png": {
-      "sha256": "265dcb1f99fd6c54acbbb27591027a0cc547b6fece0596345f3040a56b886bb7",
+      "sha256": "452ce99061ca79e9fc1d2159506aab2178fed6d064e18fd12f4470eba1cef9da",
       "dimensions": [
         1600,
         900
       ]
     },
     "readme/terminal-demo.svg": {
-      "sha256": "149ffb601fcff39439e7e46cbdfaaf4eb9514570db09c2200ee74f5437a37f91",
+      "sha256": "305f2683f7fd94bfc45e667f7b9963f2e5f0cd3a73917e7c9d853eb39bd4d265",
       "dimensions": [
         1600,
         900
       ]
     },
     "readme/terminal-demo.png": {
-      "sha256": "5d69b7b85dacf263ce9bc116ac764e12ef87556c676c272a03deda1393b67c25",
+      "sha256": "8e86dc20dbf1f48012d77f355548580bd23567022f8cc524b9ca5fc9c474c194",
       "dimensions": [
         1600,
         900
