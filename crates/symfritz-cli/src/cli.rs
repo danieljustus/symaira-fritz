@@ -207,12 +207,9 @@ pub struct CallArgs {
     pub service: String,
     #[arg(value_name = "action")]
     pub action: String,
-    #[arg(
-        value_name = "Key=Value",
-        trailing_var_arg = true,
-        allow_hyphen_values = true,
-        num_args = 0..
-    )]
+    // Plain positional list so global flags (--json, --output) are still
+    // recognized after Key=Value pairs; values must not start with '-'.
+    #[arg(value_name = "Key=Value", num_args = 0..)]
     pub arguments: Vec<String>,
 }
 
@@ -432,12 +429,9 @@ pub struct RebootArgs {
 pub struct ScrapeArgs {
     #[arg(value_name = "page")]
     pub page: String,
-    #[arg(
-        value_name = "Key=Value",
-        trailing_var_arg = true,
-        allow_hyphen_values = true,
-        num_args = 0..
-    )]
+    // Plain positional list so global flags (--json, --output) are still
+    // recognized after Key=Value pairs; values must not start with '-'.
+    #[arg(value_name = "Key=Value", num_args = 0..)]
     pub arguments: Vec<String>,
 }
 
