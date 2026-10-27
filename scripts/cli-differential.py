@@ -718,6 +718,11 @@ def _trace(value: object, label: str) -> list[tuple[str, str, str]]:
     return trace
 
 
+HOSTS_PIN_HELP_ADDITIONS = {
+    "pin": "Always assign the same IPv4 address to a host (best-effort, fragile)",
+    "unpin": "Stop always assigning the same IPv4 address to a host (best-effort, fragile)",
+}
+
 _POLICY_ID = re.compile(r"^[A-Z][A-Z0-9]+(?:-[A-Z0-9]+)+$")
 _PACKAGE_NAME = re.compile(r"^[a-z][a-z0-9-]*$")
 _CARGO_TARGET_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
@@ -733,6 +738,7 @@ _DIRECT_CASE_BINDINGS: dict[str, frozenset[str]] = {
     "CLI-FIRMWARE-EXTENSION": frozenset({"firmware-help-extension"}),
     "MCP-FIRMWARE-EXTENSION": frozenset({"firmware-tools-extension"}),
     "CLI-DNS-EXTENSION": frozenset({"dns-help-extension"}),
+    "CLI-HOSTS-PIN-EXTENSION": frozenset({"hosts-pin-help-extension"}),
 }
 
 
@@ -1192,7 +1198,7 @@ def run_rust_assertions(root: Path, policy: dict[str, Any]) -> None:
                 f"{label}: Rust assertion failed with exit code {completed.returncode}"
             )
         _assertion_ran_one_test(completed.stdout + completed.stderr, assertion["test"], label)
-        if target["id"] in {"MCP-HOME-SWITCH-BOOLEAN", "CLI-FIRMWARE-EXTENSION", "MCP-FIRMWARE-EXTENSION", "CLI-DNS-EXTENSION"}:
+        if target["id"] in {"MCP-HOME-SWITCH-BOOLEAN", "CLI-FIRMWARE-EXTENSION", "MCP-FIRMWARE-EXTENSION", "CLI-DNS-EXTENSION", "CLI-HOSTS-PIN-EXTENSION"}:
             for case in _DIRECT_CASE_BINDINGS[target["id"]]:
                 _mark_policy_case(policy, target["id"], case, label)
 
@@ -1243,6 +1249,15 @@ def compare_help_contract(label: str, expected: HelpContract, actual: HelpContra
         for name, description in additions.items():
             if name in expected_commands or actual_commands.get(name) != description or actual.subcommands[name][1]:
                 raise AssertionError(f"{label}: unexpected DNS help extension")
+            actual_commands.pop(name)
+    if path == "symfritz hosts":
+        extension = _policy_target(policy, "CLI-HOSTS-PIN-EXTENSION", label)
+        additions = extension.get("hosts_help_additions")
+        if additions != HOSTS_PIN_HELP_ADDITIONS:
+            raise AssertionError(f"{label}: invalid hosts pin help extension registration")
+        for name, description in additions.items():
+            if name in expected_commands or actual_commands.get(name) != description or actual.subcommands[name][1]:
+                raise AssertionError(f"{label}: unexpected hosts pin help extension")
             actual_commands.pop(name)
     if expected_commands != actual_commands:
         raise AssertionError(f"{label}: subcommands mismatch Go={expected_commands!r} Rust={actual_commands!r}")

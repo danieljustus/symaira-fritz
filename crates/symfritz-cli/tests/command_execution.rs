@@ -244,12 +244,12 @@ fn serve(mut stream: TcpStream, requests: &Mutex<Vec<Request>>) -> std::io::Resu
             action: String::new(),
             body: body.clone(),
         });
-        let (content_type, response) = if path.starts_with("/query.lua") {
-            ("application/json", r#"{"CPUTEMP":"56,61"}"#)
+        let response = if path.starts_with("/query.lua") {
+            r#"{"CPUTEMP":"56,61"}"#.to_owned()
         } else {
-            ("application/json", r#"{"page":"overview","items":[1]}"#)
+            data_lua_response(&body, &requests.lock().expect("request log"))
         };
-        respond(&mut stream, "200 OK", content_type, response, &[])?;
+        respond(&mut stream, "200 OK", "application/json", &response, &[])?;
         return Ok(false);
     }
     if method == "POST" {
@@ -377,6 +377,31 @@ fn description() -> String {
     format!(
         "<root xmlns=\"urn:dslforum-org:device-1-0\"><device><serviceList>{services}</serviceList></device></root>"
     )
+}
+
+/// data.lua pages used by `hosts pin`; the pin state follows the latest apply.
+fn data_lua_response(body: &str, requests: &[Request]) -> String {
+    if body.contains("page=netDev") {
+        return r#"{"data":{"active":[{"UID":"landevice25","mac":"AA:BB:CC:DD:EE:25"}],"passive":[]}}"#
+            .to_owned();
+    }
+    if body.contains("page=edit_device") {
+        if body.contains("apply=") {
+            return r#"{"data":{"apply":"ok"}}"#.to_owned();
+        }
+        let pinned = requests
+            .iter()
+            .rev()
+            .find(|request| {
+                request.body.contains("page=edit_device") && request.body.contains("apply=")
+            })
+            .is_some_and(|request| request.body.contains("static_dhcp=on"));
+        return format!(
+            r#"{{"data":{{"vars":{{"dev":{{"name":{{"displayName":"Desk"}},"netAccess":{{"kisi":{{"profiles":{{"selected":"filtprof1"}},"isDeviceBlocked":false,"onlineTime":{{"used":{}}}}}}},"ipv4":{{"current":{{"ip":"192.0.2.25"}},"dhcp":{{"alwaysSameIp":{pinned}}},"portForwarding":{{"allowForwarding":false}}}}}}}}}}}}"#,
+            requests.len()
+        );
+    }
+    r#"{"page":"overview","items":[1]}"#.to_owned()
 }
 
 fn response_fields(path: &str, action: &str, request_body: &str) -> Vec<(&'static str, String)> {
@@ -1229,4 +1254,81 @@ fn help_version_and_completion_commands_render_locally() {
         "help, version, and completion commands contacted the router: {:?}",
         mock.requests()
     );
+}
+
+#[test]
+fn hosts_pin_applies_static_dhcp_and_verifies_read_back() {
+    let mock = MockBox::start();
+    let applies = |mock: &MockBox| {
+        mock.requests()
+            .into_iter()
+            .filter(|request| {
+                request.path == "/data.lua"
+                    && request.body.contains("page=edit_device")
+                    && request.body.contains("apply=")
+            })
+            .collect::<Vec<_>>()
+    };
+
+    let pinned = pin_json(&mock.run(&["hosts", "pin", "--mac", "aa:bb:cc:dd:ee:25", "--json"]));
+    assert_eq!(pinned["uid"], "landevice25");
+    assert_eq!(pinned["name"], "Desk");
+    assert_eq!(pinned["ip"], "192.0.2.25");
+    assert_eq!(pinned["pinned"], true);
+    assert_eq!(pinned["changed"], true);
+    let apply = applies(&mock);
+    assert_eq!(apply.len(), 1);
+    for field in [
+        "dev=landevice25",
+        "dev_name=Desk",
+        "dev_ip=192.0.2.25",
+        "static_dhcp=on",
+    ] {
+        assert!(
+            apply[0].body.contains(field),
+            "{field} missing: {}",
+            apply[0].body
+        );
+    }
+
+    let again = pin_json(&mock.run(&["hosts", "pin", "--mac", "aa:bb:cc:dd:ee:25", "--json"]));
+    assert_eq!(again["changed"], false);
+    assert_eq!(
+        applies(&mock).len(),
+        1,
+        "already pinned host was written again"
+    );
+
+    let unpinned = pin_output(&mock.run(&["hosts", "unpin", "--mac", "aa:bb:cc:dd:ee:25"]));
+    assert_eq!(
+        unpinned,
+        "OK: Desk (AA:BB:CC:DD:EE:25) unpinned to 192.0.2.25\n"
+    );
+    let apply = applies(&mock);
+    assert_eq!(apply.len(), 2);
+    assert!(!apply[1].body.contains("static_dhcp"));
+
+    let missing = mock.run(&["hosts", "pin"]);
+    assert!(
+        !missing.status.success(),
+        "pin without a selector must fail"
+    );
+    assert_eq!(applies(&mock).len(), 2);
+}
+
+const DATA_LUA_WARNING: &str =
+    "warning: this command uses the version-fragile data.lua web interface (best-effort)\n";
+
+fn pin_output(output: &Output) -> String {
+    assert!(
+        output.status.success(),
+        "hosts pin failed: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stderr), DATA_LUA_WARNING);
+    String::from_utf8(output.stdout.clone()).expect("UTF-8 CLI text")
+}
+
+fn pin_json(output: &Output) -> Value {
+    serde_json::from_str(&pin_output(output)).expect("hosts pin JSON")
 }

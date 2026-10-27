@@ -1,0 +1,14 @@
+{
+  "issue": 307,
+  "cli_paths": [
+    "symfritz hosts pin",
+    "symfritz hosts unpin"
+  ],
+  "hosts_help_additions": {
+    "pin": "Always assign the same IPv4 address to a host (best-effort, fragile)",
+    "unpin": "Stop always assigning the same IPv4 address to a host (best-effort, fragile)"
+  },
+  "read_only": false,
+  "interface": "data.lua edit_device (best-effort, version-fragile; verified on FRITZ!Box 4060, FRITZ!OS 8.25)",
+  "scope": "One selected host only: toggles ipv4.dhcp.alwaysSameIp, skips the write when already in the requested state, and fails unless the read-back confirms it."
+}

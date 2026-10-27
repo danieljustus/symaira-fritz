@@ -635,6 +635,24 @@
         "command": ["cargo", "test", "-p", "symfritz-cli", "--test", "dns", "dns_surface_and_validation_preserve_read_only_scope", "--locked"]
       },
       "root_help_additions": {"dns": "Compare router, DHCP and client DNS paths for one selected name"}
+    },
+    {
+      "id": "CLI-HOSTS-PIN-EXTENSION",
+      "scope": {
+        "kind": "hosts-pin-additive-surface",
+        "cases": ["hosts-pin-help-extension"],
+        "paths": ["symfritz hosts", "symfritz hosts pin", "symfritz hosts unpin"]
+      },
+      "surface": "CLI hosts help adds only the opt-in static DHCP lease commands",
+      "reason": "Issue #307 adds hosts pin/unpin for the data.lua-only alwaysSameIp setting without changing any frozen command.",
+      "rationale": "Issue #307 adds hosts pin/unpin for the data.lua-only alwaysSameIp setting without changing any frozen command.",
+      "test": "crates/symfritz-cli/tests/hosts_pin.rs::hosts_pin_surface_is_registered",
+      "rust_assertion": {
+        "path": "crates/symfritz-cli/tests/hosts_pin.rs",
+        "test": "hosts_pin_surface_is_registered",
+        "command": ["cargo", "test", "-p", "symfritz-cli", "--test", "hosts_pin", "hosts_pin_surface_is_registered", "--locked"]
+      },
+      "hosts_help_additions": {"pin": "Always assign the same IPv4 address to a host (best-effort, fragile)", "unpin": "Stop always assigning the same IPv4 address to a host (best-effort, fragile)"}
     }
   ]
 }
