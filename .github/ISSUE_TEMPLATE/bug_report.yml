@@ -29,6 +29,6 @@ body:
       description: OS version, output of `symfritz --version`, and whether you built from source. If so, include `rustc --version`.
       placeholder: |
         OS: macOS 15.0
-        symfritz --version: symfritz version 0.11.0
+        symfritz --version: symfritz version 0.11.1
         Built from source: no
         rustc --version (if source build): n/a

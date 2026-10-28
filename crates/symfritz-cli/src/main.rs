@@ -704,15 +704,15 @@ fn execute_host_pin(
     let before = read_edit_device(&mut web, &uid)?;
     let changed = before.always_same_ip != pin;
     if changed {
-        let mut params = data_params(&[
+        // data.lua keeps the previous value when static_dhcp is absent, so
+        // unpin must send "off" explicitly (verified on FRITZ!OS 8.25).
+        let params = data_params(&[
             ("dev", uid.as_str()),
             ("dev_name", before.name.as_str()),
             ("dev_ip", before.ip.as_str()),
+            ("static_dhcp", if pin { "on" } else { "off" }),
             ("apply", ""),
         ]);
-        if pin {
-            params.insert("static_dhcp".to_owned(), vec!["on".to_owned()]);
-        }
         let raw = web
             .data_lua("edit_device", &params)
             .map_err(|error| HandlerError::operation(format!("data.lua apply failed: {error}")))?;
