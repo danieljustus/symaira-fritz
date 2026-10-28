@@ -389,13 +389,21 @@ fn data_lua_response(body: &str, requests: &[Request]) -> String {
         if body.contains("apply=") {
             return r#"{"data":{"apply":"ok"}}"#.to_owned();
         }
+        // Like the real box: an apply without static_dhcp keeps the old value.
         let pinned = requests
             .iter()
-            .rev()
-            .find(|request| {
+            .filter(|request| {
                 request.body.contains("page=edit_device") && request.body.contains("apply=")
             })
-            .is_some_and(|request| request.body.contains("static_dhcp=on"));
+            .fold(false, |pinned, request| {
+                if request.body.contains("static_dhcp=on") {
+                    true
+                } else if request.body.contains("static_dhcp=off") {
+                    false
+                } else {
+                    pinned
+                }
+            });
         return format!(
             r#"{{"data":{{"vars":{{"dev":{{"name":{{"displayName":"Desk"}},"netAccess":{{"kisi":{{"profiles":{{"selected":"filtprof1"}},"isDeviceBlocked":false,"onlineTime":{{"used":{}}}}}}},"ipv4":{{"current":{{"ip":"192.0.2.25"}},"dhcp":{{"alwaysSameIp":{pinned}}},"portForwarding":{{"allowForwarding":false}}}}}}}}}}}}"#,
             requests.len()
@@ -1306,7 +1314,11 @@ fn hosts_pin_applies_static_dhcp_and_verifies_read_back() {
     );
     let apply = applies(&mock);
     assert_eq!(apply.len(), 2);
-    assert!(!apply[1].body.contains("static_dhcp"));
+    assert!(
+        apply[1].body.contains("static_dhcp=off"),
+        "{}",
+        apply[1].body
+    );
 
     let missing = mock.run(&["hosts", "pin"]);
     assert!(
