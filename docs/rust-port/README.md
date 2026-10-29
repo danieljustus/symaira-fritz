@@ -1,5 +1,14 @@
 # Go-to-Rust migration record
 
+## Current platform scope (2026-10-29, #314)
+
+Fritz's product scope is Apple + Web. This repository ships a CLI/MCP server:
+macOS arm64 is the native Apple target, while Linux remains a CI/server and CLI
+artifact target. Windows and macOS Intel are unsupported; port-parity and release
+requirements for those targets are no longer required under the platform scope
+decision. Windows-only source removal is tracked in #316. Historical migration
+and test evidence below retains its original facts and scope.
+
 This directory records the reversible, contract-first Rust port completed in
 v0.7.0. Rust is the sole source and production implementation. The immutable
 v0.7.0 release retains the final Go binary as the historical rollback point.
