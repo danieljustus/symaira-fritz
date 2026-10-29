@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from release_manifest import archive_name
+from release_manifest import TARGETS, archive_name
 
 
 def checksums(path: Path) -> dict[str, str]:
@@ -20,6 +20,8 @@ def formula(version: str, release_url: str, digest: dict[str, str]) -> str:
     def block(os_name: str, condition: str) -> str:
         rows = []
         for arch, homebrew_condition in (("amd64", "Hardware::CPU.intel?"), ("arm64", "Hardware::CPU.arm?")):
+            if (os_name, arch) not in TARGETS:
+                continue
             asset = archive_name(version, os_name, arch)
             rows.append(
                 f'''    if {homebrew_condition}{" && Hardware::CPU.is_64_bit?" if os_name == "linux" else ""}\n'''

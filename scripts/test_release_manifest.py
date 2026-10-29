@@ -19,16 +19,35 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertEqual(
             [manifest.archive_name(version, *target) for target in manifest.TARGETS],
             [
-                "symaira-fritz_1.2.3_darwin_amd64.tar.gz",
                 "symaira-fritz_1.2.3_darwin_arm64.tar.gz",
                 "symaira-fritz_1.2.3_linux_amd64.tar.gz",
                 "symaira-fritz_1.2.3_linux_arm64.tar.gz",
-                "symaira-fritz_1.2.3_windows_amd64.zip",
-                "symaira-fritz_1.2.3_windows_arm64.zip",
             ],
         )
         self.assertEqual(manifest.binary_name("darwin"), "symfritz")
         self.assertEqual(manifest.binary_name("windows"), "symfritz.exe")
+
+    def test_removed_targets_are_rejected(self):
+        for target in ("darwin/amd64", "windows/amd64", "windows/arm64"):
+            with self.subTest(target=target), self.assertRaisesRegex(ValueError, "unsupported target"):
+                manifest.parse_targets([target])
+
+    def test_homebrew_uses_only_supported_archives(self):
+        from render_homebrew_formula import formula
+        from verify_homebrew_formula import validate
+        version = "1.2.3"
+        url = "https://example.test/releases/v1.2.3"
+        digest = {manifest.archive_name(version, *target): "a" * 64 for target in manifest.TARGETS}
+        text = formula(version, url, digest)
+        self.assertNotIn("darwin_amd64", text)
+        self.assertNotIn("windows", text)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            formula_path = root / "symfritz.rb"
+            formula_path.write_text(text)
+            checksums = root / "checksums.txt"
+            checksums.write_text("".join(f"{sha}  {name}\n" for name, sha in digest.items()))
+            validate(formula_path, version, url, checksums)
 
     def test_package_contents_and_manifest_are_deterministic(self):
         with tempfile.TemporaryDirectory() as temp:

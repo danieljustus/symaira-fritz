@@ -24,6 +24,17 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
         self.assertNotIn("actions/" + "setup-go", WORKFLOW_TEXT)
         self.assertIsNone(re.search(r"\bgo (?:build|test|install|vet|run)\b", WORKFLOW_TEXT))
 
+    def test_supported_release_and_ci_targets(self) -> None:
+        from release_manifest import TARGETS
+        targets = re.findall(r"- os: (\w+)\n\s+arch: (\w+)", WORKFLOW_TEXT)
+        self.assertEqual(targets, list(TARGETS))
+        self.assertEqual(targets, [("darwin", "arm64"), ("linux", "amd64"), ("linux", "arm64")])
+        ci_text = (ROOT / ".github/workflows/ci.yml").read_text()
+        self.assertIn("os: [macos-15]", ci_text)
+        self.assertNotRegex(ci_text, r"os:.*windows")
+        self.assertNotIn("x86_64-apple-darwin", WORKFLOW_TEXT)
+        self.assertNotIn("darwin_amd64.tar.gz", WORKFLOW_TEXT)
+
     def test_linux_arm64_uses_a_cross_compiler_and_ring_environment(self) -> None:
         self.assertIn("gcc-aarch64-linux-gnu", WORKFLOW_TEXT)
         self.assertIn("CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc", WORKFLOW_TEXT)
@@ -31,8 +42,8 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
         self.assertIn("if: matrix.os == 'linux' && matrix.arch == 'arm64'", WORKFLOW_TEXT)
 
     def test_cross_targets_are_packaged_without_execution(self) -> None:
-        self.assertEqual(WORKFLOW_TEXT.count("runtime_validation: false"), 2)
-        self.assertEqual(WORKFLOW_TEXT.count("runtime_validation: true"), 4)
+        self.assertEqual(WORKFLOW_TEXT.count("runtime_validation: false"), 1)
+        self.assertEqual(WORKFLOW_TEXT.count("runtime_validation: true"), 2)
         self.assertIn('--runtime-validation "$RUNTIME_VALIDATION"', WORKFLOW_TEXT)
         self.assertNotIn("validation_args=()", WORKFLOW_TEXT)
 

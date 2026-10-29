@@ -24,7 +24,7 @@ signet and existing CLI/repository identifiers remain unchanged.
 
 ## Why symfritz
 
-- **Single binary, no dependencies** — works on macOS, Linux, and Windows
+- **Single binary, no dependencies**: supports macOS Apple Silicon and Linux amd64/arm64
 - **Speaks documented interfaces only** (TR-064, AHA-HTTP) — no reverse-engineering required
 - **End-to-end diagnosis in one command** — `symfritz diagnose <host>` checks box entry, activity, LAN/WLAN, DNS, and TCP ports
 - **Secure credential handling** — resolves from env, symvault, or macOS Keychain; never stores plaintext by default
@@ -64,7 +64,19 @@ It speaks the FRITZ!Box's documented interfaces, no reverse-engineering required
 
 Still planned: per-radio band labelling.
 
-## Install
+## Supported platforms
+
+| Surface | Supported targets |
+| --- | --- |
+| Native CLI and MCP server | macOS Apple Silicon (arm64) |
+| CLI, server and CI | Linux amd64 / arm64 |
+
+The product scope is Apple + Web; this repository ships a CLI and MCP server,
+not a native iOS app or browser UI. Windows and Intel macOS are unsupported and
+receive no CI or release artifacts. Existing Windows-specific source and fixtures
+remain for now; removing them is follow-up work (see [#314](https://github.com/danieljustus/symaira-fritz/issues/314)).
+
+## Installation
 
 ```bash
 make build           # → ./symfritz
