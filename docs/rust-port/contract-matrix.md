@@ -1,5 +1,16 @@
 # Rust contract matrix
 
+## Current platform scope (2026-10-29, #314)
+
+Apple + Web is the product scope. For this CLI/MCP repository, supported native
+execution targets are macOS arm64 and Linux; Linux is retained for CI/server
+use and CLI artifacts. Windows and macOS Intel are unsupported, and their
+former port-matrix parity requirements are no longer required under the platform
+scope decision. Windows-only source cleanup is tracked in #316. The matrix rows
+below preserve historical measurements; they do not reinstate unsupported
+platform requirements. Keep historical evidence unchanged and review fixture
+consumers before removing any Windows capture.
+
 **PASS** means the contract remains executable through Rust tests, a strict
 fake-box harness, or release validation. The frozen v0.7 oracle column records
 provenance; it does not require Go source in the current repository.

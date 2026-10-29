@@ -1,5 +1,13 @@
 # Rust release cutover
 
+## Current artifact scope (2026-10-29, #314)
+
+Windows and macOS Intel release targets were removed by #315. Current release
+acceptance is macOS arm64 plus Linux amd64/arm64; Windows and darwin-amd64
+artifact requirements are no longer required under the platform scope decision.
+The six-archive list below is preserved as historical v0.7/v0.8 release evidence,
+not as the current artifact contract. Do not rewrite that historical record.
+
 This repository uses one release publisher and one archive contract. The old
 GoReleaser configuration is removed; `.github/workflows/release.yml` builds and
 publishes the complete matrix itself. This avoids two publishers racing over
