@@ -73,8 +73,8 @@ Still planned: per-radio band labelling.
 
 The product scope is Apple + Web; this repository ships a CLI and MCP server,
 not a native iOS app or browser UI. Windows and Intel macOS are unsupported and
-receive no CI or release artifacts. Existing Windows-specific source and fixtures
-remain for now; removing them is follow-up work (see [#314](https://github.com/danieljustus/symaira-fritz/issues/314)).
+receive no CI or release artifacts, and the Windows-specific source paths have
+been removed (see [#314](https://github.com/danieljustus/symaira-fritz/issues/314)).
 
 ## Installation
 

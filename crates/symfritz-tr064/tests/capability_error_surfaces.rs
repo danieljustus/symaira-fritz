@@ -6,7 +6,7 @@ use symfritz_tr064::{
     CheckStatus, Client, ClientError, CnonceSource, DiagnoseOptions, DiscoveryError, ErrorKind,
     PortProbe, Request, Response, Service, SoapParseError, StatusError, Transport, TransportError,
     all_public, classify_resolved_host, error_kind, is_private_ip, parse_linux_default_gateway,
-    parse_windows_default_gateway, probe_tr064,
+    probe_tr064,
 };
 
 #[path = "support/accept.rs"]
@@ -368,10 +368,6 @@ fn ip_gateway_and_empty_mesh_resolution_helpers_cover_invalid_and_ipv6_inputs() 
     assert!(all_public(&["not-an-ip".to_owned()]));
     assert!(!classify_resolved_host(&["8.8.8.8".to_owned()], None).is_gateway);
     assert_eq!(parse_linux_default_gateway("default dev en0"), None);
-    assert_eq!(
-        parse_windows_default_gateway("IPv4 Route Table\n0.0.0.0 invalid"),
-        None
-    );
     assert_eq!(
         Service::device_info().control_url,
         "/upnp/control/deviceinfo"

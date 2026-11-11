@@ -29,15 +29,6 @@ binary, not a newer Go launcher: the differential runner intentionally ignores
 caller `GO*` overrides and forces `GOTOOLCHAIN=local`. Exporting `GOTOOLCHAIN`
 alone therefore does not select the oracle toolchain.
 
-On Windows (PowerShell):
-
-```powershell
-$env:SYMAIRA_TRUSTED_GIT = (Get-Command git -CommandType Application).Source
-$env:GOTOOLCHAIN = 'go1.26.6'
-$env:SYMAIRA_TRUSTED_GO = Join-Path (go env GOROOT) 'bin/go.exe'
-& $env:SYMAIRA_TRUSTED_GO version  # must report go1.26.6
-```
-
 Use these variables in the same shell as the checks below. A shallow clone may
 also need `git fetch --unshallow origin` to include the immutable historical
 oracle commit. Verification rebuilds that oracle in isolated temporary storage;

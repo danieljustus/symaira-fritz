@@ -242,28 +242,7 @@ class CliDifferentialTests(unittest.TestCase):
                 "config-init-fresh", before, self.policy, "candidate"
             )
 
-    def test_windows_path_keeps_only_explicit_helper_empty_dir_and_system_runtime(self) -> None:
-        with tempfile.TemporaryDirectory() as raw:
-            home = Path(raw)
-            helper = home / "mock-symvault"
-            helper.mkdir()
-            path = MODULE.isolated_path(
-                home,
-                helper,
-                {
-                    "PATH": r"C:\host-tools;C:\untrusted-helper",
-                    "SystemRoot": r"C:\Windows",
-                },
-                is_windows=True,
-            )
-            self.assertEqual(
-                path.split(";"),
-                [str(helper), str(home / "empty-path"), r"C:\Windows\System32"],
-            )
-            self.assertNotIn("host-tools", path)
-            self.assertNotIn("untrusted-helper", path)
-
-    def test_non_windows_path_is_empty_without_explicit_helper(self) -> None:
+    def test_path_is_empty_without_explicit_helper(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             home = Path(raw)
             self.assertEqual(
@@ -271,7 +250,6 @@ class CliDifferentialTests(unittest.TestCase):
                     home,
                     None,
                     {"PATH": "/host-tools:/untrusted-helper"},
-                    is_windows=False,
                 ),
                 str(home / "empty-path"),
             )

@@ -32,8 +32,6 @@ def validate(formula_path: Path, version: str, release_url: str, checksum_path: 
         raise ValueError("formula still references the removed Go fallback")
 
     for os_name, arch in TARGETS:
-        if os_name == "windows":
-            continue
         asset = archive_name(version, os_name, arch)
         expected_url = f'{release_url}/{asset}'
         expected_sha = digest.get(asset)
@@ -48,7 +46,6 @@ def validate(formula_path: Path, version: str, release_url: str, checksum_path: 
     expected_urls = [
         f"{release_url}/{archive_name(version, os_name, arch)}"
         for os_name, arch in TARGETS
-        if os_name != "windows"
     ]
     if sorted(urls) != sorted(expected_urls):
         raise ValueError(f"formula URLs {urls!r} do not equal expected public assets")

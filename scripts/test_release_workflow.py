@@ -56,7 +56,8 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
             for ref in refs:
                 self.assertRegex(ref, r"\A[0-9a-f]{40}\Z")
         self.assertIn("if-no-files-found: error", WORKFLOW_TEXT)
-        self.assertIn("if: matrix.os != 'windows'", WORKFLOW_TEXT)
+        self.assertNotIn("windows", WORKFLOW_TEXT)
+        self.assertNotIn(".exe", WORKFLOW_TEXT)
         self.assertNotIn("if-no-files-found: ignore", WORKFLOW_TEXT)
 
     def test_release_identity_is_semver_and_sha_bound(self) -> None:
@@ -151,22 +152,10 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
     def test_cli_contract_steps_use_native_commands(self) -> None:
         ci_text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         self.assertIn('go-version: "1.26.6"', ci_text)
-        self.assertEqual(ci_text.count("- name: CLI black-box contracts (Windows)"), 2)
-        self.assertEqual(ci_text.count("scripts/run-cli-differential.py --root . --rust ./target/debug/symfritz"), 2)
-        self.assertEqual(ci_text.count("scripts/run-cli-differential.py --root . --rust .\\target\\debug\\symfritz.exe"), 2)
-        for match in re.finditer(
-            r"^      - name: CLI black-box contracts \(Windows\)\n(?P<body>.*?)(?=^      - name:|\Z)",
-            ci_text,
-            re.MULTILINE | re.DOTALL,
-        ):
-            body = match.group("body")
-            self.assertIn("if: runner.os == 'Windows'", body)
-            self.assertIn("shell: pwsh", body)
-            self.assertIn("cargo build --workspace --locked", body)
-            self.assertIn("python scripts/run-cli-differential.py", body)
-            self.assertNotIn("bash", body)
-            self.assertNotIn("python3", body)
-        self.assertIn("if: runner.os != 'Windows'", ci_text)
+        self.assertEqual(ci_text.count("python3 scripts/run-cli-differential.py --root . --rust ./target/debug/symfritz"), 2)
+        self.assertNotIn("Windows", ci_text)
+        self.assertNotIn("pwsh", ci_text)
+        self.assertNotIn(".exe", ci_text)
         self.assertNotIn("make cli-contract", ci_text)
 
     def test_cli_contracts_export_explicit_trusted_oracle_tools(self) -> None:
@@ -175,17 +164,11 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertEqual(ci_text.count("Export trusted oracle tool paths (Unix)"), 2)
-        self.assertEqual(ci_text.count("Export trusted oracle tool paths (Windows)"), 2)
-        self.assertEqual(ci_text.count("SYMAIRA_TRUSTED_GIT="), 4)
-        self.assertEqual(ci_text.count("SYMAIRA_TRUSTED_GO="), 4)
+        self.assertEqual(ci_text.count("SYMAIRA_TRUSTED_GIT="), 2)
+        self.assertEqual(ci_text.count("SYMAIRA_TRUSTED_GO="), 2)
         self.assertEqual(ci_text.count("command -v git"), 2)
         self.assertEqual(ci_text.count("command -v go"), 2)
-        self.assertEqual(
-            ci_text.count("Get-Command git -CommandType Application"), 2
-        )
-        self.assertEqual(ci_text.count("Get-Command go -CommandType Application"), 2)
         self.assertIn(">> \"$GITHUB_ENV\"", ci_text)
-        self.assertIn("Out-File -FilePath $env:GITHUB_ENV", ci_text)
         self.assertIn("TRUSTED_GIT_ENV", runner_text)
         self.assertIn("TRUSTED_GO_ENV", runner_text)
         self.assertNotIn('shutil.which("git")', runner_text)
