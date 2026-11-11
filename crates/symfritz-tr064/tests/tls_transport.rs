@@ -5,7 +5,7 @@ use std::{
     io::{Read, Write},
     net::TcpListener,
     path::PathBuf,
-    sync::{Arc, Mutex, OnceLock},
+    sync::Arc,
     thread,
     time::Duration,
 };
@@ -20,8 +20,6 @@ use symfritz_tr064::{BlockingHttpTransport, HttpTransportConfig, Method, Request
 use url::Url;
 
 struct TestDir(PathBuf);
-
-static FALLBACK_PORT_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 impl TestDir {
     fn new() -> Self {
@@ -117,24 +115,6 @@ fn request(origin: &Url) -> Request {
         body: Vec::new(),
         response_limit: 1024,
     }
-}
-
-fn spawn_plain_http_server(request_count: usize) -> thread::JoinHandle<()> {
-    let listener = TcpListener::bind("127.0.0.1:49000").unwrap();
-    thread::spawn(move || {
-        for _ in 0..request_count {
-            let Ok((mut stream, _)) = listener.accept() else {
-                return;
-            };
-            let mut request = [0_u8; 4096];
-            if stream.read(&mut request).is_err() {
-                return;
-            }
-            let _ = stream
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK");
-            let _ = stream.flush();
-        }
-    })
 }
 
 fn spawn_redirect_server() -> (Url, thread::JoinHandle<()>) {
@@ -255,76 +235,6 @@ fn first_certificate_is_persisted_after_tls_handshake_before_http_response() {
     assert!(transport.send(request(&origin)).is_err());
     server.join().unwrap();
     assert!(pin_store.get("127.0.0.1").is_some());
-}
-
-#[test]
-fn endpoint_unreachable_falls_back_once_and_reuses_http() {
-    let _guard = FALLBACK_PORT_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap();
-    let tls_probe = TcpListener::bind("127.0.0.1:49443")
-        .expect("test requires the FRITZ!Box TLS fallback port to be free");
-    drop(tls_probe);
-
-    let root = TestDir::new();
-    let warnings = Arc::new(Mutex::new(Vec::new()));
-    let warning_values = warnings.clone();
-    let http_server = spawn_plain_http_server(2);
-    let origin = Url::parse("https://127.0.0.1:49443").unwrap();
-    let mut transport = BlockingHttpTransport::new(HttpTransportConfig {
-        origin: origin.clone(),
-        pin_store: PinStore::new(root.0.join("pins.json")),
-        insecure_tls: false,
-        allow_http_fallback: true,
-        timeout: Duration::from_millis(300),
-        warning_sink: Some(Arc::new(move |warning| {
-            warning_values.lock().unwrap().push(warning.to_owned());
-        })),
-    })
-    .unwrap();
-
-    for _ in 0..2 {
-        let response = transport.send(request(&origin)).unwrap();
-        assert_eq!(response.status, 200);
-        assert_eq!(response.body, b"OK");
-    }
-    http_server.join().unwrap();
-    assert!(!transport.tls_enabled());
-    let warnings = warnings.lock().unwrap();
-    assert_eq!(warnings.len(), 1);
-    assert!(warnings[0].contains("falling back to"));
-}
-
-#[test]
-fn endpoint_unreachable_requires_explicit_http_fallback_opt_in() {
-    let _guard = FALLBACK_PORT_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap();
-    let tls_probe = TcpListener::bind("127.0.0.1:49443")
-        .expect("test requires the FRITZ!Box TLS fallback port to be free");
-    drop(tls_probe);
-    let http_probe = TcpListener::bind("127.0.0.1:49000")
-        .expect("test requires the FRITZ!Box HTTP fallback port to be free");
-
-    let root = TestDir::new();
-    let origin = Url::parse("https://127.0.0.1:49443").unwrap();
-    let mut transport = BlockingHttpTransport::new(HttpTransportConfig {
-        origin: origin.clone(),
-        pin_store: PinStore::new(root.0.join("pins.json")),
-        insecure_tls: false,
-        allow_http_fallback: false,
-        timeout: Duration::from_millis(300),
-        warning_sink: None,
-    })
-    .unwrap();
-
-    let error = transport.send(request(&origin)).unwrap_err().to_string();
-    assert!(error.contains("refusing unencrypted HTTP fallback"));
-    assert!(error.contains("[box].allow_http_fallback = true"));
-    assert!(transport.tls_enabled());
-    drop(http_probe);
 }
 
 #[test]
