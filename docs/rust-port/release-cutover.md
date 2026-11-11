@@ -80,6 +80,14 @@ argument. After publication, every downloaded public asset is compared
 byte-for-byte with the corresponding pre-upload file before the checksum,
 manifest, SBOM, and downstream Formula gates can pass.
 
+The stable Formula is published through a pull request on the protected tap.
+The release run fails only when that pull request is closed or its check fails.
+If the check is still queued after 30 minutes, the run ends green with a notice
+and auto-merge stays armed. The read-back and `brew install` smoke live in the
+`Verify Homebrew formula` workflow: the release calls it once the tap pull
+request has merged, and it can be run manually with the release tag for any
+release whose tap pull request merged later.
+
 ## Config and pin compatibility
 
 Rust and Go are tested by `scripts/release_snapshot.py` with the same release

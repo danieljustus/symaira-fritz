@@ -395,18 +395,21 @@ jobs:
           test -s "$readback/release-manifest.json"
 
   homebrew:
-    name: Publish and verify stable Homebrew formula
+    name: Publish stable Homebrew formula
     needs: publish
     if: needs.publish.outputs.channel == 'stable'
     runs-on: macos-15
     environment: release
     permissions:
       contents: read
+    outputs:
+      merged: ${{ steps.tap.outputs.merged }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Update and verify Homebrew formula
+      - name: Update Homebrew formula through a tap pull request
+        id: tap
         env:
           GH_TOKEN: ${{ github.token }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
@@ -462,21 +465,41 @@ jobs:
                 --body "Updates the symfritz formula to the published $TAG release, rendered and verified against its checksums.")"
             fi
             gh pr merge "$pr_url" --repo danieljustus/homebrew-tap --squash --auto
+            # The tap check shares an account-wide runner queue. Fail only on a
+            # real outcome (closed pull request or failed check); a check that is
+            # still queued at the deadline is not a release failure.
             deadline=$((SECONDS + 1800))
-            until [ "$(gh pr view "$pr_url" --repo danieljustus/homebrew-tap --json state --jq .state)" = MERGED ]; do
-              if [ "$SECONDS" -ge "$deadline" ]; then
-                printf 'Homebrew tap pull request did not merge in time: %s\n' "$pr_url" >&2
+            while :; do
+              state="$(gh pr view "$pr_url" --repo danieljustus/homebrew-tap --json state --jq .state)"
+              if [ "$state" = MERGED ]; then
+                break
+              fi
+              if [ "$state" = CLOSED ]; then
+                printf 'Homebrew tap pull request was closed without merging: %s\n' "$pr_url" >&2
                 exit 1
+              fi
+              failed="$(gh pr view "$pr_url" --repo danieljustus/homebrew-tap --json statusCheckRollup \
+                --jq '[.statusCheckRollup[] | (.conclusion // .state // "") | select(IN("FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"))] | length')"
+              if [ "$failed" != 0 ]; then
+                printf 'Homebrew tap pull request check failed: %s\n' "$pr_url" >&2
+                exit 1
+              fi
+              if [ "$SECONDS" -ge "$deadline" ]; then
+                printf '::notice::Homebrew tap pull request %s is still waiting for its check; auto-merge stays armed. After it merges, run the "Verify Homebrew formula" workflow with tag %s.\n' "$pr_url" "$TAG"
+                echo "merged=false" >> "$GITHUB_OUTPUT"
+                exit 0
               fi
               sleep 20
             done
           fi
-          git -C "$tap" fetch --quiet origin main
-          remote_formula="$RUNNER_TEMP/remote-symfritz.rb"
-          git -C "$tap" show origin/main:Formula/symfritz.rb > "$remote_formula"
-          cmp -- "$formula" "$remote_formula"
-          brew uninstall --force symfritz >/dev/null 2>&1 || true
-          brew tap danieljustus/tap https://github.com/danieljustus/homebrew-tap
-          brew update
-          brew install danieljustus/tap/symfritz
-          test "$(symfritz version --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')" = "$VERSION"
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+
+  homebrew-verify:
+    name: Verify stable Homebrew formula
+    needs: [publish, homebrew]
+    if: needs.homebrew.outputs.merged == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/homebrew-verify.yml
+    with:
+      tag: ${{ needs.publish.outputs.tag }}
