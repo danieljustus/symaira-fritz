@@ -351,7 +351,8 @@ mod tests {
             PinStore::new(&path).get("fritz.box").as_deref(),
             Some("AQID")
         );
-        let _ = fs::remove_dir_all(path.parent().unwrap().parent().unwrap());
+        // Only remove this test's own directory, never the shared temp root.
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]
