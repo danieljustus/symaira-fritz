@@ -25,7 +25,6 @@ class ReleaseManifestTests(unittest.TestCase):
             ],
         )
         self.assertEqual(manifest.binary_name("darwin"), "symfritz")
-        self.assertEqual(manifest.binary_name("windows"), "symfritz.exe")
 
     def test_removed_targets_are_rejected(self):
         for target in ("darwin/amd64", "windows/amd64", "windows/arm64"):
@@ -72,19 +71,6 @@ class ReleaseManifestTests(unittest.TestCase):
             self.assertEqual(result["binary_name"], "symfritz")
             targets = cast(list[dict[str, object]], result["targets"])
             self.assertEqual(targets[0]["archive"], archive_one.name)
-
-    def test_windows_contents_are_validated(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            (root / "LICENSE").write_bytes(b"license")
-            (root / "README.md").write_bytes(b"readme")
-            binary = root / "rust.exe"
-            binary.write_bytes(b"rust")
-            archive = snapshot.package_archive(root, root, "1.2.3", "windows", "arm64", binary)
-            self.assertEqual(
-                manifest.archive_members(archive),
-                ["LICENSE", "README.md", "symfritz.exe"],
-            )
 
     def test_cross_target_snapshot_packages_without_executing_foreign_binaries(self):
         with tempfile.TemporaryDirectory() as temp:

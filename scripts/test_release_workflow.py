@@ -56,7 +56,8 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
             for ref in refs:
                 self.assertRegex(ref, r"\A[0-9a-f]{40}\Z")
         self.assertIn("if-no-files-found: error", WORKFLOW_TEXT)
-        self.assertIn("if: matrix.os != 'windows'", WORKFLOW_TEXT)
+        self.assertNotIn("windows", WORKFLOW_TEXT)
+        self.assertNotIn(".exe", WORKFLOW_TEXT)
         self.assertNotIn("if-no-files-found: ignore", WORKFLOW_TEXT)
 
     def test_release_identity_is_semver_and_sha_bound(self) -> None:
@@ -109,27 +110,48 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
 
     def test_homebrew_readback_and_smoke_are_explicit(self) -> None:
         renderer = (ROOT / "scripts" / "render_homebrew_formula.py").read_text()
-        self.assertIn("name: Publish and verify stable Homebrew formula", WORKFLOW_TEXT)
+        verify_text = (ROOT / ".github" / "workflows" / "homebrew-verify.yml").read_text(encoding="utf-8")
+        self.assertIn("name: Publish stable Homebrew formula", WORKFLOW_TEXT)
         self.assertIn("needs: publish", WORKFLOW_TEXT)
         self.assertIn("runs-on: macos-15", WORKFLOW_TEXT)
         self.assertIn("needs.publish.outputs.channel == 'stable'", WORKFLOW_TEXT)
         self.assertIn('gh release download "$TAG"', WORKFLOW_TEXT)
         self.assertIn("verify_homebrew_formula.py", WORKFLOW_TEXT)
         self.assertIn("brew style", WORKFLOW_TEXT)
-        self.assertIn("brew install danieljustus/tap/symfritz", WORKFLOW_TEXT)
-        self.assertIn("cmp -- \"$formula\" \"$remote_formula\"", WORKFLOW_TEXT)
+        self.assertIn("brew install danieljustus/tap/symfritz", verify_text)
+        self.assertIn('cmp -- "$expected_formula" "$remote_formula"', verify_text)
+        self.assertIn("verify_homebrew_formula.py", verify_text)
         self.assertIn("gh auth setup-git", WORKFLOW_TEXT)
         self.assertIn("git clone https://github.com/danieljustus/homebrew-tap.git", WORKFLOW_TEXT)
         self.assertIn('gh pr create --repo danieljustus/homebrew-tap --base main --head "$branch"', WORKFLOW_TEXT)
         self.assertIn('gh pr merge "$pr_url" --repo danieljustus/homebrew-tap --squash --auto', WORKFLOW_TEXT)
         self.assertIn("deadline=$((SECONDS + 1800))", WORKFLOW_TEXT)
+        self.assertNotIn("did not merge in time", WORKFLOW_TEXT)
         self.assertNotIn("push origin HEAD:main", WORKFLOW_TEXT)
         self.assertNotIn("x-access-" + "token:", WORKFLOW_TEXT)
-        self.assertIn('symfritz version', WORKFLOW_TEXT)
+        self.assertIn('symfritz version', verify_text)
         self.assertNotIn('symfritz-go', WORKFLOW_TEXT)
         self.assertNotIn('version "{version}"', renderer)
         self.assertIn("# typed: strict", renderer)
         self.assertNotIn("# typed: false", renderer)
+
+    def test_queued_tap_check_does_not_fail_and_verification_is_rerunnable(self) -> None:
+        verify_text = (ROOT / ".github" / "workflows" / "homebrew-verify.yml").read_text(encoding="utf-8")
+        # Only a closed pull request or a failed check fails the release run.
+        self.assertIn("was closed without merging", WORKFLOW_TEXT)
+        self.assertIn("Homebrew tap pull request check failed", WORKFLOW_TEXT)
+        self.assertIn('echo "merged=false" >> "$GITHUB_OUTPUT"', WORKFLOW_TEXT)
+        self.assertIn('echo "merged=true" >> "$GITHUB_OUTPUT"', WORKFLOW_TEXT)
+        self.assertIn("needs.homebrew.outputs.merged == 'true'", WORKFLOW_TEXT)
+        self.assertIn("uses: ./.github/workflows/homebrew-verify.yml", WORKFLOW_TEXT)
+        self.assertIn("tag: ${{ needs.publish.outputs.tag }}", WORKFLOW_TEXT)
+        # The verifier is both callable from the release and manually re-runnable.
+        self.assertIn("workflow_call:", verify_text)
+        self.assertIn("workflow_dispatch:", verify_text)
+        self.assertIn("TAG: ${{ inputs.tag }}", verify_text)
+        self.assertNotIn("${{ inputs.tag }}\"", verify_text)
+        self.assertIn("runs-on: macos-15", verify_text)
+        self.assertIn("permissions:\n  contents: read", verify_text)
 
     def test_macos_signing_remains_fail_closed(self) -> None:
         self.assertIn("Refusing an unsigned or unnotarized release.", WORKFLOW_TEXT)
@@ -151,22 +173,10 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
     def test_cli_contract_steps_use_native_commands(self) -> None:
         ci_text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         self.assertIn('go-version: "1.26.6"', ci_text)
-        self.assertEqual(ci_text.count("- name: CLI black-box contracts (Windows)"), 2)
-        self.assertEqual(ci_text.count("scripts/run-cli-differential.py --root . --rust ./target/debug/symfritz"), 2)
-        self.assertEqual(ci_text.count("scripts/run-cli-differential.py --root . --rust .\\target\\debug\\symfritz.exe"), 2)
-        for match in re.finditer(
-            r"^      - name: CLI black-box contracts \(Windows\)\n(?P<body>.*?)(?=^      - name:|\Z)",
-            ci_text,
-            re.MULTILINE | re.DOTALL,
-        ):
-            body = match.group("body")
-            self.assertIn("if: runner.os == 'Windows'", body)
-            self.assertIn("shell: pwsh", body)
-            self.assertIn("cargo build --workspace --locked", body)
-            self.assertIn("python scripts/run-cli-differential.py", body)
-            self.assertNotIn("bash", body)
-            self.assertNotIn("python3", body)
-        self.assertIn("if: runner.os != 'Windows'", ci_text)
+        self.assertEqual(ci_text.count("python3 scripts/run-cli-differential.py --root . --rust ./target/debug/symfritz"), 2)
+        self.assertNotIn("Windows", ci_text)
+        self.assertNotIn("pwsh", ci_text)
+        self.assertNotIn(".exe", ci_text)
         self.assertNotIn("make cli-contract", ci_text)
 
     def test_cli_contracts_export_explicit_trusted_oracle_tools(self) -> None:
@@ -175,17 +185,11 @@ class ReleaseWorkflowPolicyTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertEqual(ci_text.count("Export trusted oracle tool paths (Unix)"), 2)
-        self.assertEqual(ci_text.count("Export trusted oracle tool paths (Windows)"), 2)
-        self.assertEqual(ci_text.count("SYMAIRA_TRUSTED_GIT="), 4)
-        self.assertEqual(ci_text.count("SYMAIRA_TRUSTED_GO="), 4)
+        self.assertEqual(ci_text.count("SYMAIRA_TRUSTED_GIT="), 2)
+        self.assertEqual(ci_text.count("SYMAIRA_TRUSTED_GO="), 2)
         self.assertEqual(ci_text.count("command -v git"), 2)
         self.assertEqual(ci_text.count("command -v go"), 2)
-        self.assertEqual(
-            ci_text.count("Get-Command git -CommandType Application"), 2
-        )
-        self.assertEqual(ci_text.count("Get-Command go -CommandType Application"), 2)
         self.assertIn(">> \"$GITHUB_ENV\"", ci_text)
-        self.assertIn("Out-File -FilePath $env:GITHUB_ENV", ci_text)
         self.assertIn("TRUSTED_GIT_ENV", runner_text)
         self.assertIn("TRUSTED_GO_ENV", runner_text)
         self.assertNotIn('shutil.which("git")', runner_text)

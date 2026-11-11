@@ -2468,11 +2468,6 @@ impl DetectionRuntime for SystemDetectionRuntime {
                 .args(["-n", "get", "default"])
                 .output()
                 .ok()
-        } else if cfg!(target_os = "windows") {
-            ProcessCommand::new("route")
-                .args(["print", "-4"])
-                .output()
-                .ok()
         } else {
             ProcessCommand::new("ip")
                 .args(["route", "show", "default"])
@@ -2486,8 +2481,6 @@ impl DetectionRuntime for SystemDetectionRuntime {
                     .strip_prefix("gateway:")
                     .and_then(|value| value.trim().parse().ok())
             })
-        } else if cfg!(target_os = "windows") {
-            symfritz_tr064::parse_windows_default_gateway(&text)
         } else {
             symfritz_tr064::parse_linux_default_gateway(&text)
         }

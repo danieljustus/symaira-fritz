@@ -12,9 +12,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-#[cfg(windows)]
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -220,9 +217,6 @@ fn io_error(path: &Path, error: io::Error) -> PinStoreError {
     }
 }
 
-#[cfg(windows)]
-static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-
 fn secure_temp_path(path: &Path) -> Result<PathBuf, PinStoreError> {
     let mut nonce = [0_u8; 16];
     getrandom::fill(&mut nonce).map_err(|error| PinStoreError::Io {
@@ -246,35 +240,8 @@ fn sync_directory(_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(not(windows))]
 fn replace_file(temp: &Path, path: &Path) -> Result<(), PinStoreError> {
     fs::rename(temp, path).map_err(|error| io_error(path, error))
-}
-
-#[cfg(windows)]
-fn replace_file(temp: &Path, path: &Path) -> Result<(), PinStoreError> {
-    if !path.exists() {
-        return fs::rename(temp, path).map_err(|error| io_error(path, error));
-    }
-    let backup = path.with_extension(format!(
-        "json.bak.{}.{}",
-        std::process::id(),
-        TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::rename(path, &backup).map_err(|error| io_error(path, error))?;
-    if let Err(error) = fs::rename(temp, path) {
-        let restore = fs::rename(&backup, path);
-        let message = match restore {
-            Ok(()) => error.to_string(),
-            Err(restore_error) => format!("{error}; restoring old store failed: {restore_error}"),
-        };
-        return Err(PinStoreError::Io {
-            path: path.to_path_buf(),
-            message,
-        });
-    }
-    let _ = fs::remove_file(backup);
-    Ok(())
 }
 
 #[cfg(unix)]

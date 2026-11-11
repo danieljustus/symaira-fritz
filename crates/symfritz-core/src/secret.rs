@@ -636,22 +636,8 @@ fn which_binary(name: &str) -> bool {
     false
 }
 
-#[cfg(not(windows))]
 fn binary_names(name: &str) -> Vec<String> {
     vec![name.to_owned()]
-}
-
-#[cfg(windows)]
-fn binary_names(name: &str) -> Vec<String> {
-    if std::path::Path::new(name).extension().is_some() {
-        return vec![name.to_owned()];
-    }
-    let extensions = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_owned());
-    extensions
-        .split(';')
-        .filter(|extension| !extension.is_empty())
-        .map(|extension| format!("{name}{extension}"))
-        .collect()
 }
 
 #[cfg(unix)]

@@ -16,7 +16,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -29,7 +28,7 @@ from release_manifest import (  # noqa: E402
 
 
 def host_target() -> tuple[str, str]:
-    os_name = {"Darwin": "darwin", "Linux": "linux", "Windows": "windows"}.get(
+    os_name = {"Darwin": "darwin", "Linux": "linux"}.get(
         platform.system()
     )
     arch = {"x86_64": "amd64", "AMD64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(
@@ -88,21 +87,13 @@ def package_archive(
         ("LICENSE", (root / "LICENSE").read_bytes(), False),
         ("README.md", (root / "README.md").read_bytes(), False),
     ]
-    if os_name == "windows":
-        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-            for member_name, data, executable in sorted(files):
-                info = zipfile.ZipInfo(member_name, date_time=(1980, 1, 1, 0, 0, 0))
-                info.compress_type = zipfile.ZIP_DEFLATED
-                info.external_attr = ((0o755 if executable else 0o644) << 16)
-                archive.writestr(info, data)
-    else:
-        raw = __import__("io").BytesIO()
-        with tarfile.open(fileobj=raw, mode="w") as archive:
-            for member_name, data, executable in sorted(files):
-                add_tar_member(archive, member_name, data, executable)
-        with path.open("wb") as stream:
-            with gzip.GzipFile(fileobj=stream, mode="wb", mtime=0, filename="") as compressed:
-                compressed.write(raw.getvalue())
+    raw = __import__("io").BytesIO()
+    with tarfile.open(fileobj=raw, mode="w") as archive:
+        for member_name, data, executable in sorted(files):
+            add_tar_member(archive, member_name, data, executable)
+    with path.open("wb") as stream:
+        with gzip.GzipFile(fileobj=stream, mode="wb", mtime=0, filename="") as compressed:
+            compressed.write(raw.getvalue())
     return path
 
 
@@ -126,13 +117,12 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     build_dir = out / ".build"
     build_dir.mkdir(exist_ok=True)
-    suffix = ".exe" if os_name == "windows" else ""
-    binary = args.binary.resolve() if args.binary else build_dir / f"symfritz{suffix}"
+    binary = args.binary.resolve() if args.binary else build_dir / "symfritz"
     if not args.skip_build:
         env = os.environ.copy()
         env["SYMFRITZ_VERSION"] = args.version
         run(["cargo", "build", "--release", "--locked", "-p", "symfritz-cli"], cwd=root, env=env)
-        rust_source = root / "target" / "release" / f"symfritz{suffix}"
+        rust_source = root / "target" / "release" / "symfritz"
         if not rust_source.is_file():
             raise RuntimeError(f"missing Rust release binary: {rust_source}")
         shutil.copy2(rust_source, binary)

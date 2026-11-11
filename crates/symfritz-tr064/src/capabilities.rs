@@ -1450,17 +1450,6 @@ pub fn parse_linux_default_gateway(output: &str) -> Option<IpAddr> {
         .and_then(|pair| pair[1].parse().ok())
 }
 
-/// Parse the first Windows `0.0.0.0 0.0.0.0 <gateway>` route.
-#[must_use]
-pub fn parse_windows_default_gateway(output: &str) -> Option<IpAddr> {
-    output.lines().map(str::trim).find_map(|line| {
-        if !line.starts_with("0.0.0.0") {
-            return None;
-        }
-        line.split_whitespace().nth(2)?.parse().ok()
-    })
-}
-
 /// Probe a TR-064 description through the injected transport.
 pub fn probe_tr064<T: Transport>(
     transport: &mut T,
@@ -1797,10 +1786,7 @@ pub fn dial_ssh(target: &str, port: u16, timeout: Duration) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        all_public, classify_resolved_host, is_private_ip, parse_linux_default_gateway,
-        parse_windows_default_gateway,
-    };
+    use super::{all_public, classify_resolved_host, is_private_ip, parse_linux_default_gateway};
     use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
@@ -1819,10 +1805,6 @@ mod tests {
     fn gateway_parsers_accept_expected_routes() {
         assert_eq!(
             parse_linux_default_gateway("default via 192.168.178.1 dev en0"),
-            Some("192.168.178.1".parse().unwrap())
-        );
-        assert_eq!(
-            parse_windows_default_gateway("0.0.0.0 0.0.0.0 192.168.178.1 25"),
             Some("192.168.178.1".parse().unwrap())
         );
     }

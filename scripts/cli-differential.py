@@ -29,13 +29,10 @@ import tempfile
 import threading
 import time
 import xml.etree.ElementTree as ET
-try:
-    import pty
-except ImportError:  # Windows has no PTY module.
-    pty = None
+import pty
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, cast
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
@@ -1304,30 +1301,19 @@ def temporary_directory(prefix: str) -> tempfile.TemporaryDirectory[str]:
     return tempfile.TemporaryDirectory(prefix=prefix, dir=tempfile.gettempdir())
 
 
-def runtime_path_entries(source: Mapping[str, str], *, is_windows: bool) -> list[str]:
-    if not is_windows:
-        return []
-    system_root = source.get("SystemRoot") or source.get("WINDIR")
-    if not system_root:
-        raise AssertionError("Windows runtime PATH requires SystemRoot or WINDIR")
-    return [str(PureWindowsPath(system_root) / "System32")]
-
-
-def isolated_path(home: Path, path_prefix: Path | None, source: Mapping[str, str], *, is_windows: bool) -> str:
+def isolated_path(home: Path, path_prefix: Path | None, source: Mapping[str, str]) -> str:
     backend_free = home / "empty-path"; backend_free.mkdir(exist_ok=True)
     entries = ([str(path_prefix)] if path_prefix is not None else []) + [str(backend_free)]
-    if path_prefix is not None and not is_windows:
-        # Unix helper and PTY tests need the host runtime only in explicit helper mode.
+    if path_prefix is not None:
+        # Helper and PTY tests need the host runtime only in explicit helper mode.
         entries.append(source.get("PATH", ""))
-    entries.extend(runtime_path_entries(source, is_windows=is_windows))
-    separator = ";" if is_windows else os.pathsep
-    return separator.join(entry for entry in entries if entry)
+    return os.pathsep.join(entry for entry in entries if entry)
 
 
 def environment(home: Path, *, fake: bool, extra: dict[str, str] | None = None, path_prefix: Path | None = None) -> dict[str, str]:
     source = os.environ
     env = {key: value for key, value in source.items() if not key.upper().startswith("SYMFRITZ_")}
-    path = isolated_path(home, path_prefix, source, is_windows=os.name == "nt")
+    path = isolated_path(home, path_prefix, source)
     env.update({"HOME": str(home), "USERPROFILE": str(home), "XDG_CONFIG_HOME": str(home / "config"), "XDG_CACHE_HOME": str(home / "cache"), "XDG_DATA_HOME": str(home / "data"), "TMPDIR": str(home / "tmp"), "TMP": str(home / "tmp"), "TEMP": str(home / "tmp"), "PATH": path, "LC_ALL": "C", "LANG": "C", "TZ": "UTC"})
     if fake:
         env.update({"SYMFRITZ_BOX_HOST": f"{PRIVATE_IP}:{PORT}", "SYMFRITZ_BOX_USER": USER, "SYMFRITZ_BOX_USE_TLS": "false", "SYMFRITZ_PASSWORD": PASSWORD, "SYMFRITZ_BOX_TIMEOUT_SECONDS": "1"})
@@ -1353,8 +1339,6 @@ def run(binary: str, args: list[str], **kwargs: Any) -> Result:
 
 
 def run_pty_process(binary: str, args: list[str], *, fake: bool = False, path_prefix: Path | None = None, password: str = PASSWORD) -> Result:
-    if pty is None:
-        raise AssertionError("auth login PTY coverage is unavailable on this platform")
     with temporary_directory("symfritz-login-") as raw:
         home = Path(raw)
         for name in ("tmp", "config", "cache", "data"):
@@ -2045,8 +2029,6 @@ def run_auth_login_contracts(
     binary: str,
     policy: dict[str, Any],
 ) -> None:
-    if os.name != "nt" and pty is None:
-        raise AssertionError("auth-login success coverage requires a PTY on non-Windows hosts")
     expected = [("GET", "/login_sid.lua", ""), ("GET", "/login_sid.lua", ""), ("POST", "/upnp/control/deviceinfo", "GetInfo")]
     _require_structured_success_case(policy, "auth-login", "auth-login")
     with temporary_directory("symfritz-login-vault-") as raw:
@@ -2242,7 +2224,7 @@ def run_suite(go: str, rust: str, root: Path) -> None:
                 raise AssertionError(f"bare-wlan-parent: unexpected help or exit from {binary}")
         print("PASS bare-wlan-parent")
         # The immutable fixture bytes are Unix-frozen. Both executable help trees
-        # remain structurally compared on every native platform, including Windows.
+        # remain structurally compared on every supported native platform.
         print("PASS help-contracts-49")
         families = ["auth", "call", "calls", "completion", "config", "detect", "diagnose", "dial", "doctor", "dsl", "hangup", "help", "home", "hosts", "log", "mesh", "reboot", "scrape", "services", "status", "traffic", "version", "wlan", "wol"]
         for shell in ("bash", "fish", "powershell", "zsh"):

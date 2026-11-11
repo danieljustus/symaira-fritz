@@ -6,7 +6,6 @@ import argparse
 import hashlib
 import json
 import tarfile
-import zipfile
 from pathlib import Path
 from typing import Iterable
 
@@ -18,13 +17,12 @@ TARGETS = (
 
 
 def archive_name(version: str, os_name: str, arch: str) -> str:
-    suffix = "zip" if os_name == "windows" else "tar.gz"
-    return f"symaira-fritz_{version}_{os_name}_{arch}.{suffix}"
+    return f"symaira-fritz_{version}_{os_name}_{arch}.tar.gz"
 
 
 def binary_name(os_name: str) -> str:
-    suffix = ".exe" if os_name == "windows" else ""
-    return f"symfritz{suffix}"
+    del os_name  # every supported target ships the same binary name
+    return "symfritz"
 
 
 def parse_targets(values: Iterable[str]) -> list[tuple[str, str]]:
@@ -46,9 +44,6 @@ def archive_members(path: Path) -> list[str]:
     if path.name.endswith(".tar.gz"):
         with tarfile.open(path, "r:gz") as archive:
             return sorted(member.name for member in archive.getmembers() if member.isfile())
-    if path.name.endswith(".zip"):
-        with zipfile.ZipFile(path) as archive:
-            return sorted(name for name in archive.namelist() if not name.endswith("/"))
     raise ValueError(f"unsupported archive type: {path}")
 
 
@@ -68,7 +63,7 @@ def validate_archive(path: Path, version: str, os_name: str, arch: str) -> dict[
         "name": path.name,
         "os": os_name,
         "arch": arch,
-        "format": "zip" if os_name == "windows" else "tar.gz",
+        "format": "tar.gz",
         "contents": expected,
         "sha256": sha256(path),
     }
@@ -99,7 +94,7 @@ def build_manifest(version: str, dist: Path, targets: Iterable[tuple[str, str]])
                 "os": os_name,
                 "arch": arch,
                 "archive": archive_name(version, os_name, arch),
-                "format": "zip" if os_name == "windows" else "tar.gz",
+                "format": "tar.gz",
                 "binary": binary_name(os_name),
             }
             for os_name, arch in target_list
@@ -135,7 +130,7 @@ def main() -> int:
             args.output.write_text(
                 json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
             )
-    except (OSError, ValueError, tarfile.TarError, zipfile.BadZipFile) as exc:
+    except (OSError, ValueError, tarfile.TarError) as exc:
         parser.error(str(exc))
     return 0
 
