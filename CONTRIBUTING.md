@@ -6,7 +6,7 @@ Thank you for your interest in contributing to Symaira Fritz! This document prov
 
 ### Prerequisites
 
-- Rust 1.98.0 via rustup (production implementation)
+- Rust 1.98.1 via rustup (production implementation)
 - Git
 - Python 3 and Make for the verification scripts
 - Go 1.26.6 for the historical CLI differential only; building and running the
