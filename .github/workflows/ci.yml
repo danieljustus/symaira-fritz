@@ -42,7 +42,7 @@ jobs:
           printf 'SYMAIRA_TRUSTED_GO=%s\n' "$go_path" >> "$GITHUB_ENV"
 
       - name: Install pinned Rust toolchain
-        run: rustup toolchain install 1.98.0 --profile minimal --component clippy,rustfmt
+        run: rustup toolchain install 1.98.1 --profile minimal --component clippy,rustfmt
 
       - name: Cache Cargo dependencies and build output
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -51,10 +51,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-${{ runner.arch }}-build-and-test-cargo-rust-1.98.0-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/Cargo.toml', '**/build.rs', '**/*.rs') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-build-and-test-cargo-rust-1.98.1-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/Cargo.toml', '**/build.rs', '**/*.rs') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-build-and-test-cargo-rust-1.98.0-${{ hashFiles('**/Cargo.lock') }}-
-            ${{ runner.os }}-${{ runner.arch }}-build-and-test-cargo-rust-1.98.0-
+            ${{ runner.os }}-${{ runner.arch }}-build-and-test-cargo-rust-1.98.1-${{ hashFiles('**/Cargo.lock') }}-
+            ${{ runner.os }}-${{ runner.arch }}-build-and-test-cargo-rust-1.98.1-
 
       - name: Validate release contracts
         run: |
@@ -131,7 +131,7 @@ jobs:
           printf 'SYMAIRA_TRUSTED_GO=%s\n' "$go_path" >> "$GITHUB_ENV"
 
       - name: Install pinned Rust toolchain
-        run: rustup toolchain install 1.98.0 --profile minimal --component clippy,rustfmt
+        run: rustup toolchain install 1.98.1 --profile minimal --component clippy,rustfmt
 
       - name: Cache Cargo dependencies and build output
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -140,10 +140,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-${{ runner.arch }}-cross-platform-cargo-rust-1.98.0-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/Cargo.toml', '**/build.rs', '**/*.rs') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cross-platform-cargo-rust-1.98.1-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/Cargo.toml', '**/build.rs', '**/*.rs') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cross-platform-cargo-rust-1.98.0-${{ hashFiles('**/Cargo.lock') }}-
-            ${{ runner.os }}-${{ runner.arch }}-cross-platform-cargo-rust-1.98.0-
+            ${{ runner.os }}-${{ runner.arch }}-cross-platform-cargo-rust-1.98.1-${{ hashFiles('**/Cargo.lock') }}-
+            ${{ runner.os }}-${{ runner.arch }}-cross-platform-cargo-rust-1.98.1-
 
       - name: Format
         run: cargo fmt --all --check

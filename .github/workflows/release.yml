@@ -84,8 +84,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rustup toolchain install 1.98.0 --profile minimal --component clippy,rustfmt
-          rustup target add --toolchain 1.98.0 "${{ matrix.rust_target }}"
+          rustup toolchain install 1.98.1 --profile minimal --component clippy,rustfmt
+          rustup target add --toolchain 1.98.1 "${{ matrix.rust_target }}"
 
       - name: Install Linux arm64 cross compiler
         if: matrix.os == 'linux' && matrix.arch == 'arm64'
