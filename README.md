@@ -113,6 +113,8 @@ the password, and stores it in the Keychain (default on macOS) or symvault
 (`--symvault fritz.password`). symvault
 and the Keychain are reached through their CLIs, so symfritz has **no build
 dependency** on either and works fine when they are absent.
+Each symvault/Keychain call gets 10 seconds; set `SYMFRITZ_SECRET_TIMEOUT`
+(seconds, e.g. `30`) to change that budget for a slow vault.
 
 ```bash
 symfritz auth login --symvault fritz.password   # store in symvault instead of Keychain

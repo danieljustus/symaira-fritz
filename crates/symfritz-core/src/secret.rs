@@ -319,7 +319,26 @@ enum CommandError {
     Timeout,
 }
 
-const SECRET_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
+/// Default budget for one `symvault`/`security` call. `symvault get` alone can
+/// take just over 2 s, so the budget leaves generous headroom while a hung
+/// vault prompt still fails cleanly.
+const DEFAULT_SECRET_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Environment override for the secret command budget, in seconds.
+pub const SECRET_TIMEOUT_ENV: &str = "SYMFRITZ_SECRET_TIMEOUT";
+
+/// Parses a positive number of seconds; anything else falls back to the default.
+fn parse_secret_timeout(value: Option<&str>) -> Duration {
+    value
+        .and_then(|raw| raw.trim().parse::<f64>().ok())
+        .filter(|seconds| seconds.is_finite() && *seconds > 0.0)
+        .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok())
+        .unwrap_or(DEFAULT_SECRET_COMMAND_TIMEOUT)
+}
+
+fn secret_command_timeout() -> Duration {
+    parse_secret_timeout(std::env::var(SECRET_TIMEOUT_ENV).ok().as_deref())
+}
 
 #[cfg(unix)]
 fn terminate_descendants(pid: u32) {
@@ -434,20 +453,17 @@ fn run_command(
 /// Reads password from `symvault get <ref> --print`.
 pub fn symvault_get(reference: &str) -> Result<String, SecretError> {
     let args = SymvaultCommand::get_args(reference);
-    let output =
-        run_command("symvault", &args, None, SECRET_COMMAND_TIMEOUT).map_err(
-            |error| match error {
-                CommandError::Spawn(message) => {
-                    SecretError::NotInstalled(format!("symvault: {message}"))
-                }
-                CommandError::Timeout => {
-                    SecretError::Symvault("symvault command timed out".to_owned())
-                }
-                CommandError::Io(message) | CommandError::Wait(message) => {
-                    SecretError::Symvault(format!("symvault error: {message}"))
-                }
-            },
-        )?;
+    let output = run_command("symvault", &args, None, secret_command_timeout()).map_err(
+        |error| match error {
+            CommandError::Spawn(message) => {
+                SecretError::NotInstalled(format!("symvault: {message}"))
+            }
+            CommandError::Timeout => SecretError::Symvault("symvault command timed out".to_owned()),
+            CommandError::Io(message) | CommandError::Wait(message) => {
+                SecretError::Symvault(format!("symvault error: {message}"))
+            }
+        },
+    )?;
 
     if !output.status.success() {
         let stdout_value = String::from_utf8_lossy(&output.stdout).trim().to_owned();
@@ -486,7 +502,7 @@ pub fn symvault_set(reference: &str, value: &str) -> Result<(), SecretError> {
         "symvault",
         &args,
         Some(payload.as_bytes()),
-        SECRET_COMMAND_TIMEOUT,
+        secret_command_timeout(),
     )
     .map_err(|error| match error {
         CommandError::Spawn(message) => SecretError::NotInstalled(format!("symvault: {message}")),
@@ -526,7 +542,7 @@ pub fn keychain_get(service: &str, account: Option<&str>) -> Result<String, Secr
     {
         let args = KeychainCommand::get_args(service, account);
         let output =
-            run_command("security", &args, None, SECRET_COMMAND_TIMEOUT).map_err(|error| {
+            run_command("security", &args, None, secret_command_timeout()).map_err(|error| {
                 match error {
                     CommandError::Spawn(message) => {
                         SecretError::NotInstalled(format!("security: {message}"))
@@ -575,7 +591,7 @@ pub fn keychain_set(service: &str, account: Option<&str>, value: &str) -> Result
             "security",
             &args,
             Some(payload.as_bytes()),
-            SECRET_COMMAND_TIMEOUT,
+            secret_command_timeout(),
         )
         .map_err(|error| match error {
             CommandError::Spawn(message) => {
@@ -690,6 +706,26 @@ mod tests {
         let redacted = redact_secret_output(&message, secret);
         assert_eq!(redacted, "plain=REDACTED hex=REDACTED upper=REDACTED");
         assert!(!redacted.contains(secret));
+    }
+
+    #[test]
+    fn secret_timeout_override_accepts_only_positive_seconds() {
+        use super::{DEFAULT_SECRET_COMMAND_TIMEOUT, parse_secret_timeout};
+        use std::time::Duration;
+        assert_eq!(DEFAULT_SECRET_COMMAND_TIMEOUT, Duration::from_secs(10));
+        assert_eq!(parse_secret_timeout(None), DEFAULT_SECRET_COMMAND_TIMEOUT);
+        assert_eq!(parse_secret_timeout(Some("30")), Duration::from_secs(30));
+        assert_eq!(
+            parse_secret_timeout(Some(" 2.5 ")),
+            Duration::from_millis(2500)
+        );
+        for invalid in ["", "0", "-1", "abc", "NaN", "inf"] {
+            assert_eq!(
+                parse_secret_timeout(Some(invalid)),
+                DEFAULT_SECRET_COMMAND_TIMEOUT,
+                "{invalid:?}"
+            );
+        }
     }
 
     #[cfg(unix)]

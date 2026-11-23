@@ -11,8 +11,8 @@ use std::{
 };
 
 use symfritz_core::secret::{
-    CredentialSource, SecretError, SecretOptions, keychain_available, symvault_available,
-    symvault_get, symvault_set,
+    CredentialSource, SECRET_TIMEOUT_ENV, SecretError, SecretOptions, keychain_available,
+    symvault_available, symvault_get, symvault_set,
 };
 
 #[cfg(target_os = "macos")]
@@ -50,6 +50,7 @@ fn backend_process_contracts_use_isolated_executables() {
         "quiet-failure",
         "missing",
         "timeout",
+        "slow",
     ] {
         let root = TestDir::new();
         let calls = root.0.join("calls");
@@ -63,7 +64,13 @@ fn backend_process_contracts_use_isolated_executables() {
         }
         let stdout = root.0.join("stdout");
         let stderr = root.0.join("stderr");
-        let mut child = Command::new(std::env::current_exe().unwrap())
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command.env_remove(SECRET_TIMEOUT_ENV);
+        if mode == "timeout" {
+            // Keep the hang test short; the default budget is covered by "slow".
+            command.env(SECRET_TIMEOUT_ENV, "1");
+        }
+        let mut child = command
             .args(["--exact", "isolated_backend_probe", "--nocapture"])
             .env("PATH", &root.0)
             .env("SYMFRITZ_TEST_BACKEND_MODE", mode)
@@ -245,6 +252,11 @@ fn isolated_backend_probe() {
                 );
             }
         }
+        "slow" => {
+            // A vault that needs just over 2 s (seen with real `symvault get`)
+            // must succeed within the default budget.
+            assert_eq!(symvault_get(REFERENCE).unwrap(), VALUE);
+        }
         other => panic!("unknown isolated backend mode {other}"),
     }
 }
@@ -263,6 +275,7 @@ case "$SYMFRITZ_TEST_BACKEND_MODE" in
         exit 7 ;;
     quiet-failure) exit 7 ;;
     timeout) exec /bin/sleep 10 ;;
+    slow) /bin/sleep 2.5; printf 'synthetic-probe-value\n' ;;
     *) exit 99 ;;
 esac
 "#;
