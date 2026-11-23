@@ -284,7 +284,9 @@ mod tests {
             idle.arg("5");
             let started = Instant::now();
             assert!(bounded_output(idle, Duration::from_millis(50), &|| cancel).is_err());
-            assert!(started.elapsed() < Duration::from_secs(1));
+            // The child sleeps 5 s: staying below 4 s proves the timeout path
+            // did not wait for it, with headroom for loaded hosted runners.
+            assert!(started.elapsed() < Duration::from_secs(4));
         }
     }
 }

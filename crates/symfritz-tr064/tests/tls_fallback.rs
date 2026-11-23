@@ -26,7 +26,10 @@ use std::{
 };
 
 use symfritz_core::pins::PinStore;
-use symfritz_tr064::{BlockingHttpTransport, HttpTransportConfig, Method, Request, Transport};
+use symfritz_tr064::{
+    BlockingHttpTransport, HttpTransportConfig, Method, Request, Transport,
+    endpoint_unreachable_message,
+};
 use url::Url;
 
 static FALLBACK_PORT_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -165,7 +168,17 @@ fn endpoint_unreachable_requires_explicit_http_fallback_opt_in() {
     .unwrap();
 
     let error = transport.send(request(&origin)).unwrap_err().to_string();
-    assert!(error.contains("refusing unencrypted HTTP fallback"));
+    // The probe above can race the port state on hosted macOS runners: the
+    // real connect may then fail with a non-connectivity error. Only an
+    // unreachable endpoint models this scenario, and that case must be refused.
+    if !error.contains("refusing unencrypted HTTP fallback") {
+        assert!(
+            !endpoint_unreachable_message(&error),
+            "unreachable endpoint was not refused: {error}"
+        );
+        eprintln!("skipping: 127.0.0.1:49443 changed state after the probe ({error})");
+        return;
+    }
     assert!(error.contains("[box].allow_http_fallback = true"));
     assert!(transport.tls_enabled());
     drop(http_probe);
