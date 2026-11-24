@@ -1,0 +1,58 @@
+{
+  "project": "symaira-fritz",
+  "rule": "Repository assets remain canonical; OpenDesign copies are handoff/reference material.",
+  "items": [
+    {
+      "asset": "assets/brand/product-logo.png",
+      "source": "/Users/daniel/Dev/Symaira Dev/symaira-fritz/assets/branding/product-logo.png",
+      "sha256": "bff72aac4aca15fc05dba2ad6336964496169ceb13c7c2a412f66248964df4fe",
+      "kind": "canonical repository source"
+    },
+    {
+      "asset": "assets/source/repository-social-preview.png",
+      "source": "/Users/daniel/Dev/Symaira Dev/symaira-fritz/docs/assets/social-preview.png",
+      "sha256": "880a81c7d73702c1cd95c0e4074fe02ef6da2767e1d8fb373a7a0e7e4ad89d75",
+      "kind": "canonical repository source"
+    },
+    {
+      "asset": "assets/brand/foreground-mark.svg",
+      "source": "deterministic OpenDesign vector; local router + radio signal",
+      "kind": "new editable source"
+    },
+    {
+      "asset": "assets/social/github-social-en.svg",
+      "source": "deterministic OpenDesign template + project canonical mark",
+      "kind": "generated editable source"
+    },
+    {
+      "asset": "assets/social/open-graph-de.svg",
+      "source": "deterministic OpenDesign template + project canonical mark",
+      "kind": "generated editable source"
+    },
+    {
+      "asset": "assets/social/square-de.svg",
+      "source": "deterministic OpenDesign template + project canonical mark",
+      "kind": "generated editable source"
+    },
+    {
+      "asset": "assets/social/portrait-de.svg",
+      "source": "deterministic OpenDesign template + project canonical mark",
+      "kind": "generated editable source"
+    },
+    {
+      "asset": "assets/social/story-de.svg",
+      "source": "deterministic OpenDesign template + project canonical mark",
+      "kind": "generated editable source"
+    },
+    {
+      "asset": "assets/release/release-card-en.svg",
+      "source": "deterministic OpenDesign template + project canonical mark",
+      "kind": "generated editable source"
+    },
+    {
+      "asset": "assets/readme/readme-hero-de.svg",
+      "source": "deterministic OpenDesign template + project canonical mark",
+      "kind": "generated editable source"
+    }
+  ]
+}
